@@ -58,8 +58,8 @@ async function fetchBusinessUnits(client: SupabaseClient, month: Date) {
   const { data, error } = await client
     .from("fact_ads_performance_daily")
     .select(cols.businessUnitCol)
-    .gte(cols.dateCol, from.toISOString())
-    .lte(cols.dateCol, to.toISOString());
+    .gte(cols.dateCol, format(from, "yyyy-MM-dd"))
+    .lte(cols.dateCol, format(to, "yyyy-MM-dd"));
 
   if (error) throw error;
 
@@ -82,8 +82,8 @@ async function fetchCourses(client: SupabaseClient, month: Date, businessUnit: s
     .from("fact_ads_performance_daily")
     .select(cols.courseCol)
     .eq(cols.businessUnitCol, businessUnit)
-    .gte(cols.dateCol, from.toISOString())
-    .lte(cols.dateCol, to.toISOString());
+    .gte(cols.dateCol, format(from, "yyyy-MM-dd"))
+    .lte(cols.dateCol, format(to, "yyyy-MM-dd"));
 
   if (error) throw error;
 
@@ -103,8 +103,8 @@ async function fetchPlatforms(client: SupabaseClient, month: Date) {
   const { data, error } = await client
     .from("fact_ads_performance_daily")
     .select(metrics.platformCol)
-    .gte(cols.dateCol, from.toISOString())
-    .lte(cols.dateCol, to.toISOString());
+    .gte(cols.dateCol, format(from, "yyyy-MM-dd"))
+    .lte(cols.dateCol, format(to, "yyyy-MM-dd"));
 
   if (error) throw error;
 

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { endOfMonth, startOfMonth } from "date-fns";
+import { endOfMonth, format, startOfMonth } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -36,6 +36,10 @@ function brl(v: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 }
 
+function dateOnly(d: Date) {
+  return format(d, "yyyy-MM-dd");
+}
+
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] as const;
 
 export default function PerformancePage() {
@@ -62,7 +66,7 @@ export default function PerformancePage() {
     queryKey: [
       "performance",
       "data",
-      monthStart.toISOString(),
+      format(monthStart, "yyyy-MM"),
       filters.platform ?? "__all__",
       filters.businessUnit ?? "__all__",
     ],
@@ -87,8 +91,8 @@ export default function PerformancePage() {
       let q = (client as SupabaseClient)
         .from("fact_ads_performance_daily")
         .select(selectCols)
-        .gte(cols.dateCol, monthStart.toISOString())
-        .lte(cols.dateCol, monthEnd.toISOString());
+        .gte(cols.dateCol, dateOnly(monthStart))
+        .lte(cols.dateCol, dateOnly(monthEnd));
 
       if (cols.platformCol && filters.platform) q = q.eq(cols.platformCol, filters.platform);
       if (filters.businessUnit) q = q.eq(cols.businessUnitCol, filters.businessUnit);
