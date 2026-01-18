@@ -328,7 +328,8 @@ export function AppSidebar() {
 
             {!client && !collapsed && (
               <p className="text-xs text-destructive">
-                Supabase n e3o configurado: confira os Secrets (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY) e recarregue o preview.
+                Conexão não configurada: abra <strong>?debug=1</strong> para inserir URL/anon key via override local (ou configure
+                VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY no ambiente).
               </p>
             )}
 
