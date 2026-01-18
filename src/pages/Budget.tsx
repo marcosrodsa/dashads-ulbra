@@ -19,8 +19,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useFilters } from "@/contexts/filters-context";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { resolveBudgetColumns } from "@/integrations/supabase/budgetSchema";
-import { resolvePerformanceDailyColumns } from "@/integrations/supabase/performanceSchema";
-import { resolvePerformanceMetricColumns } from "@/integrations/supabase/performanceMetricsSchema";
+
+type WeeklyViewRow = {
+  data_inicio_semana: string; // date
+  semana_label: string;
+  unidade: string | null;
+  plataforma: string | null;
+  curso: string | null;
+  orcamento_semanal: number | string | null;
+  gasto_real: number | string | null;
+  diferenca: number | string | null;
+  leads: number | string | null;
+  percentual_consumido: number | string | null;
+};
 
 type BudgetKpis = {
   plannedMonth: number | null;
@@ -63,19 +74,6 @@ export default function BudgetPage() {
     staleTime: 1000 * 60 * 60,
   });
 
-  const perfColsQuery = useQuery({
-    queryKey: ["budget", "perfCols"],
-    queryFn: async () => {
-      const [dims, metrics] = await Promise.all([
-        resolvePerformanceDailyColumns(client as SupabaseClient),
-        resolvePerformanceMetricColumns(client as SupabaseClient),
-      ]);
-      return { ...dims, ...metrics };
-    },
-    enabled: !!client,
-    staleTime: 1000 * 60 * 60,
-  });
-
   const budgetDataQuery = useQuery({
     queryKey: [
       "budget",
@@ -84,10 +82,9 @@ export default function BudgetPage() {
       filters.platform ?? "__all__",
       filters.businessUnit ?? "__all__",
     ],
-    enabled: !!client && !!budgetColsQuery.data && !!perfColsQuery.data,
+    enabled: !!client && !!budgetColsQuery.data,
     queryFn: async () => {
       const budgetCols = budgetColsQuery.data!;
-      const perfCols = perfColsQuery.data!;
 
       const fromDate = format(monthStart, "yyyy-MM-dd");
       const toDate = format(monthEnd, "yyyy-MM-dd");
@@ -95,9 +92,7 @@ export default function BudgetPage() {
       // --- Budget (planejado)
       const budgetSelectCols = Array.from(
         new Set(
-          [budgetCols.monthCol, budgetCols.plannedCol, budgetCols.platformCol, budgetCols.unitCol].filter(
-            Boolean
-          ) as string[]
+          [budgetCols.monthCol, budgetCols.plannedCol, budgetCols.platformCol, budgetCols.unitCol].filter(Boolean) as string[]
         )
       ).join(",");
 
@@ -118,61 +113,53 @@ export default function BudgetPage() {
       const { data: budgetRows, error: budgetErr } = await budgetQ;
       if (budgetErr) throw budgetErr;
 
-      // --- Performance (realizado)
-      const perfSelectCols = Array.from(
-        new Set([perfCols.dateCol, perfCols.businessUnitCol, perfCols.spendCol, perfCols.platformCol].filter(Boolean))
-      ).join(",");
+      // --- Realizado (view semanal)
+      let weeklyQ = (client as SupabaseClient)
+        .from("v_dashboard_semanal")
+        .select("data_inicio_semana,semana_label,unidade,plataforma,gasto_real")
+        .gte("data_inicio_semana", fromDate)
+        .lte("data_inicio_semana", toDate);
 
-      let perfQ = (client as SupabaseClient)
-        .from("fact_ads_performance_daily")
-        .select(perfSelectCols)
-        .gte(perfCols.dateCol, fromDate)
-        .lte(perfCols.dateCol, toDate);
+      if (filters.platform) weeklyQ = weeklyQ.eq("plataforma", filters.platform);
+      if (filters.businessUnit) weeklyQ = weeklyQ.eq("unidade", filters.businessUnit);
 
-      if (perfCols.platformCol && filters.platform) {
-        perfQ = perfQ.eq(perfCols.platformCol, filters.platform);
-      }
+      const { data: weeklyRows, error: weeklyErr } = await weeklyQ;
+      if (weeklyErr) throw weeklyErr;
 
-      if (filters.businessUnit) {
-        perfQ = perfQ.eq(perfCols.businessUnitCol, filters.businessUnit);
-      }
+      const plannedMonth = (budgetRows ?? []).reduce((acc: number, r: any) => acc + safeNumber(r?.[budgetCols.plannedCol]), 0);
 
-      const { data: perfRows, error: perfErr } = await perfQ;
-      if (perfErr) throw perfErr;
-
-      const plannedMonth = (budgetRows ?? []).reduce(
-        (acc: number, r: any) => acc + safeNumber(r?.[budgetCols.plannedCol]),
+      const spendMonth = (weeklyRows ?? []).reduce(
+        (acc: number, r: WeeklyViewRow) => acc + safeNumber(r?.gasto_real),
         0
       );
 
-      const spendMonth = (perfRows ?? []).reduce(
-        (acc: number, r: any) => acc + safeNumber(r?.[perfCols.spendCol]),
-        0
-      );
-
-      // Série diária (pacing acumulado)
-      const byDay = new Map<string, number>();
-      for (const r of perfRows ?? []) {
-        const iso = String(r?.[perfCols.dateCol] ?? "");
-        const dayKey = iso ? iso.slice(0, 10) : "";
-        if (!dayKey) continue;
-        byDay.set(dayKey, (byDay.get(dayKey) ?? 0) + safeNumber(r?.[perfCols.spendCol]));
+      // Série "semanal" (pacing acumulado)
+      const byWeek = new Map<string, { spend: number; label: string }>();
+      for (const r of (weeklyRows ?? []) as WeeklyViewRow[]) {
+        const iso = String(r?.data_inicio_semana ?? "").slice(0, 10);
+        if (!iso) continue;
+        const curr = byWeek.get(iso) ?? { spend: 0, label: r?.semana_label ?? iso };
+        curr.spend += safeNumber(r?.gasto_real);
+        if (r?.semana_label) curr.label = r.semana_label;
+        byWeek.set(iso, curr);
       }
 
-      const daysSorted = Array.from(byDay.entries())
+      const weeksSorted = Array.from(byWeek.entries())
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([day, spend]) => ({ day, spend }));
+        .map(([weekStart, v]) => ({ weekStart, spend: v.spend, label: v.label }));
 
       let running = 0;
-      const dailySeries = daysSorted.map((d) => {
-        running += d.spend;
-        const dayOfMonth = Number(d.day.slice(8, 10));
+      const dailySeries = weeksSorted.map((w) => {
+        running += w.spend;
+        const d = new Date(w.weekStart);
+        const dayOfMonth = Number(format(d, "dd"));
         const totalDays = monthEnd.getDate();
-        const ideal = plannedMonth > 0 ? (plannedMonth * dayOfMonth) / totalDays : 0;
-        return { day: d.day, spendCum: running, idealCum: ideal };
+        const weekEndDay = Math.min(dayOfMonth + 6, totalDays);
+        const ideal = plannedMonth > 0 ? (plannedMonth * weekEndDay) / totalDays : 0;
+        return { day: w.weekStart, label: w.label, spendCum: running, idealCum: ideal };
       });
 
-      // Matriz por unidade (campaign_name) quando houver granularidade no budget
+      // Matriz por unidade (quando houver granularidade no budget)
       const plannedByUnit = new Map<string, number>();
       if (budgetCols.unitCol) {
         for (const r of budgetRows ?? []) {
@@ -183,19 +170,15 @@ export default function BudgetPage() {
       }
 
       const spendByUnit = new Map<string, number>();
-      for (const r of perfRows ?? []) {
-        const unit = String(r?.[perfCols.businessUnitCol] ?? "").trim();
+      for (const r of (weeklyRows ?? []) as WeeklyViewRow[]) {
+        const unit = String(r?.unidade ?? "").trim();
         if (!unit) continue;
-        spendByUnit.set(unit, (spendByUnit.get(unit) ?? 0) + safeNumber(r?.[perfCols.spendCol]));
+        spendByUnit.set(unit, (spendByUnit.get(unit) ?? 0) + safeNumber(r?.gasto_real));
       }
 
       const unitKeys = Array.from(new Set([...plannedByUnit.keys(), ...spendByUnit.keys()]));
       const unitRows: UnitRow[] = unitKeys
-        .map((u) => ({
-          unit: u,
-          planned: plannedByUnit.get(u) ?? 0,
-          spend: spendByUnit.get(u) ?? 0,
-        }))
+        .map((u) => ({ unit: u, planned: plannedByUnit.get(u) ?? 0, spend: spendByUnit.get(u) ?? 0 }))
         .sort((a, b) => (b.planned || b.spend) - (a.planned || a.spend));
 
       // KPIs (forecast simples)
@@ -205,11 +188,11 @@ export default function BudgetPage() {
       const dayOfMonth = Math.min(now.getDate(), totalDays);
 
       const spendToDate = isCurrent
-        ? (perfRows ?? []).reduce((acc: number, r: any) => {
-            const iso = String(r?.[perfCols.dateCol] ?? "");
+        ? (weeklyRows ?? []).reduce((acc: number, r: WeeklyViewRow) => {
+            const iso = String(r?.data_inicio_semana ?? "");
             const d = iso ? new Date(iso) : null;
             if (!d) return acc;
-            if (d <= now) return acc + safeNumber(r?.[perfCols.spendCol]);
+            if (d <= now) return acc + safeNumber(r?.gasto_real);
             return acc;
           }, 0)
         : spendMonth;
@@ -219,8 +202,8 @@ export default function BudgetPage() {
       const netVariance = plannedMonth > 0 ? plannedMonth - forecast : null;
 
       const kpis: BudgetKpis = {
-        plannedMonth: plannedMonth,
-        spendMonth: spendMonth,
+        plannedMonth,
+        spendMonth,
         forecast: plannedMonth > 0 ? forecast : null,
         netVariance,
         pacing,
@@ -235,10 +218,9 @@ export default function BudgetPage() {
     },
   });
 
-  const isLoading =
-    budgetColsQuery.isLoading || perfColsQuery.isLoading || budgetDataQuery.isLoading;
+  const isLoading = budgetColsQuery.isLoading || budgetDataQuery.isLoading;
 
-  const error = (budgetColsQuery.error || perfColsQuery.error || budgetDataQuery.error) as any;
+  const error = (budgetColsQuery.error || budgetDataQuery.error) as any;
 
   const kpis = budgetDataQuery.data?.kpis;
 
@@ -337,8 +319,8 @@ export default function BudgetPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Pacing Diário Acumulado</CardTitle>
-            <CardDescription>Linha ideal vs curva real acumulada.</CardDescription>
+            <CardTitle>Pacing Semanal Acumulado</CardTitle>
+            <CardDescription>Linha ideal vs curva real (acumulado por início de semana).</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
