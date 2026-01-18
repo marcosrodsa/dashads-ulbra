@@ -66,6 +66,7 @@ export function SupabaseDebugBanner() {
 
   const source = getSupabaseConfigSource();
   const anonHasNewlines = /[\r\n]/.test(rawAnon);
+
   const forcedByQuery = (() => {
     if (typeof window === "undefined") return false;
     const sp = new URLSearchParams(window.location.search);
@@ -73,8 +74,17 @@ export function SupabaseDebugBanner() {
     return sp.has("debug") && (v === null || v === "" || v === "1" || v === "true");
   })();
 
+  const viteMode = import.meta.env.MODE;
+  const viteDev = import.meta.env.DEV;
+  const viteProd = import.meta.env.PROD;
+  const viteKeys = React.useMemo(
+    () => Object.keys(import.meta.env).filter((k) => k.startsWith("VITE_"))?.sort(),
+    []
+  );
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+
   // Aparece em DEV, quando o usuário força via ?debug=1, ou quando a config está quebrada.
-  const enabled = import.meta.env.DEV || forcedByQuery || source !== "env" || !url || !anon;
+  const enabled = viteDev || forcedByQuery || source !== "env" || !url || !anon;
   if (!enabled) return null;
 
   const ok = !!client;
@@ -161,6 +171,10 @@ export function SupabaseDebugBanner() {
 
   async function copyDiagnostic() {
     const payload = [
+      `Build: ${buildStamp}`,
+      `Origin: ${origin}`,
+      `Vite: mode=${viteMode}, DEV=${String(viteDev)}, PROD=${String(viteProd)}`,
+      `VITE_* keys (${viteKeys.length}): ${viteKeys.join(", ") || "(nenhuma)"}`,
       `Fonte da config: ${source}`,
       `VITE_SUPABASE_URL: ${url ? maskUrl(url) : "(vazio)"} (rawLen=${rawUrl.length}, trimmedLen=${url.length})`,
       `VITE_SUPABASE_ANON_KEY: ${anon ? `presente (len=${anon.length})` : "(vazio)"} (rawLen=${rawAnon.length})`,
@@ -181,23 +195,33 @@ export function SupabaseDebugBanner() {
   }
 
   return (
-
     <Alert variant={ok ? "default" : "destructive"} className="mb-4">
       <AlertTitle>Diagnóstico da conexão</AlertTitle>
       <AlertDescription className="space-y-2">
         <div className="text-xs text-muted-foreground">
           Build: <span className="font-mono">{buildStamp}</span>
           {forcedByQuery ? " • debug=1" : null}
-          {import.meta.env.DEV ? " • DEV" : null}
+          {viteDev ? " • DEV" : null}
+          {viteProd ? " • PROD" : null}
+          {viteMode ? ` • mode=${viteMode}` : null}
         </div>
+
+        <div className="text-xs text-muted-foreground">
+          Origin: <span className="font-mono">{origin}</span>
+        </div>
+
+        <div className="text-xs text-muted-foreground">
+          VITE_* detectadas ({viteKeys.length}): <span className="font-mono">{viteKeys.join(", ") || "(nenhuma)"}</span>
+        </div>
+
         <div>
           Fonte da config: <strong>{source}</strong>
           {source === "env" ? " (Conectado via env)" : " (não configurado)"}
         </div>
         {source !== "env" && (
           <div>
-            Ação: configure <strong>VITE_SUPABASE_URL</strong> e <strong>VITE_SUPABASE_ANON_KEY</strong> em
-            Secrets e recarregue o preview.
+            Ação: configure <strong>VITE_SUPABASE_URL</strong> e <strong>VITE_SUPABASE_ANON_KEY</strong> em Secrets e
+            recarregue o preview.
           </div>
         )}
         <div>
@@ -207,9 +231,7 @@ export function SupabaseDebugBanner() {
           VITE_SUPABASE_ANON_KEY: {anon ? `presente (len=${anon.length})` : "(vazio)"} (rawLen={rawAnon.length})
         </div>
         {anonHasNewlines && (
-          <div>
-            Aviso: a anon key contém quebras de linha (\\n/\\r). Re-salve a secret em uma única linha.
-          </div>
+          <div>Aviso: a anon key contém quebras de linha (\\n/\\r). Re-salve a secret em uma única linha.</div>
         )}
         <div className="flex flex-wrap items-center gap-2">
           <div>getSupabaseClient(): {ok ? "OK" : "null"}</div>
