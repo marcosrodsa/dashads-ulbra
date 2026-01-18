@@ -2,6 +2,7 @@ import * as React from "react";
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { BarChart3, Gauge, Filter, Building2, GraduationCap, Globe } from "lucide-react";
+import { useLocation } from "react-router-dom";
 
 import { NavLink } from "@/components/NavLink";
 import {
@@ -63,9 +64,7 @@ async function fetchBusinessUnits(client: SupabaseClient, month: Date) {
 
   if (error) throw error;
 
-  const unique = Array.from(
-    new Set((data ?? []).map((r: any) => r?.[cols.businessUnitCol]).filter(Boolean))
-  );
+  const unique = Array.from(new Set((data ?? []).map((r: any) => r?.[cols.businessUnitCol]).filter(Boolean)));
   unique.sort((a, b) => String(a).localeCompare(String(b)));
   return unique as string[];
 }
@@ -113,7 +112,65 @@ async function fetchPlatforms(client: SupabaseClient, month: Date) {
   return unique as string[];
 }
 
+// --- Versão /budget (view semanal)
+async function fetchBusinessUnitsWeeklyView(client: SupabaseClient, month: Date) {
+  const from = startOfMonth(month);
+  const to = endOfMonth(month);
+
+  const { data, error } = await client
+    .from("v_dashboard_semanal")
+    .select("unidade")
+    .gte("data_inicio_semana", format(from, "yyyy-MM-dd"))
+    .lte("data_inicio_semana", format(to, "yyyy-MM-dd"));
+
+  if (error) throw error;
+
+  const unique = Array.from(new Set((data ?? []).map((r: any) => r?.unidade).filter(Boolean)));
+  unique.sort((a, b) => String(a).localeCompare(String(b)));
+  return unique as string[];
+}
+
+async function fetchCoursesWeeklyView(client: SupabaseClient, month: Date, businessUnit: string | null) {
+  if (!businessUnit) return [] as string[];
+
+  const from = startOfMonth(month);
+  const to = endOfMonth(month);
+
+  const { data, error } = await client
+    .from("v_dashboard_semanal")
+    .select("curso")
+    .eq("unidade", businessUnit)
+    .gte("data_inicio_semana", format(from, "yyyy-MM-dd"))
+    .lte("data_inicio_semana", format(to, "yyyy-MM-dd"));
+
+  if (error) throw error;
+
+  const unique = Array.from(new Set((data ?? []).map((r: any) => r?.curso).filter(Boolean)));
+  unique.sort((a, b) => String(a).localeCompare(String(b)));
+  return unique as string[];
+}
+
+async function fetchPlatformsWeeklyView(client: SupabaseClient, month: Date) {
+  const from = startOfMonth(month);
+  const to = endOfMonth(month);
+
+  const { data, error } = await client
+    .from("v_dashboard_semanal")
+    .select("plataforma")
+    .gte("data_inicio_semana", format(from, "yyyy-MM-dd"))
+    .lte("data_inicio_semana", format(to, "yyyy-MM-dd"));
+
+  if (error) throw error;
+
+  const unique = Array.from(new Set((data ?? []).map((r: any) => r?.plataforma).filter(Boolean)));
+  unique.sort((a, b) => String(a).localeCompare(String(b)));
+  return unique as string[];
+}
+
 export function AppSidebar() {
+  const location = useLocation();
+  const isBudgetRoute = location.pathname.startsWith("/budget");
+
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { filters, setMonth, setBusinessUnit, setCourse, setPlatform, clear } = useFilters();
@@ -125,28 +182,36 @@ export function AppSidebar() {
   const columnsQuery = useQuery({
     queryKey: ["filters", "performanceDailyColumns"],
     queryFn: () => resolvePerformanceDailyColumns(client as SupabaseClient),
-    enabled: !!client,
+    enabled: !!client && !isBudgetRoute,
     staleTime: 1000 * 60 * 60, // 1h
   });
 
-  const sameUnitAndCourse =
-    !!columnsQuery.data && columnsQuery.data.businessUnitCol === columnsQuery.data.courseCol;
+  const sameUnitAndCourse = !isBudgetRoute && !!columnsQuery.data && columnsQuery.data.businessUnitCol === columnsQuery.data.courseCol;
 
   const businessUnitsQuery = useQuery({
-    queryKey: ["filters", "businessUnits", asMonthKey(filters.month)],
-    queryFn: () => fetchBusinessUnits(client as SupabaseClient, filters.month),
+    queryKey: ["filters", "businessUnits", isBudgetRoute ? "budget" : "performance", asMonthKey(filters.month)],
+    queryFn: () =>
+      isBudgetRoute
+        ? fetchBusinessUnitsWeeklyView(client as SupabaseClient, filters.month)
+        : fetchBusinessUnits(client as SupabaseClient, filters.month),
     enabled: !!client,
   });
 
   const coursesQuery = useQuery({
-    queryKey: ["filters", "courses", asMonthKey(filters.month), filters.businessUnit],
-    queryFn: () => fetchCourses(client as SupabaseClient, filters.month, filters.businessUnit),
-    enabled: !!client && !!filters.businessUnit && !sameUnitAndCourse,
+    queryKey: ["filters", "courses", isBudgetRoute ? "budget" : "performance", asMonthKey(filters.month), filters.businessUnit],
+    queryFn: () =>
+      isBudgetRoute
+        ? fetchCoursesWeeklyView(client as SupabaseClient, filters.month, filters.businessUnit)
+        : fetchCourses(client as SupabaseClient, filters.month, filters.businessUnit),
+    enabled: !!client && !!filters.businessUnit && (isBudgetRoute || !sameUnitAndCourse),
   });
 
   const platformsQuery = useQuery({
-    queryKey: ["filters", "platforms", asMonthKey(filters.month)],
-    queryFn: () => fetchPlatforms(client as SupabaseClient, filters.month),
+    queryKey: ["filters", "platforms", isBudgetRoute ? "budget" : "performance", asMonthKey(filters.month)],
+    queryFn: () =>
+      isBudgetRoute
+        ? fetchPlatformsWeeklyView(client as SupabaseClient, filters.month)
+        : fetchPlatforms(client as SupabaseClient, filters.month),
     enabled: !!client,
   });
 

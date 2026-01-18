@@ -81,6 +81,7 @@ export default function BudgetPage() {
       format(monthStart, "yyyy-MM"),
       filters.platform ?? "__all__",
       filters.businessUnit ?? "__all__",
+      filters.course ?? "__all__",
     ],
     enabled: !!client && !!budgetColsQuery.data,
     queryFn: async () => {
@@ -116,12 +117,13 @@ export default function BudgetPage() {
       // --- Realizado (view semanal)
       let weeklyQ = (client as SupabaseClient)
         .from("v_dashboard_semanal")
-        .select("data_inicio_semana,semana_label,unidade,plataforma,gasto_real")
+        .select("data_inicio_semana,semana_label,unidade,plataforma,curso,gasto_real")
         .gte("data_inicio_semana", fromDate)
         .lte("data_inicio_semana", toDate);
 
       if (filters.platform) weeklyQ = weeklyQ.eq("plataforma", filters.platform);
       if (filters.businessUnit) weeklyQ = weeklyQ.eq("unidade", filters.businessUnit);
+      if (filters.course) weeklyQ = weeklyQ.eq("curso", filters.course);
 
       const { data: weeklyRows, error: weeklyErr } = await weeklyQ;
       if (weeklyErr) throw weeklyErr;
@@ -280,9 +282,7 @@ export default function BudgetPage() {
         <Card>
           <CardHeader>
             <CardTitle>Progresso de Budget por Unidade</CardTitle>
-            <CardDescription>
-              Planejado vs gasto (Top 12 por budget/spend). Unidade = campaign_name.
-            </CardDescription>
+            <CardDescription>Planejado vs gasto (Top 12 por budget/spend).</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -378,15 +378,15 @@ export default function BudgetPage() {
             ) : (
               <div className="rounded-md border">
                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Unidade (campaign)</TableHead>
-                      <TableHead className="text-right">Planejado</TableHead>
-                      <TableHead className="text-right">Gasto</TableHead>
-                      <TableHead className="text-right">Pacing</TableHead>
-                      <TableHead className="text-right">Variance</TableHead>
-                    </TableRow>
-                  </TableHeader>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Unidade</TableHead>
+                        <TableHead className="text-right">Planejado</TableHead>
+                        <TableHead className="text-right">Gasto</TableHead>
+                        <TableHead className="text-right">Pacing</TableHead>
+                        <TableHead className="text-right">Variance</TableHead>
+                      </TableRow>
+                    </TableHeader>
                   <TableBody>
                     {(budgetDataQuery.data?.unitRows ?? []).slice(0, 50).map((r) => {
                       const pacing = r.planned > 0 ? r.spend / r.planned : null;
