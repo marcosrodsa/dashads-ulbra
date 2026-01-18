@@ -1,7 +1,7 @@
 import * as React from "react";
 import { startOfMonth } from "date-fns";
 
-export type AdsPlatform = "Meta" | "Google";
+export type AdsPlatform = string;
 
 export type FiltersState = {
   month: Date; // first day of the selected month

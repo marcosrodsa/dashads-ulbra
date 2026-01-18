@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useFilters } from "@/contexts/filters-context";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { resolvePerformanceDailyColumns } from "@/integrations/supabase/performanceSchema";
+import { resolvePerformanceMetricColumns } from "@/integrations/supabase/performanceMetricsSchema";
 import { useQuery } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -91,6 +92,26 @@ async function fetchCourses(client: SupabaseClient, month: Date, businessUnit: s
   return unique as string[];
 }
 
+async function fetchPlatforms(client: SupabaseClient, month: Date) {
+  const metrics = await resolvePerformanceMetricColumns(client);
+  if (!metrics.platformCol) return [] as string[];
+
+  const cols = await resolvePerformanceDailyColumns(client);
+  const from = startOfMonth(month);
+  const to = endOfMonth(month);
+
+  const { data, error } = await client
+    .from("fact_ads_performance_daily")
+    .select(metrics.platformCol)
+    .gte(cols.dateCol, from.toISOString())
+    .lte(cols.dateCol, to.toISOString());
+
+  if (error) throw error;
+
+  const unique = Array.from(new Set((data ?? []).map((r: any) => r?.[metrics.platformCol!]).filter(Boolean)));
+  unique.sort((a, b) => String(a).localeCompare(String(b)));
+  return unique as string[];
+}
 
 export function AppSidebar() {
   const { state } = useSidebar();
@@ -121,6 +142,12 @@ export function AppSidebar() {
     queryKey: ["filters", "courses", asMonthKey(filters.month), filters.businessUnit],
     queryFn: () => fetchCourses(client as SupabaseClient, filters.month, filters.businessUnit),
     enabled: !!client && !!filters.businessUnit && !sameUnitAndCourse,
+  });
+
+  const platformsQuery = useQuery({
+    queryKey: ["filters", "platforms", asMonthKey(filters.month)],
+    queryFn: () => fetchPlatforms(client as SupabaseClient, filters.month),
+    enabled: !!client,
   });
 
   return (
@@ -270,19 +297,29 @@ export function AppSidebar() {
                   <span>Plataforma</span>
                 </div>
               )}
-              <Select
-                value={filters.platform ?? "__all__"}
-                onValueChange={(v) => setPlatform(v === "__all__" ? null : (v as any))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Todas" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">Todas</SelectItem>
-                  <SelectItem value="Meta">Meta</SelectItem>
-                  <SelectItem value="Google">Google</SelectItem>
-                </SelectContent>
-              </Select>
+              {platformsQuery.isLoading ? (
+                <Skeleton className="h-10 w-full" />
+              ) : (
+                <Select
+                  value={filters.platform ?? "__all__"}
+                  onValueChange={(v) => setPlatform(v === "__all__" ? null : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">Todas</SelectItem>
+                    {(platformsQuery.data ?? []).map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {!platformsQuery.isLoading && (platformsQuery.data?.length ?? 0) === 0 && !collapsed ? (
+                <p className="text-xs text-muted-foreground">Sem coluna de plataforma detectada (ou sem dados no mês).</p>
+              ) : null}
             </div>
 
             <Button variant="secondary" className="w-full" onClick={clear}>
