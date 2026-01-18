@@ -2,11 +2,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let _client: SupabaseClient | null = null;
 
-// Fallback público (URL + anon key) para quando o preview não injeta import.meta.env.VITE_SUPABASE_*.
-// ATENÇÃO: não coloque aqui service_role / keys privadas.
-const FALLBACK_SUPABASE_URL = "https://ywkiodtxvknpytxuzary.supabase.co";
-const FALLBACK_SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3a2lvZHR4dmtucHl0eHV6YXJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzMzQ0MDEsImV4cCI6MjA4MzkxMDQwMX0.0FFXZJ_K65nVayP115hJLkHKJ016NahVpe0A8CI5vRs";
+// Configuração via env (Vite). Não mantenha fallback hardcoded neste projeto.
+// Use Secrets para definir VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.
 
 function normalize(v: string | undefined) {
   const raw = v ?? "";
@@ -21,12 +18,11 @@ function getEnv() {
   };
 }
 
-export type SupabaseConfigSource = "env" | "fallback" | "none";
+export type SupabaseConfigSource = "env" | "none";
 
 export function getSupabaseConfigSource(): SupabaseConfigSource {
   const { url, anonKey } = getEnv();
   if (url.trimmed && anonKey.trimmed) return "env";
-  if (FALLBACK_SUPABASE_URL.trim() && FALLBACK_SUPABASE_ANON_KEY.trim()) return "fallback";
   return "none";
 }
 
@@ -39,8 +35,8 @@ export function getSupabaseClient(): SupabaseClient | null {
 
   const { url, anonKey } = getEnv();
 
-  const finalUrl = url.trimmed || FALLBACK_SUPABASE_URL.trim();
-  const finalAnonKey = anonKey.trimmed || FALLBACK_SUPABASE_ANON_KEY.trim();
+  const finalUrl = url.trimmed;
+  const finalAnonKey = anonKey.trimmed;
 
   if (!finalUrl || !finalAnonKey) return null;
 

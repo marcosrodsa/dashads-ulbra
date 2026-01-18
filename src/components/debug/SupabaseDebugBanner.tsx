@@ -56,10 +56,17 @@ export function SupabaseDebugBanner() {
       <AlertDescription className="space-y-1">
         <div>
           Fonte da config: <strong>{source}</strong>
+          {source === "env" ? " (Conectado via env)" : " (não configurado)"}
         </div>
+        {source !== "env" && (
+          <div>
+            Ação: configure <strong>VITE_SUPABASE_URL</strong> e <strong>VITE_SUPABASE_ANON_KEY</strong> em
+            Secrets e recarregue o preview.
+          </div>
+        )}
         <div>
-          VITE_SUPABASE_URL: {url ? maskUrl(url) : "(vazio)"} (rawLen={rawUrl.length},
-          trimmedLen={url.length})
+          VITE_SUPABASE_URL: {url ? maskUrl(url) : "(vazio)"} (rawLen={rawUrl.length}, trimmedLen=
+          {url.length})
         </div>
         <div>
           VITE_SUPABASE_ANON_KEY: {anon ? `presente (len=${anon.length})` : "(vazio)"} (rawLen=
