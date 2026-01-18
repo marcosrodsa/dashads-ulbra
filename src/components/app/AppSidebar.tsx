@@ -1,5 +1,5 @@
 import * as React from "react";
-import { format, subMonths, startOfMonth } from "date-fns";
+import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { BarChart3, Gauge, Filter, Building2, GraduationCap, Globe } from "lucide-react";
 
@@ -21,9 +21,9 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFilters } from "@/contexts/filters-context";
-import { supabase, PERFORMANCE_DATE_COLUMN } from "@/integrations/supabase/client";
-import { endOfMonth } from "date-fns";
+import { getSupabaseClient, PERFORMANCE_DATE_COLUMN } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const navItems = [
   { title: "Controle de Budget", url: "/budget", icon: Gauge },
@@ -46,12 +46,12 @@ function asMonthKey(d: Date) {
   return startOfMonth(d).toISOString();
 }
 
-async function fetchBusinessUnits(month: Date) {
+async function fetchBusinessUnits(client: SupabaseClient, month: Date) {
   const from = startOfMonth(month);
   const to = endOfMonth(month);
 
   // Preferimos performance_daily porque sempre tem granularidade diária.
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("fact_ads_performance_daily")
     .select("business_unit")
     .gte(PERFORMANCE_DATE_COLUMN, from.toISOString())
@@ -64,13 +64,13 @@ async function fetchBusinessUnits(month: Date) {
   return unique as string[];
 }
 
-async function fetchCourses(month: Date, businessUnit: string | null) {
+async function fetchCourses(client: SupabaseClient, month: Date, businessUnit: string | null) {
   if (!businessUnit) return [] as string[];
 
   const from = startOfMonth(month);
   const to = endOfMonth(month);
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("fact_ads_performance_daily")
     .select("course")
     .eq("business_unit", businessUnit)
@@ -84,22 +84,26 @@ async function fetchCourses(month: Date, businessUnit: string | null) {
   return unique as string[];
 }
 
+
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { filters, setMonth, setBusinessUnit, setCourse, setPlatform, clear } = useFilters();
 
+  const client = getSupabaseClient();
+
   const months = React.useMemo(() => monthOptions(18), []);
 
   const businessUnitsQuery = useQuery({
     queryKey: ["filters", "businessUnits", asMonthKey(filters.month)],
-    queryFn: () => fetchBusinessUnits(filters.month),
+    queryFn: () => fetchBusinessUnits(client as SupabaseClient, filters.month),
+    enabled: !!client,
   });
 
   const coursesQuery = useQuery({
     queryKey: ["filters", "courses", asMonthKey(filters.month), filters.businessUnit],
-    queryFn: () => fetchCourses(filters.month, filters.businessUnit),
-    enabled: !!filters.businessUnit,
+    queryFn: () => fetchCourses(client as SupabaseClient, filters.month, filters.businessUnit),
+    enabled: !!client && !!filters.businessUnit,
   });
 
   return (
@@ -259,11 +263,18 @@ export function AppSidebar() {
               Limpar filtros
             </Button>
 
-            {businessUnitsQuery.isError && !collapsed && (
+            {!client && !collapsed && (
               <p className="text-xs text-destructive">
-                Erro ao carregar opções (verifique credenciais/tabelas).
+                Supabase não configurado: confira os Secrets (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).
               </p>
             )}
+
+            {businessUnitsQuery.isError && client && !collapsed && (
+              <p className="text-xs text-destructive">
+                Erro ao carregar opções (verifique credenciais/tabelas/coluna de data).
+              </p>
+            )}
+
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
