@@ -15,7 +15,7 @@ import {
 } from "recharts";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { InvestmentMatrix, type InvestmentMatrixUnitGroup } from "@/components/budget/InvestmentMatrix";
 import { useFilters } from "@/contexts/filters-context";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { resolveBudgetColumns } from "@/integrations/supabase/budgetSchema";
@@ -117,7 +117,9 @@ export default function BudgetPage() {
       // --- Realizado (view semanal)
       let weeklyQ = (client as SupabaseClient)
         .from("v_dashboard_semanal")
-        .select("data_inicio_semana,semana_label,unidade,plataforma,curso,gasto_real")
+        .select(
+          "data_inicio_semana,semana_label,unidade,plataforma,curso,orcamento_semanal,gasto_real,diferenca,leads,percentual_consumido",
+        )
         .gte("data_inicio_semana", fromDate)
         .lte("data_inicio_semana", toDate);
 
@@ -161,7 +163,75 @@ export default function BudgetPage() {
         return { day: w.weekStart, label: w.label, spendCum: running, idealCum: ideal };
       });
 
-      // Matriz por unidade (quando houver granularidade no budget)
+      // Matriz por unidade (detalhe Unidade > Plataforma > Curso) usando a view semanal
+      const labelOr = (v: string | null | undefined, fallback: string) => {
+        const s = String(v ?? "").trim();
+        return s ? s : fallback;
+      };
+
+      type Agg = { budget: number; spend: number };
+      const unitAgg = new Map<string, Agg>();
+      const platformAgg = new Map<string, Agg>(); // key: unit||platform
+      const courseAgg = new Map<string, Agg>(); // key: unit||platform||course
+
+      for (const r of (weeklyRows ?? []) as WeeklyViewRow[]) {
+        const unit = labelOr(r.unidade, "(Sem unidade)");
+        const platform = labelOr(r.plataforma, "(Sem plataforma)");
+        const course = labelOr(r.curso, "(Sem curso)");
+
+        const budget = safeNumber(r.orcamento_semanal);
+        const spend = safeNumber(r.gasto_real);
+
+        const uKey = unit;
+        const pKey = `${unit}||${platform}`;
+        const cKey = `${unit}||${platform}||${course}`;
+
+        const u = unitAgg.get(uKey) ?? { budget: 0, spend: 0 };
+        u.budget += budget;
+        u.spend += spend;
+        unitAgg.set(uKey, u);
+
+        const p = platformAgg.get(pKey) ?? { budget: 0, spend: 0 };
+        p.budget += budget;
+        p.spend += spend;
+        platformAgg.set(pKey, p);
+
+        const c = courseAgg.get(cKey) ?? { budget: 0, spend: 0 };
+        c.budget += budget;
+        c.spend += spend;
+        courseAgg.set(cKey, c);
+      }
+
+      const investmentMatrix: InvestmentMatrixUnitGroup[] = Array.from(unitAgg.entries())
+        .map(([unit, u]) => {
+          const platforms = Array.from(platformAgg.entries())
+            .filter(([k]) => k.startsWith(`${unit}||`))
+            .map(([k, pAgg]) => {
+              const platform = k.split("||")[1] ?? "(Sem plataforma)";
+
+              const courses = Array.from(courseAgg.entries())
+                .filter(([ck]) => ck.startsWith(`${unit}||${platform}||`))
+                .map(([ck, cAgg]) => {
+                  const course = ck.split("||")[2] ?? "(Sem curso)";
+                  return { course, budget: cAgg.budget, spend: cAgg.spend };
+                })
+                .sort((a, b) => (b.budget || b.spend) - (a.budget || a.spend));
+
+              return {
+                platform,
+                budget: pAgg.budget,
+                spend: pAgg.spend,
+                courses,
+              };
+            })
+            .sort((a, b) => (b.budget || b.spend) - (a.budget || a.spend));
+
+          return { unit, budget: u.budget, spend: u.spend, platforms };
+        })
+        .filter((u) => u.unit !== "(Sem unidade)")
+        .sort((a, b) => (b.budget || b.spend) - (a.budget || a.spend));
+
+      // Matriz simples por unidade (para gráficos existentes)
       const plannedByUnit = new Map<string, number>();
       if (budgetCols.unitCol) {
         for (const r of budgetRows ?? []) {
@@ -215,6 +285,7 @@ export default function BudgetPage() {
         kpis,
         dailySeries,
         unitRows,
+        investmentMatrix,
         budgetHasUnitGranularity: !!budgetCols.unitCol,
       };
     },
@@ -367,7 +438,7 @@ export default function BudgetPage() {
           <CardHeader>
             <CardTitle>Matriz de Investimento</CardTitle>
             <CardDescription>
-              Ordenada por maior budget (ou spend); sinaliza inconsistências (budget=0 e spend&gt;0).
+              Clique na unidade para abrir e ver cursos agrupados por plataforma.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -376,42 +447,7 @@ export default function BudgetPage() {
                 Carregando…
               </div>
             ) : (
-              <div className="rounded-md border">
-                <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Unidade</TableHead>
-                        <TableHead className="text-right">Planejado</TableHead>
-                        <TableHead className="text-right">Gasto</TableHead>
-                        <TableHead className="text-right">Pacing</TableHead>
-                        <TableHead className="text-right">Variance</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                  <TableBody>
-                    {(budgetDataQuery.data?.unitRows ?? []).slice(0, 50).map((r) => {
-                      const pacing = r.planned > 0 ? r.spend / r.planned : null;
-                      const variance = r.planned > 0 ? r.planned - r.spend : null;
-                      const inconsistent = r.planned === 0 && r.spend > 0;
-
-                      return (
-                        <TableRow key={r.unit} className={inconsistent ? "bg-muted" : undefined}>
-                          <TableCell className="max-w-[420px] truncate" title={r.unit}>
-                            {r.unit}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">{brl(r.planned)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{brl(r.spend)}</TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {pacing != null ? pct(pacing) : "-"}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {variance != null ? brl(variance) : "-"}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+              <InvestmentMatrix data={budgetDataQuery.data?.investmentMatrix ?? []} />
             )}
           </CardContent>
         </Card>
