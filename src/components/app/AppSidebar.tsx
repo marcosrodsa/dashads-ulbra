@@ -21,7 +21,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFilters } from "@/contexts/filters-context";
-import { getSupabaseClient, PERFORMANCE_DATE_COLUMN } from "@/integrations/supabase/client";
+import { getSupabaseClient } from "@/integrations/supabase/client";
+import { resolvePerformanceDailyColumns } from "@/integrations/supabase/performanceSchema";
 import { useQuery } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -47,19 +48,23 @@ function asMonthKey(d: Date) {
 }
 
 async function fetchBusinessUnits(client: SupabaseClient, month: Date) {
+  const cols = await resolvePerformanceDailyColumns(client);
+
   const from = startOfMonth(month);
   const to = endOfMonth(month);
 
   // Preferimos performance_daily porque sempre tem granularidade diária.
   const { data, error } = await client
     .from("fact_ads_performance_daily")
-    .select("business_unit")
-    .gte(PERFORMANCE_DATE_COLUMN, from.toISOString())
-    .lte(PERFORMANCE_DATE_COLUMN, to.toISOString());
+    .select(cols.businessUnitCol)
+    .gte(cols.dateCol, from.toISOString())
+    .lte(cols.dateCol, to.toISOString());
 
   if (error) throw error;
 
-  const unique = Array.from(new Set((data ?? []).map((r: any) => r.business_unit).filter(Boolean)));
+  const unique = Array.from(
+    new Set((data ?? []).map((r: any) => r?.[cols.businessUnitCol]).filter(Boolean))
+  );
   unique.sort((a, b) => String(a).localeCompare(String(b)));
   return unique as string[];
 }
@@ -67,19 +72,21 @@ async function fetchBusinessUnits(client: SupabaseClient, month: Date) {
 async function fetchCourses(client: SupabaseClient, month: Date, businessUnit: string | null) {
   if (!businessUnit) return [] as string[];
 
+  const cols = await resolvePerformanceDailyColumns(client);
+
   const from = startOfMonth(month);
   const to = endOfMonth(month);
 
   const { data, error } = await client
     .from("fact_ads_performance_daily")
-    .select("course")
-    .eq("business_unit", businessUnit)
-    .gte(PERFORMANCE_DATE_COLUMN, from.toISOString())
-    .lte(PERFORMANCE_DATE_COLUMN, to.toISOString());
+    .select(cols.courseCol)
+    .eq(cols.businessUnitCol, businessUnit)
+    .gte(cols.dateCol, from.toISOString())
+    .lte(cols.dateCol, to.toISOString());
 
   if (error) throw error;
 
-  const unique = Array.from(new Set((data ?? []).map((r: any) => r.course).filter(Boolean)));
+  const unique = Array.from(new Set((data ?? []).map((r: any) => r?.[cols.courseCol]).filter(Boolean)));
   unique.sort((a, b) => String(a).localeCompare(String(b)));
   return unique as string[];
 }
