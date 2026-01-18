@@ -51,6 +51,15 @@ export async function resolvePerformanceDailyColumns(
   ]);
 
   const businessUnitCol = await firstWorkingColumn(client, [
+    // "Unidade" (no seu caso, campanha)
+    "campaign_name",
+    "campaign", // alguns exports usam "campaign"
+
+    // fallbacks comuns
+    "account_name",
+    "entity_name",
+
+    // nomes mais "tradicionais"
     "business_unit",
     "businessunit",
     "businessUnit",
@@ -61,6 +70,15 @@ export async function resolvePerformanceDailyColumns(
   ]);
 
   const courseCol = await firstWorkingColumn(client, [
+    // "Curso" (no seu caso, também campanha)
+    "campaign_name",
+    "campaign",
+
+    // fallbacks comuns
+    "entity_name",
+    "account_name",
+
+    // nomes mais "tradicionais"
     "course",
     "course_name",
     "coursename",
