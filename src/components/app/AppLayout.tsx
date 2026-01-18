@@ -1,4 +1,5 @@
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SupabaseDebugBanner } from "@/components/debug/SupabaseDebugBanner";
 import { FiltersProvider } from "@/contexts/filters-context";
 import { Outlet } from "react-router-dom";
 import { AppSidebar } from "./AppSidebar";
@@ -19,6 +20,9 @@ export function AppLayout() {
             </header>
 
             <main className="flex-1 bg-background">
+              <div className="px-3 pt-3">
+                <SupabaseDebugBanner />
+              </div>
               <Outlet />
             </main>
           </SidebarInset>

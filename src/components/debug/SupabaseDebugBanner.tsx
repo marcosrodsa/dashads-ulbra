@@ -58,12 +58,27 @@ function formatSupabaseError(err: unknown) {
 }
 
 export function SupabaseDebugBanner() {
-  const enabled = import.meta.env.DEV;
   const rawUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? "";
   const rawAnon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? "";
   const url = rawUrl.trim();
   const anon = rawAnon.trim();
   const client = React.useMemo(() => getSupabaseClient(), []);
+
+  const source = getSupabaseConfigSource();
+  const anonHasNewlines = /[\r\n]/.test(rawAnon);
+  const forcedByQuery = (() => {
+    if (typeof window === "undefined") return false;
+    const sp = new URLSearchParams(window.location.search);
+    const v = sp.get("debug");
+    return sp.has("debug") && (v === null || v === "" || v === "1" || v === "true");
+  })();
+
+  // Aparece em DEV, quando o usuário força via ?debug=1, ou quando a config está quebrada.
+  const enabled = import.meta.env.DEV || forcedByQuery || source !== "env" || !url || !anon;
+  if (!enabled) return null;
+
+  const ok = !!client;
+  const buildStamp = React.useMemo(() => new Date().toISOString(), []);
 
   const [schemaHint, setSchemaHint] = React.useState<string>("");
   const [isTesting, setIsTesting] = React.useState(false);
@@ -90,14 +105,9 @@ export function SupabaseDebugBanner() {
     };
   }, [client]);
 
-  if (!enabled) return null;
-
-  const ok = !!client;
-  const anonHasNewlines = /[\r\n]/.test(rawAnon);
-  const source = getSupabaseConfigSource();
-
   async function testConnection() {
     if (!client) return;
+
 
     setIsTesting(true);
     setTestOutput("");
@@ -127,24 +137,27 @@ export function SupabaseDebugBanner() {
 
         const formatted = formatSupabaseError(error);
         setTestOutput(
-          [`Teste de conexão: FALHOU`, `Tabela testada: ${table}`, "---", formatted,
-           "---",
-           "Dicas rápidas:",
-           "- Erro de rede (ex: Failed to fetch): confira VITE_SUPABASE_URL e bloqueios de rede.",
-           "- 401/403: anon key inválida ou RLS bloqueando SELECT.",
-           "- 'does not exist': tabela/coluna diferente do esperado."]
-            .join("\n")
+          [
+            `Teste de conexão: FALHOU`,
+            `Tabela testada: ${table}`,
+            "---",
+            formatted,
+            "---",
+            "Dicas rápidas:",
+            "- Erro de rede (ex: Failed to fetch): confira VITE_SUPABASE_URL e bloqueios de rede.",
+            "- 401/403: anon key inválida ou RLS bloqueando SELECT.",
+            "- 'does not exist': tabela/coluna diferente do esperado.",
+          ].join("\n")
         );
         return;
       }
     } catch (e) {
-      setTestOutput(
-        [`Teste de conexão: EXCEÇÃO`, "---", formatSupabaseError(e)].join("\n")
-      );
+      setTestOutput([`Teste de conexão: EXCEÇÃO`, "---", formatSupabaseError(e)].join("\n"));
     } finally {
       setIsTesting(false);
     }
   }
+
 
   async function copyDiagnostic() {
     const payload = [
@@ -172,6 +185,11 @@ export function SupabaseDebugBanner() {
     <Alert variant={ok ? "default" : "destructive"} className="mb-4">
       <AlertTitle>Diagnóstico da conexão</AlertTitle>
       <AlertDescription className="space-y-2">
+        <div className="text-xs text-muted-foreground">
+          Build: <span className="font-mono">{buildStamp}</span>
+          {forcedByQuery ? " • debug=1" : null}
+          {import.meta.env.DEV ? " • DEV" : null}
+        </div>
         <div>
           Fonte da config: <strong>{source}</strong>
           {source === "env" ? " (Conectado via env)" : " (não configurado)"}

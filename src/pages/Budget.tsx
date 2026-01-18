@@ -14,7 +14,6 @@ import {
   YAxis,
 } from "recharts";
 
-import { SupabaseDebugBanner } from "@/components/debug/SupabaseDebugBanner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useFilters } from "@/contexts/filters-context";
@@ -245,8 +244,6 @@ export default function BudgetPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 p-6">
-      <SupabaseDebugBanner />
-
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Controle de Budget</h1>
         <p className="text-sm text-muted-foreground">
