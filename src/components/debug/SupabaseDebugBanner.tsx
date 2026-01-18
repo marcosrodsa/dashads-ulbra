@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getSupabaseClient, getSupabaseConfigSource } from "@/integrations/supabase/client";
+import { resolvePerformanceDailyColumns } from "@/integrations/supabase/performanceSchema";
 
 function maskUrl(url: string) {
   try {
@@ -19,6 +20,29 @@ export function SupabaseDebugBanner() {
   const url = rawUrl.trim();
   const anon = rawAnon.trim();
   const client = React.useMemo(() => getSupabaseClient(), []);
+
+  const [schemaHint, setSchemaHint] = React.useState<string>("");
+
+  React.useEffect(() => {
+    let mounted = true;
+    if (!client) return;
+
+    resolvePerformanceDailyColumns(client)
+      .then((cols) => {
+        if (!mounted) return;
+        setSchemaHint(
+          `fact_ads_performance_daily: dateCol=${cols.dateCol}, unitCol=${cols.businessUnitCol}, courseCol=${cols.courseCol}`
+        );
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setSchemaHint("");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [client]);
 
   if (!enabled) return null;
 
@@ -47,6 +71,7 @@ export function SupabaseDebugBanner() {
           </div>
         )}
         <div>getSupabaseClient(): {ok ? "OK" : "null"}</div>
+        {!!schemaHint && <div>Schema detectado: {schemaHint}</div>}
       </AlertDescription>
     </Alert>
   );

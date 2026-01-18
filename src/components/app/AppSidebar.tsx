@@ -101,6 +101,16 @@ export function AppSidebar() {
 
   const months = React.useMemo(() => monthOptions(18), []);
 
+  const columnsQuery = useQuery({
+    queryKey: ["filters", "performanceDailyColumns"],
+    queryFn: () => resolvePerformanceDailyColumns(client as SupabaseClient),
+    enabled: !!client,
+    staleTime: 1000 * 60 * 60, // 1h
+  });
+
+  const sameUnitAndCourse =
+    !!columnsQuery.data && columnsQuery.data.businessUnitCol === columnsQuery.data.courseCol;
+
   const businessUnitsQuery = useQuery({
     queryKey: ["filters", "businessUnits", asMonthKey(filters.month)],
     queryFn: () => fetchBusinessUnits(client as SupabaseClient, filters.month),
@@ -110,7 +120,7 @@ export function AppSidebar() {
   const coursesQuery = useQuery({
     queryKey: ["filters", "courses", asMonthKey(filters.month), filters.businessUnit],
     queryFn: () => fetchCourses(client as SupabaseClient, filters.month, filters.businessUnit),
-    enabled: !!client && !!filters.businessUnit,
+    enabled: !!client && !!filters.businessUnit && !sameUnitAndCourse,
   });
 
   return (
@@ -226,18 +236,27 @@ export function AppSidebar() {
                 <Select
                   value={filters.course ?? "__all__"}
                   onValueChange={(v) => setCourse(v === "__all__" ? null : v)}
-                  disabled={!filters.businessUnit}
+                  disabled={!filters.businessUnit || sameUnitAndCourse}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={filters.businessUnit ? "Todos" : "Selecione a unidade"} />
+                    <SelectValue
+                      placeholder={
+                        !filters.businessUnit
+                          ? "Selecione a unidade"
+                          : sameUnitAndCourse
+                            ? "Mesmo nível de Unidade"
+                            : "Todos"
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__all__">Todos</SelectItem>
-                    {coursesQuery.data?.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
+                    {!sameUnitAndCourse &&
+                      coursesQuery.data?.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               )}
