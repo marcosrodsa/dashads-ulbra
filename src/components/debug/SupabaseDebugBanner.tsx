@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { getSupabaseClient } from "@/integrations/supabase/client";
+import { getSupabaseClient, getSupabaseConfigSource } from "@/integrations/supabase/client";
 
 function maskUrl(url: string) {
   try {
@@ -24,11 +24,15 @@ export function SupabaseDebugBanner() {
 
   const ok = !!client;
   const anonHasNewlines = /[\r\n]/.test(rawAnon);
+  const source = getSupabaseConfigSource();
 
   return (
     <Alert variant={ok ? "default" : "destructive"} className="mb-4">
       <AlertTitle>Diagnóstico da conexão</AlertTitle>
       <AlertDescription className="space-y-1">
+        <div>
+          Fonte da config: <strong>{source}</strong>
+        </div>
         <div>
           VITE_SUPABASE_URL: {url ? maskUrl(url) : "(vazio)"} (rawLen={rawUrl.length},
           trimmedLen={url.length})
