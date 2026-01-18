@@ -1,8 +1,10 @@
 import * as React from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/sonner";
-import { getSupabaseClient, getSupabaseConfigSource } from "@/integrations/supabase/client";
+import { getSupabaseClient, getSupabaseConfigSource, resetSupabaseClient } from "@/integrations/supabase/client";
 import { resolvePerformanceDailyColumns } from "@/integrations/supabase/performanceSchema";
 
 function maskUrl(url: string) {
@@ -62,6 +64,25 @@ export function SupabaseDebugBanner() {
   const rawAnon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? "";
   const url = rawUrl.trim();
   const anon = rawAnon.trim();
+
+  const lsUrl = (() => {
+    if (typeof window === "undefined") return "";
+    try {
+      return (window.localStorage.getItem("SUPABASE_URL_OVERRIDE") ?? "").trim();
+    } catch {
+      return "";
+    }
+  })();
+  const lsAnon = (() => {
+    if (typeof window === "undefined") return "";
+    try {
+      return (window.localStorage.getItem("SUPABASE_ANON_KEY_OVERRIDE") ?? "").trim();
+    } catch {
+      return "";
+    }
+  })();
+  const hasOverride = !!lsUrl && !!lsAnon;
+
   const client = React.useMemo(() => getSupabaseClient(), []);
 
   const source = getSupabaseConfigSource();
@@ -84,11 +105,14 @@ export function SupabaseDebugBanner() {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   // Aparece em DEV, quando o usuário força via ?debug=1, ou quando a config está quebrada.
-  const enabled = viteDev || forcedByQuery || source !== "env" || !url || !anon;
+  const enabled = viteDev || forcedByQuery || source === "none" || !client;
   if (!enabled) return null;
 
   const ok = !!client;
   const buildStamp = React.useMemo(() => new Date().toISOString(), []);
+
+  const [manualUrl, setManualUrl] = React.useState<string>(lsUrl || url);
+  const [manualAnon, setManualAnon] = React.useState<string>(lsAnon || anon);
 
   const [schemaHint, setSchemaHint] = React.useState<string>("");
   const [isTesting, setIsTesting] = React.useState(false);
@@ -118,7 +142,6 @@ export function SupabaseDebugBanner() {
   async function testConnection() {
     if (!client) return;
 
-
     setIsTesting(true);
     setTestOutput("");
 
@@ -128,10 +151,7 @@ export function SupabaseDebugBanner() {
       for (const table of tryTables) {
         // "Select 1" não existe no cliente sem uma função SQL/RPC.
         // Esta query mínima testa: rede + URL/key + PostgREST + existência da tabela + RLS.
-        const { error, count } = await client
-          .from(table)
-          .select("*", { head: true, count: "exact" })
-          .limit(1);
+        const { error, count } = await client.from(table).select("*", { head: true, count: "exact" }).limit(1);
 
         if (!error) {
           setTestOutput(
@@ -154,7 +174,7 @@ export function SupabaseDebugBanner() {
             formatted,
             "---",
             "Dicas rápidas:",
-            "- Erro de rede (ex: Failed to fetch): confira VITE_SUPABASE_URL e bloqueios de rede.",
+            "- Erro de rede (ex: Failed to fetch): confira a URL e bloqueios de rede.",
             "- 401/403: anon key inválida ou RLS bloqueando SELECT.",
             "- 'does not exist': tabela/coluna diferente do esperado.",
           ].join("\n")
@@ -168,7 +188,6 @@ export function SupabaseDebugBanner() {
     }
   }
 
-
   async function copyDiagnostic() {
     const payload = [
       `Build: ${buildStamp}`,
@@ -176,8 +195,10 @@ export function SupabaseDebugBanner() {
       `Vite: mode=${viteMode}, DEV=${String(viteDev)}, PROD=${String(viteProd)}`,
       `VITE_* keys (${viteKeys.length}): ${viteKeys.join(", ") || "(nenhuma)"}`,
       `Fonte da config: ${source}`,
-      `VITE_SUPABASE_URL: ${url ? maskUrl(url) : "(vazio)"} (rawLen=${rawUrl.length}, trimmedLen=${url.length})`,
-      `VITE_SUPABASE_ANON_KEY: ${anon ? `presente (len=${anon.length})` : "(vazio)"} (rawLen=${rawAnon.length})`,
+      `Override localStorage: ${hasOverride ? "ATIVO" : "(não)"}`,
+      hasOverride ? `Override URL: ${maskUrl(lsUrl)}` : null,
+      `VITE_SUPABASE_URL (env): ${url ? maskUrl(url) : "(vazio)"} (rawLen=${rawUrl.length}, trimmedLen=${url.length})`,
+      `VITE_SUPABASE_ANON_KEY (env): ${anon ? `presente (len=${anon.length})` : "(vazio)"} (rawLen=${rawAnon.length})`,
       anonHasNewlines ? "Aviso: anon key contém quebras de linha" : null,
       `getSupabaseClient(): ${ok ? "OK" : "null"}`,
       schemaHint ? `Schema detectado: ${schemaHint}` : null,
@@ -191,6 +212,39 @@ export function SupabaseDebugBanner() {
       toast.success("Diagnóstico copiado");
     } catch {
       toast.error("Não consegui copiar automaticamente. Copie manualmente no bloco abaixo.");
+    }
+  }
+
+  async function saveManualConfig() {
+    if (typeof window === "undefined") return;
+    const nextUrl = manualUrl.trim();
+    const nextAnon = manualAnon.trim();
+    if (!nextUrl || !nextAnon) {
+      toast.error("Preencha URL e anon key");
+      return;
+    }
+
+    try {
+      window.localStorage.setItem("SUPABASE_URL_OVERRIDE", nextUrl);
+      window.localStorage.setItem("SUPABASE_ANON_KEY_OVERRIDE", nextAnon);
+      resetSupabaseClient();
+      toast.success("Config salva. Recarregando…");
+      window.location.reload();
+    } catch {
+      toast.error("Não consegui salvar no localStorage");
+    }
+  }
+
+  async function clearManualConfig() {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.removeItem("SUPABASE_URL_OVERRIDE");
+      window.localStorage.removeItem("SUPABASE_ANON_KEY_OVERRIDE");
+      resetSupabaseClient();
+      toast.success("Override removido. Recarregando…");
+      window.location.reload();
+    } catch {
+      toast.error("Não consegui limpar o localStorage");
     }
   }
 
@@ -216,23 +270,66 @@ export function SupabaseDebugBanner() {
 
         <div>
           Fonte da config: <strong>{source}</strong>
-          {source === "env" ? " (Conectado via env)" : " (não configurado)"}
+          {source === "env" ? " (Conectado via env)" : source === "override" ? " (Override via localStorage)" : " (não configurado)"}
         </div>
+
         {source !== "env" && (
-          <div>
-            Ação: configure <strong>VITE_SUPABASE_URL</strong> e <strong>VITE_SUPABASE_ANON_KEY</strong> em Secrets e
-            recarregue o preview.
+          <div className="space-y-2">
+            <div>
+              Como não existe a seção <strong>Secrets</strong> aqui, você pode usar um <strong>override local</strong> (salvo no
+              browser) para destravar o app.
+            </div>
+
+            <div className="grid gap-2 rounded-md border border-input bg-muted p-3">
+              <div className="grid gap-1">
+                <Label htmlFor="sb-url">URL</Label>
+                <Input
+                  id="sb-url"
+                  value={manualUrl}
+                  onChange={(e) => setManualUrl(e.target.value)}
+                  placeholder="https://xxxx.supabase.co"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label htmlFor="sb-anon">Anon key</Label>
+                <Input
+                  id="sb-anon"
+                  value={manualAnon}
+                  onChange={(e) => setManualAnon(e.target.value)}
+                  placeholder="eyJhbGciOi..."
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" onClick={saveManualConfig}>
+                  Salvar override
+                </Button>
+                <Button variant="outline" size="sm" onClick={clearManualConfig} disabled={!hasOverride}>
+                  Remover override
+                </Button>
+                <div className="text-xs text-muted-foreground">
+                  Status: {hasOverride ? "ATIVO" : "(inativo)"}
+                </div>
+              </div>
+            </div>
           </div>
         )}
+
         <div>
-          VITE_SUPABASE_URL: {url ? maskUrl(url) : "(vazio)"} (rawLen={rawUrl.length}, trimmedLen={url.length})
+          VITE_SUPABASE_URL (env): {url ? maskUrl(url) : "(vazio)"} (rawLen={rawUrl.length}, trimmedLen={url.length})
         </div>
         <div>
-          VITE_SUPABASE_ANON_KEY: {anon ? `presente (len=${anon.length})` : "(vazio)"} (rawLen={rawAnon.length})
+          VITE_SUPABASE_ANON_KEY (env): {anon ? `presente (len=${anon.length})` : "(vazio)"} (rawLen={rawAnon.length})
         </div>
         {anonHasNewlines && (
-          <div>Aviso: a anon key contém quebras de linha (\\n/\\r). Re-salve a secret em uma única linha.</div>
+          <div>Aviso: a anon key contém quebras de linha (\\n/\\r). Re-salve a key em uma única linha.</div>
         )}
+
         <div className="flex flex-wrap items-center gap-2">
           <div>getSupabaseClient(): {ok ? "OK" : "null"}</div>
           <Button variant="outline" size="sm" onClick={testConnection} disabled={!ok || isTesting}>
@@ -242,6 +339,7 @@ export function SupabaseDebugBanner() {
             Copiar diagnóstico
           </Button>
         </div>
+
         {!!testOutput && (
           <pre className="whitespace-pre-wrap break-words rounded-md border border-input bg-muted p-2 text-xs text-foreground">
             {testOutput}
