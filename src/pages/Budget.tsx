@@ -81,7 +81,7 @@ export default function BudgetPage() {
     queryKey: [
       "budget",
       "data",
-      monthStart.toISOString(),
+      format(monthStart, "yyyy-MM"),
       filters.platform ?? "__all__",
       filters.businessUnit ?? "__all__",
     ],
@@ -89,6 +89,9 @@ export default function BudgetPage() {
     queryFn: async () => {
       const budgetCols = budgetColsQuery.data!;
       const perfCols = perfColsQuery.data!;
+
+      const fromDate = format(monthStart, "yyyy-MM-dd");
+      const toDate = format(monthEnd, "yyyy-MM-dd");
 
       // --- Budget (planejado)
       const budgetSelectCols = Array.from(
@@ -102,8 +105,8 @@ export default function BudgetPage() {
       let budgetQ = (client as SupabaseClient)
         .from("fact_ads_budget")
         .select(budgetSelectCols)
-        .gte(budgetCols.monthCol, monthStart.toISOString())
-        .lte(budgetCols.monthCol, monthEnd.toISOString());
+        .gte(budgetCols.monthCol, fromDate)
+        .lte(budgetCols.monthCol, toDate);
 
       if (budgetCols.platformCol && filters.platform) {
         budgetQ = budgetQ.eq(budgetCols.platformCol, filters.platform);
@@ -124,8 +127,8 @@ export default function BudgetPage() {
       let perfQ = (client as SupabaseClient)
         .from("fact_ads_performance_daily")
         .select(perfSelectCols)
-        .gte(perfCols.dateCol, monthStart.toISOString())
-        .lte(perfCols.dateCol, monthEnd.toISOString());
+        .gte(perfCols.dateCol, fromDate)
+        .lte(perfCols.dateCol, toDate);
 
       if (perfCols.platformCol && filters.platform) {
         perfQ = perfQ.eq(perfCols.platformCol, filters.platform);
