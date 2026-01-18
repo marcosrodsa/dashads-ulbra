@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/sonner";
 import { getSupabaseClient, getSupabaseConfigSource } from "@/integrations/supabase/client";
 import { resolvePerformanceDailyColumns } from "@/integrations/supabase/performanceSchema";
 
@@ -145,7 +146,29 @@ export function SupabaseDebugBanner() {
     }
   }
 
+  async function copyDiagnostic() {
+    const payload = [
+      `Fonte da config: ${source}`,
+      `VITE_SUPABASE_URL: ${url ? maskUrl(url) : "(vazio)"} (rawLen=${rawUrl.length}, trimmedLen=${url.length})`,
+      `VITE_SUPABASE_ANON_KEY: ${anon ? `presente (len=${anon.length})` : "(vazio)"} (rawLen=${rawAnon.length})`,
+      anonHasNewlines ? "Aviso: anon key contém quebras de linha" : null,
+      `getSupabaseClient(): ${ok ? "OK" : "null"}`,
+      schemaHint ? `Schema detectado: ${schemaHint}` : null,
+      testOutput ? "---\n" + testOutput : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    try {
+      await navigator.clipboard.writeText(payload);
+      toast.success("Diagnóstico copiado");
+    } catch {
+      toast.error("Não consegui copiar automaticamente. Copie manualmente no bloco abaixo.");
+    }
+  }
+
   return (
+
     <Alert variant={ok ? "default" : "destructive"} className="mb-4">
       <AlertTitle>Diagnóstico da conexão</AlertTitle>
       <AlertDescription className="space-y-2">
@@ -174,6 +197,9 @@ export function SupabaseDebugBanner() {
           <div>getSupabaseClient(): {ok ? "OK" : "null"}</div>
           <Button variant="outline" size="sm" onClick={testConnection} disabled={!ok || isTesting}>
             {isTesting ? "Testando…" : "Testar conexão"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={copyDiagnostic}>
+            Copiar diagnóstico
           </Button>
         </div>
         {!!testOutput && (
