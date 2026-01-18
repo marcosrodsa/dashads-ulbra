@@ -1,4 +1,5 @@
 import * as React from "react";
+import { SupabaseDebugBanner } from "@/components/debug/SupabaseDebugBanner";
 import { useFilters } from "@/contexts/filters-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -7,6 +8,8 @@ export default function BudgetPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 p-6">
+      <SupabaseDebugBanner />
+
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Controle de Budget</h1>
         <p className="text-sm text-muted-foreground">
