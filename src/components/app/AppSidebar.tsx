@@ -265,13 +265,13 @@ export function AppSidebar() {
 
             {!client && !collapsed && (
               <p className="text-xs text-destructive">
-                Supabase não configurado: confira os Secrets (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).
+                Supabase n e3o configurado: confira os Secrets (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY) e recarregue o preview.
               </p>
             )}
 
             {businessUnitsQuery.isError && client && !collapsed && (
               <p className="text-xs text-destructive">
-                Erro ao carregar opções (verifique credenciais/tabelas/coluna de data).
+                Erro ao carregar op e7 f5es: {(businessUnitsQuery.error as any)?.message ?? "desconhecido"}
               </p>
             )}
 
