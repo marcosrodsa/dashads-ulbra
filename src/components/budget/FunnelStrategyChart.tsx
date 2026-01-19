@@ -55,7 +55,7 @@ export function FunnelStrategyChart({ data }: FunnelStrategyChartProps) {
             name,
             value: values.spend, // Focando no realizado
             budget: values.budget,
-        })).filter(item => item.value > 0); // Mostrar apenas o que tem gasto
+        }));
     }, [data]);
 
     const totalSpend = aggregated.reduce((acc, curr) => acc + curr.value, 0);

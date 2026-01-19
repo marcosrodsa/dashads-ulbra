@@ -8,7 +8,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, ChevronDown } from "lucide-react";
+import { ChevronRight, ChevronDown, Calendar } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 // Reutilizar tipo se exportado, ou redefinir compativel
@@ -24,6 +24,7 @@ export type TreeDataRow = {
 
 interface InvestmentTreeTableProps {
     data: TreeDataRow[];
+    onViewWeekly: (node: TreeNode) => void;
 }
 
 type NodeStatus = "success" | "warning" | "error";
@@ -53,7 +54,7 @@ function pct(v: number) {
     return new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(v);
 }
 
-export function InvestmentTreeTable({ data }: InvestmentTreeTableProps) {
+export function InvestmentTreeTable({ data, onViewWeekly }: InvestmentTreeTableProps) {
     const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
 
     const toggle = (id: string) => {
@@ -196,7 +197,8 @@ export function InvestmentTreeTable({ data }: InvestmentTreeTableProps) {
     }, [data]);
 
     // Recursive Renderer
-    const renderNode = (node: TreeNode) => {
+    // Recursive Renderer
+    const renderNode = (node: TreeNode, isDimmed: boolean = false) => {
         const isOpen = expanded.has(node.id);
         const utilization = node.budget > 0 ? (node.spend / node.budget) : 0;
         const variance = node.budget - node.spend; // Positivo = Sobrou budget (Good), Negativo = Estourou (Bad)
@@ -207,12 +209,28 @@ export function InvestmentTreeTable({ data }: InvestmentTreeTableProps) {
         else if (utilization < 0.8) status = "warning"; // Underpacing
 
         const statusColor = status === "error" ? "text-red-500" : status === "warning" ? "text-yellow-500" : "text-emerald-500";
-        const statusLabel = status === "error" ? "Over" : status === "warning" ? "Under" : "On Track";
+        // PT-BR Status Translations
+        const statusLabel = status === "error" ? "Acima" : status === "warning" ? "Abaixo" : "Ideal";
+
+        // Progress Bar Color
+        const progressBarColor = status === "error" ? "bg-red-500" : status === "warning" ? "bg-yellow-500" : "bg-emerald-500";
+        const progressBgColor = status === "error" ? "bg-red-100" : status === "warning" ? "bg-yellow-100" : "bg-emerald-100";
+        const percentValue = Math.min(utilization * 100, 100);
+
+        // Calculate Children Dimming Logic
+        // IF I am dimmed, my children are dimmed.
+        // IF I am NOT dimmed, check if any of my children are expanded.
+        // If yes, dim the non-expanded ones.
+        const childrenLoaded = node.children && node.children.length > 0;
+        let childrenHasExpanded = false;
+        if (childrenLoaded) {
+            childrenHasExpanded = node.children.some(c => expanded.has(c.id));
+        }
 
         return (
             <React.Fragment key={node.id}>
                 <TableRow
-                    className="hover:bg-muted/50 cursor-pointer"
+                    className={`hover:bg-muted/50 cursor-pointer transition-opacity duration-300 ${isDimmed ? 'opacity-25 hover:opacity-100' : 'opacity-100'}`}
                     onClick={() => !node.isLeaf && toggle(node.id)}
                 >
                     <TableCell className="py-2">
@@ -228,21 +246,47 @@ export function InvestmentTreeTable({ data }: InvestmentTreeTableProps) {
                             </span>
                         </div>
                     </TableCell>
-                    <TableCell className="text-right py-2">{brl(node.budget)}</TableCell>
-                    <TableCell className="text-right py-2">{brl(node.spend)}</TableCell>
-                    <TableCell className="text-right py-2">
-                        <Badge variant="outline" className={utilization > 1 ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}>
-                            {pct(utilization)}
-                        </Badge>
+                    <TableCell className="text-right py-2 font-mono text-sm">{brl(node.budget)}</TableCell>
+                    <TableCell className="text-right py-2 font-mono text-sm">{brl(node.spend)}</TableCell>
+                    <TableCell className="text-right py-2" style={{ minWidth: '140px' }}>
+                        <div className="flex flex-col gap-1 w-full">
+                            <div className="flex justify-end">
+                                <span className={`text-xs font-semibold ${status === "error" ? "text-red-700" : status === "warning" ? "text-yellow-700" : "text-emerald-700"}`}>
+                                    {pct(utilization)}
+                                </span>
+                            </div>
+                            <div className={`h-1.5 w-full rounded-full ${progressBgColor} overflow-hidden`}>
+                                <div
+                                    className={`h-full rounded-full ${progressBarColor}`}
+                                    style={{ width: `${percentValue}%` }}
+                                />
+                            </div>
+                        </div>
                     </TableCell>
-                    <TableCell className={`text-right py-2 ${variance < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                    <TableCell className={`text-right py-2 font-mono text-sm ${variance < 0 ? "text-red-600" : "text-emerald-600"}`}>
                         {brl(variance)}
                     </TableCell>
                     <TableCell className="text-center py-2">
                         <span className={`text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
                     </TableCell>
+                    <TableCell className="text-center py-2">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-primary"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onViewWeekly(node);
+                            }}
+                        >
+                            <Calendar className="h-4 w-4" />
+                        </Button>
+                    </TableCell>
                 </TableRow>
-                {isOpen && !node.isLeaf && node.children.map(child => renderNode(child))}
+                {isOpen && !node.isLeaf && node.children.map(child => {
+                    const shouldDimChild = isDimmed || (childrenHasExpanded && !expanded.has(child.id));
+                    return renderNode(child, shouldDimChild);
+                })}
             </React.Fragment>
         );
     };
@@ -258,10 +302,15 @@ export function InvestmentTreeTable({ data }: InvestmentTreeTableProps) {
                         <TableHead className="text-right">Utilização</TableHead>
                         <TableHead className="text-right">Variância (R$)</TableHead>
                         <TableHead className="text-center">Status</TableHead>
+                        <TableHead className="text-center w-[50px]">Semana</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {rootNodes.map(node => renderNode(node))}
+                    {rootNodes.map(node => {
+                        const hasExpandedRoot = rootNodes.some(n => expanded.has(n.id));
+                        const shouldDim = hasExpandedRoot && !expanded.has(node.id);
+                        return renderNode(node, shouldDim);
+                    })}
                 </TableBody>
             </Table>
         </div>

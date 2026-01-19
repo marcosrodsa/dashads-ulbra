@@ -1,5 +1,5 @@
 import * as React from "react";
-import { endOfMonth, format, isSameMonth, startOfMonth } from "date-fns";
+import { endOfMonth, format, isSameMonth, startOfMonth, startOfWeek, endOfWeek } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -60,6 +60,12 @@ function brl(v: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 }
 
+// State type for Weekly Drawer
+type SelectedUnitState = {
+  unit: string;
+  rows: WeeklyViewRow[];
+} | null;
+
 function pct(v: number) {
   return new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(v);
 }
@@ -74,7 +80,7 @@ export default function BudgetPage() {
   const client = React.useMemo(() => getSupabaseClient(), []);
 
   // Estado para drill-down semanal
-  const [selectedUnit, setSelectedUnit] = React.useState<string | null>(null);
+  const [selectedUnit, setSelectedUnit] = React.useState<SelectedUnitState>(null);
 
   const monthStart = startOfMonth(filters.month);
   const monthEnd = endOfMonth(filters.month);
@@ -93,14 +99,27 @@ export default function BudgetPage() {
       format(monthStart, "yyyy-MM"),
       filters.platform ?? "__all__",
       filters.businessUnit ?? "__all__",
+      filters.businessUnit ?? "__all__",
       filters.course ?? "__all__",
+      filters.week ?? "__all__",
     ],
     enabled: !!client && !!budgetColsQuery.data,
     queryFn: async () => {
       const budgetCols = budgetColsQuery.data!;
 
-      const fromDate = format(monthStart, "yyyy-MM-dd");
-      const toDate = format(monthEnd, "yyyy-MM-dd");
+      let fromDate: string;
+      let toDate: string;
+
+      if (filters.week) {
+        // If week filter is active, restrict range to that week
+        const wDate = new Date(filters.week);
+        fromDate = format(startOfWeek(wDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+        toDate = format(endOfWeek(wDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+      } else {
+        // Otherwise use the full month view
+        fromDate = format(startOfWeek(monthStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
+        toDate = format(endOfWeek(monthEnd, { weekStartsOn: 1 }), "yyyy-MM-dd");
+      }
 
       // --- Budget (planejado)
       const budgetSelectCols = Array.from(
@@ -128,7 +147,7 @@ export default function BudgetPage() {
 
       // --- Realizado (view semanal)
       let weeklyQ = (client as SupabaseClient)
-        .from("vw_dashboard_semanal_detalhado")
+        .from("vw_dashboard_semanal_detalhado2")
         .select(
           "data_inicio_semana,semana_label,unidade,plataforma,curso,orcamento_semanal,gasto_real,diferenca,leads,percentual_consumido",
         )
@@ -492,22 +511,7 @@ export default function BudgetPage() {
             return `${Number(diff) > 0 ? "+" : ""}${diff}pp`;
           })()}
         />
-        <KpiCard
-          title="Gasto Presencial"
-          value={isLoading ? "…" : kpis?.spendSemEad != null ? brl(kpis.spendSemEad) : "-"}
-          hint="Total sem EAD"
-          tooltip="Gasto acumulado excluindo unidades de EAD. Útil para analisar o investimento apenas no ensino presencial."
-          status={(() => {
-            if (isLoading || kpis?.spendSemEad == null || kpis?.spendMonth == null) return "neutral";
-            return "neutral";
-          })()}
-          trendLabel={(() => {
-            if (isLoading || kpis?.spendSemEad == null || kpis?.spendMonth == null || kpis.spendMonth === 0) return undefined;
-            const eadSpend = kpis.spendMonth - kpis.spendSemEad;
-            const eadPct = (eadSpend / kpis.spendMonth) * 100;
-            return `EAD: ${eadPct.toFixed(0)}%`;
-          })()}
-        />
+
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2" aria-label="Gráficos">
@@ -642,11 +646,171 @@ export default function BudgetPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="grid h-56 place-items-center rounded-md border border-dashed text-sm text-muted-foreground">
-                Carregando…
+              <div className="grid h-64 place-items-center rounded-md border border-dashed text-sm text-muted-foreground">
+                Carregando… (Verifique se vw_dashboard_semanal_detalhado existe)
               </div>
             ) : (
-              <InvestmentTreeTable data={budgetDataQuery.data?.weeklyRows ?? []} />
+              <InvestmentTreeTable
+                data={budgetDataQuery.data?.weeklyRows ?? []}
+                onViewWeekly={(node) => {
+                  // Create WeeklyData from Node
+                  const rows = budgetDataQuery.data?.weeklyRows ?? [];
+
+                  // Filter rows based on Node Context
+                  let filtered = rows;
+
+                  // Logic based on level or ID analysis
+                  // Level 0: Group (EAD, Branding, Mkt Conversão)
+                  // Level 1: Subgroup or Unit/Platform
+                  // Level 2: Course or Platform
+                  // Level 3: Platform
+
+                  // Simplistic filtering by matching strings - robust enough for display
+                  const id = node.id.toLowerCase();
+                  const label = node.label.toLowerCase();
+
+                  if (id === "1-ead" || node.level === 0 && label.includes("ead")) {
+                    filtered = rows.filter(r =>
+                      (r.unidade?.toLowerCase().includes("ead") || r.curso?.toLowerCase().includes("ead"))
+                    );
+                  } else if (id === "2-branding" || node.level === 0 && label.includes("branding")) {
+                    filtered = rows.filter(r =>
+                      (r.funnel_stage?.toLowerCase().includes("brand") || r.unidade?.toLowerCase().includes("branding") || r.unidade?.toLowerCase().includes("institucional"))
+                    );
+                  } else if (id === "3-conversion") {
+                    // Conversão = NOT EAD AND NOT Branding
+                    filtered = rows.filter(r => {
+                      const u = r.unidade?.toLowerCase() || "";
+                      const c = r.curso?.toLowerCase() || "";
+                      const f = r.funnel_stage?.toLowerCase() || "";
+
+                      const isEad = u.includes("ead") || c.includes("ead") || u.startsWith("ead ");
+                      const isBranding = f.includes("brand") || u.includes("branding") || u.includes("institucional");
+
+                      return !isEad && !isBranding;
+                    });
+                  } else if (id.startsWith("ead-")) {
+                    // EAD Platform specific
+                    const platform = node.label.toLowerCase();
+                    filtered = rows.filter(r =>
+                      (r.unidade?.toLowerCase().includes("ead") || r.curso?.toLowerCase().includes("ead")) &&
+                      r.plataforma?.toLowerCase() === platform
+                    );
+                  } else if (id.startsWith("brand-")) {
+                    // Branding Platform specific
+                    const platform = node.label.toLowerCase();
+                    filtered = rows.filter(r =>
+                      (r.funnel_stage?.toLowerCase().includes("brand") || r.unidade?.toLowerCase().includes("branding") || r.unidade?.toLowerCase().includes("institucional")) &&
+                      r.plataforma?.toLowerCase() === platform
+                    );
+                  } else {
+                    // Deeper levels
+                    if (node.level === 1 && id.includes("med")) {
+                      filtered = rows.filter(r => r.curso?.toLowerCase().includes("medicina"));
+                    }
+                    else if (id === "3.1-med") {
+                      filtered = rows.filter(r => r.curso?.toLowerCase().includes("medicina"));
+                    }
+                    else if (id.startsWith("med-")) {
+                      // Medicina Platform specific
+                      const platform = node.label.toLowerCase();
+                      filtered = rows.filter(r =>
+                        r.curso?.toLowerCase().includes("medicina") &&
+                        r.plataforma?.toLowerCase() === platform
+                      );
+                    }
+                    else if (id === "3.2-courses") {
+                      // 3.2 Cursos = Conversion (ALL) - Medicina
+                      filtered = rows.filter(r => {
+                        const u = r.unidade?.toLowerCase() || "";
+                        const c = r.curso?.toLowerCase() || "";
+                        const f = r.funnel_stage?.toLowerCase() || "";
+
+                        const isEad = u.includes("ead") || c.includes("ead") || u.startsWith("ead ");
+                        const isBranding = f.includes("brand") || u.includes("branding") || u.includes("institucional");
+                        const isMed = c.includes("medicina");
+
+                        return !isEad && !isBranding && !isMed;
+                      });
+                    }
+                    else if (id.startsWith("unit-")) {
+                      // Filter by label appearance in rows + Context of "3.2 Cursos" (Not EAD, Not Branding, Not Med)
+                      const search = node.label.toLowerCase();
+
+                      const isTargetGroup = (r: any) => {
+                        const u = r.unidade?.toLowerCase() || "";
+                        const c = r.curso?.toLowerCase() || "";
+                        const f = r.funnel_stage?.toLowerCase() || "";
+
+                        const isEad = u.includes("ead") || c.includes("ead") || u.startsWith("ead ");
+                        const isBranding = f.includes("brand") || u.includes("branding") || u.includes("institucional");
+                        const isMed = c.includes("medicina");
+
+                        return !isEad && !isBranding && !isMed;
+                      };
+
+                      if (node.level === 2) {
+                        // Likely a Unit in "3.2 Cursos" -> "Ulbra Canoas"
+                        filtered = rows.filter(r => r.unidade?.toLowerCase() === search && isTargetGroup(r));
+                      } else if (node.level === 3) {
+                        // Level 3: Unit -> Course
+                        // ID format: `unit-${unitLabel}-${courseLabel}`
+                        // We must parse the ID to get the UNIT name, because "Geral" or "Psicologia" interacts with multiple units.
+                        const parts = id.split("-");
+                        if (parts.length >= 3) {
+                          // parts[0] = "unit"
+                          // parts[1] = Unit Name (might contain dashes? NO, unit key logic in TreeTable uses unitLabel directly. If unit has dashes, we might have issues. Assuming logic matches TreeTable creation)
+                          // TreeTable construction: id: `unit-${unitLabel}-${courseLabel}`
+                          const unitName = parts[1];
+                          const courseName = parts.slice(2).join("-"); // Course name might have dashes
+
+                          filtered = rows.filter(r =>
+                            r.unidade?.toLowerCase() === unitName.toLowerCase() &&
+                            (r.curso?.toLowerCase() === courseName.toLowerCase() || (courseName.toLowerCase() === 'geral' && r.curso === null)) &&
+                            isTargetGroup(r)
+                          );
+                        } else {
+                          // Fallback if ID parsing fails
+                          filtered = rows.filter(r => (r.curso?.toLowerCase() === search || (search === 'geral' && r.curso === null)) && isTargetGroup(r));
+                        }
+                      } else if (node.level === 4) {
+                        // Level 4: Unit -> Course -> Platform
+                        // ID format: `unit-${unitLabel}-${courseLabel}-${platform}`
+                        const parts = id.split("-");
+                        if (parts.length >= 4) {
+                          const unitName = parts[1];
+                          const platformName = parts[parts.length - 1]; // Last part is platform
+                          const courseName = parts.slice(2, parts.length - 1).join("-");
+
+                          filtered = rows.filter(r =>
+                            r.unidade?.toLowerCase() === unitName.toLowerCase() &&
+                            (r.curso?.toLowerCase() === courseName.toLowerCase() || (courseName.toLowerCase() === 'geral' && r.curso === null)) &&
+                            r.plataforma?.toLowerCase() === platformName.toLowerCase() &&
+                            isTargetGroup(r)
+                          );
+                        }
+                      }
+                    }
+                  }
+
+                  // Fallback: If level >= 2 and we are unsure, just filter by text matching unit or course column
+                  if (node.level >= 2 && !id.startsWith("unit-") && !id.startsWith("med-")) {
+                    const txt = node.label.toLowerCase();
+                    filtered = rows.filter(r =>
+                      r.unidade?.toLowerCase() === txt ||
+                      r.curso?.toLowerCase() === txt ||
+                      r.plataforma?.toLowerCase() === txt
+                    );
+                  }
+
+                  setSelectedUnit({
+                    unit: node.label,
+                    planned: node.budget,
+                    real: node.spend,
+                    rows: filtered
+                  });
+                }}
+              />
             )}
           </CardContent>
         </Card>
@@ -660,17 +824,13 @@ export default function BudgetPage() {
       <WeeklyDrawer
         open={selectedUnit !== null}
         onOpenChange={(open) => !open && setSelectedUnit(null)}
-        unitName={selectedUnit}
+        unitName={selectedUnit?.unit ?? null}
         weeklyData={(() => {
           if (!selectedUnit) return [];
-          // Agregar dados semanais para a unidade selecionada
-          const weeklyRows = budgetDataQuery.data?.weeklyRows ?? [];
           const byWeek = new Map<string, { semana: string; weekStart: string; orcado: number; realizado: number }>();
 
-          for (const r of weeklyRows as any[]) {
-            const unit = String(r?.unidade ?? "").trim();
-            if (unit !== selectedUnit) continue;
-
+          for (const r of selectedUnit.rows) {
+            // Already filtered by onViewWeekly logic
             const weekStart = String(r?.data_inicio_semana ?? "").slice(0, 10);
             if (!weekStart) continue;
 

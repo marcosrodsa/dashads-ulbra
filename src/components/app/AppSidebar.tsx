@@ -1,7 +1,8 @@
 import * as React from "react";
-import { BarChart3, Gauge } from "lucide-react";
+import { BarChart3, Gauge, Filter } from "lucide-react";
 import { useLocation } from "react-router-dom";
 
+import { useFilters } from "@/contexts/filters-context";
 import { NavLink } from "@/components/NavLink";
 import {
   Sidebar,
@@ -28,6 +29,7 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const client = getSupabaseClient();
+  const { toggleFilters } = useFilters();
 
   return (
     <Sidebar collapsible="icon" className={collapsed ? "w-14" : "w-80"}>
@@ -36,9 +38,7 @@ export function AppSidebar() {
           {!collapsed ? (
             <img src="/university-logo.png" alt="Logo" className="h-12 w-auto object-contain" />
           ) : (
-            <div className="grid size-8 place-items-center rounded-md bg-white text-primary">
-              <span className="text-xs font-bold">U</span>
-            </div>
+            <img src="/ulbra-logo-icon.png" alt="Logo" className="size-8 object-contain" />
           )}
         </div>
       </SidebarHeader>
@@ -62,6 +62,13 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+
+              <SidebarMenuItem>
+                <SidebarMenuButton tooltip="Filtros" onClick={toggleFilters}>
+                  <Filter className="size-4" />
+                  {!collapsed && <span>Filtros</span>}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

@@ -2,14 +2,13 @@ import * as React from "react";
 import { startOfMonth } from "date-fns";
 
 export type AdsPlatform = string;
-export type FunnelStage = "all" | "awareness" | "consideration" | "conversion";
 
 export type FiltersState = {
   month: Date; // first day of the selected month
   businessUnit: string | null;
   course: string | null;
   platform: AdsPlatform | null;
-  funnelStage: FunnelStage;
+  week: string | null; // ISO date of week start
   excludeEad: boolean;
 };
 
@@ -19,9 +18,12 @@ type FiltersContextValue = {
   setBusinessUnit: (businessUnit: string | null) => void;
   setCourse: (course: string | null) => void;
   setPlatform: (platform: AdsPlatform | null) => void;
-  setFunnelStage: (stage: FunnelStage) => void;
+  setWeek: (week: string | null) => void;
   setExcludeEad: (exclude: boolean) => void;
   clear: () => void;
+  isFiltersOpen: boolean;
+  setIsFiltersOpen: (isOpen: boolean) => void;
+  toggleFilters: () => void;
 };
 
 const FiltersContext = React.createContext<FiltersContextValue | null>(null);
@@ -31,15 +33,18 @@ const defaultFilters = (): FiltersState => ({
   businessUnit: null,
   course: null,
   platform: null,
-  funnelStage: "all",
+  week: null,
   excludeEad: false,
 });
 
 export function FiltersProvider({ children }: { children: React.ReactNode }) {
   const [filters, setFilters] = React.useState<FiltersState>(() => defaultFilters());
+  const [isFiltersOpen, setIsFiltersOpen] = React.useState(false);
+
+  const toggleFilters = React.useCallback(() => setIsFiltersOpen((p) => !p), []);
 
   const setMonth = React.useCallback((month: Date) => {
-    setFilters((prev) => ({ ...prev, month: startOfMonth(month) }));
+    setFilters((prev) => ({ ...prev, month: startOfMonth(month), week: null }));
   }, []);
 
   const setBusinessUnit = React.useCallback((businessUnit: string | null) => {
@@ -54,8 +59,8 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
     setFilters((prev) => ({ ...prev, platform }));
   }, []);
 
-  const setFunnelStage = React.useCallback((funnelStage: FunnelStage) => {
-    setFilters((prev) => ({ ...prev, funnelStage }));
+  const setWeek = React.useCallback((week: string | null) => {
+    setFilters((prev) => ({ ...prev, week }));
   }, []);
 
   const setExcludeEad = React.useCallback((excludeEad: boolean) => {
@@ -67,17 +72,41 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = React.useMemo<FiltersContextValue>(
-    () => ({ filters, setMonth, setBusinessUnit, setCourse, setPlatform, setFunnelStage, setExcludeEad, clear }),
-    [filters, setMonth, setBusinessUnit, setCourse, setPlatform, setFunnelStage, setExcludeEad, clear],
+    () => ({
+      filters,
+      setMonth,
+      setBusinessUnit,
+      setCourse,
+      setPlatform,
+      setWeek,
+      setExcludeEad,
+      clear,
+      isFiltersOpen,
+      setIsFiltersOpen,
+      toggleFilters,
+    }),
+    [
+      filters,
+      setMonth,
+      setBusinessUnit,
+      setCourse,
+      setPlatform,
+      setWeek,
+      setExcludeEad,
+      clear,
+      isFiltersOpen,
+      setIsFiltersOpen,
+      toggleFilters,
+    ],
   );
 
   return <FiltersContext.Provider value={value}>{children}</FiltersContext.Provider>;
 }
 
 export function useFilters() {
-  const ctx = React.useContext(FiltersContext);
-  if (!ctx) throw new Error("useFilters must be used within FiltersProvider");
-  return ctx;
+  const context = React.useContext(FiltersContext);
+  if (!context) {
+    throw new Error("useFilters must be used within a FiltersProvider");
+  }
+  return context;
 }
-
-
