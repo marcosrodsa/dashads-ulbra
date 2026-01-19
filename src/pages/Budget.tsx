@@ -15,7 +15,13 @@ import {
 } from "recharts";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { InvestmentMatrix, type InvestmentMatrixUnitGroup } from "@/components/budget/InvestmentMatrix";
+import { type InvestmentMatrixUnitGroup } from "@/components/budget/InvestmentMatrix";
+import { InvestmentTreeTable } from "@/components/budget/InvestmentTreeTable";
+import { KpiCard, getPacingStatus, type KpiStatus } from "@/components/budget/KpiCard";
+import { WeeklyDrawer, type WeeklyData } from "@/components/budget/WeeklyDrawer";
+import { WeeklyComparisonChart } from "@/components/budget/WeeklyComparisonChart";
+import { FunnelStrategyChart } from "@/components/budget/FunnelStrategyChart";
+import { ChartTooltip } from "@/components/budget/ChartTooltip";
 import { useFilters } from "@/contexts/filters-context";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { resolveBudgetColumns } from "@/integrations/supabase/budgetSchema";
@@ -31,11 +37,14 @@ type WeeklyViewRow = {
   diferenca: number | string | null;
   leads: number | string | null;
   percentual_consumido: number | string | null;
+  funnel_stage?: string | null;
+  location?: string | null;
 };
 
 type BudgetKpis = {
   plannedMonth: number | null;
   spendMonth: number | null;
+  spendSemEad: number | null;
   forecast: number | null;
   netVariance: number | null;
   pacing: number | null;
@@ -63,6 +72,9 @@ function safeNumber(v: unknown) {
 export default function BudgetPage() {
   const { filters } = useFilters();
   const client = React.useMemo(() => getSupabaseClient(), []);
+
+  // Estado para drill-down semanal
+  const [selectedUnit, setSelectedUnit] = React.useState<string | null>(null);
 
   const monthStart = startOfMonth(filters.month);
   const monthEnd = endOfMonth(filters.month);
@@ -116,7 +128,7 @@ export default function BudgetPage() {
 
       // --- Realizado (view semanal)
       let weeklyQ = (client as SupabaseClient)
-        .from("v_dashboard_semanal")
+        .from("vw_dashboard_semanal_detalhado")
         .select(
           "data_inicio_semana,semana_label,unidade,plataforma,curso,orcamento_semanal,gasto_real,diferenca,leads,percentual_consumido",
         )
@@ -127,13 +139,81 @@ export default function BudgetPage() {
       if (filters.businessUnit) weeklyQ = weeklyQ.eq("unidade", filters.businessUnit);
       if (filters.course) weeklyQ = weeklyQ.eq("curso", filters.course);
 
-      const { data: weeklyRows, error: weeklyErr } = await weeklyQ;
+      const { data: weeklyRowsRaw, error: weeklyErr } = await weeklyQ;
       if (weeklyErr) throw weeklyErr;
+
+      // Buscar metadados (funnel, location) da tabela bruta (fact_ads_budget)
+      // para enriquecer a view semanal que pode não ter essas colunas.
+      let metadataMap = new Map<string, { funnel?: string; location?: string }>();
+
+      const metaCols = [
+        budgetCols.unitCol,
+        budgetCols.funnelCol,
+        budgetCols.locationCol
+      ].filter(Boolean) as string[];
+
+      // Só busca se tivermos configurado colunas de unidade e funil/local
+      if (budgetCols.unitCol && (budgetCols.funnelCol || budgetCols.locationCol)) {
+        // Pequeno hack: buscar distinct units/funnels. 
+        // Supabase não tem select distinct fácil via JS client numa única query sem RPC.
+        // Vamos buscar tudo (filtrado pelo mês/filtro) e de-duplicar no cliente.
+        // Limitando colunas para leveza.
+        let metaQ = (client as SupabaseClient)
+          .from("fact_ads_budget")
+          .select(metaCols.join(","))
+          .gte(budgetCols.monthCol, fromDate)
+          .lte(budgetCols.monthCol, toDate);
+
+        if (filters.businessUnit && budgetCols.unitCol) {
+          metaQ = metaQ.eq(budgetCols.unitCol, filters.businessUnit);
+        }
+
+        const { data: metaData } = await metaQ;
+
+        if (metaData) {
+          metaData.forEach((row: any) => {
+            const u = row[budgetCols.unitCol!] as string;
+            if (!u) return;
+            // De-duplicate: first implies last seen or just ignore overwrite
+            if (!metadataMap.has(u)) {
+              const funnel = budgetCols.funnelCol ? row[budgetCols.funnelCol] : null;
+              const location = budgetCols.locationCol ? row[budgetCols.locationCol] : null;
+              metadataMap.set(u, { funnel, location });
+            }
+          });
+        }
+      }
+
+      const weeklyRows: WeeklyViewRow[] = (weeklyRowsRaw ?? []).map((r) => {
+        const unit = r.unidade ?? "";
+        const meta = metadataMap.get(unit) ?? {};
+        return {
+          ...r,
+          funnel_stage: meta.funnel ?? null,
+          location: meta.location ?? null,
+        };
+      });
 
       const plannedMonth = (budgetRows ?? []).reduce((acc: number, r: any) => acc + safeNumber(r?.[budgetCols.plannedCol]), 0);
 
       const spendMonth = (weeklyRows ?? []).reduce(
         (acc: number, r: WeeklyViewRow) => acc + safeNumber(r?.gasto_real),
+        0
+      );
+
+      // Função helper para verificar se é EAD
+      const isEadUnit = (unit: string) => {
+        const u = unit.toLowerCase();
+        return u.includes('ead') || u === '1. ead' || u.startsWith('ead ');
+      };
+
+      // Gasto sem EAD
+      const spendSemEad = (weeklyRows ?? []).reduce(
+        (acc: number, r: WeeklyViewRow) => {
+          const unit = String(r?.unidade ?? "").trim();
+          if (isEadUnit(unit)) return acc;
+          return acc + safeNumber(r?.gasto_real);
+        },
         0
       );
 
@@ -163,7 +243,7 @@ export default function BudgetPage() {
         return { day: w.weekStart, label: w.label, spendCum: running, idealCum: ideal };
       });
 
-      // Matriz por unidade (detalhe Unidade > Plataforma > Curso) usando a view semanal
+      // Matriz por unidade (detalhe Unidade > Curso > Plataforma) usando a view semanal
       const labelOr = (v: string | null | undefined, fallback: string) => {
         const s = String(v ?? "").trim();
         return s ? s : fallback;
@@ -171,8 +251,8 @@ export default function BudgetPage() {
 
       type Agg = { budget: number; spend: number };
       const unitAgg = new Map<string, Agg>();
-      const platformAgg = new Map<string, Agg>(); // key: unit||platform
-      const courseAgg = new Map<string, Agg>(); // key: unit||platform||course
+      const courseAgg = new Map<string, Agg>(); // key: unit||course
+      const platformAgg = new Map<string, Agg>(); // key: unit||course||platform
 
       for (const r of (weeklyRows ?? []) as WeeklyViewRow[]) {
         const unit = labelOr(r.unidade, "(Sem unidade)");
@@ -183,50 +263,50 @@ export default function BudgetPage() {
         const spend = safeNumber(r.gasto_real);
 
         const uKey = unit;
-        const pKey = `${unit}||${platform}`;
-        const cKey = `${unit}||${platform}||${course}`;
+        const cKey = `${unit}||${course}`;
+        const pKey = `${unit}||${course}||${platform}`;
 
         const u = unitAgg.get(uKey) ?? { budget: 0, spend: 0 };
         u.budget += budget;
         u.spend += spend;
         unitAgg.set(uKey, u);
 
-        const p = platformAgg.get(pKey) ?? { budget: 0, spend: 0 };
-        p.budget += budget;
-        p.spend += spend;
-        platformAgg.set(pKey, p);
-
         const c = courseAgg.get(cKey) ?? { budget: 0, spend: 0 };
         c.budget += budget;
         c.spend += spend;
         courseAgg.set(cKey, c);
+
+        const p = platformAgg.get(pKey) ?? { budget: 0, spend: 0 };
+        p.budget += budget;
+        p.spend += spend;
+        platformAgg.set(pKey, p);
       }
 
       const investmentMatrix: InvestmentMatrixUnitGroup[] = Array.from(unitAgg.entries())
         .map(([unit, u]) => {
-          const platforms = Array.from(platformAgg.entries())
+          const courses = Array.from(courseAgg.entries())
             .filter(([k]) => k.startsWith(`${unit}||`))
-            .map(([k, pAgg]) => {
-              const platform = k.split("||")[1] ?? "(Sem plataforma)";
+            .map(([k, cAgg]) => {
+              const course = k.split("||")[1] ?? "(Sem curso)";
 
-              const courses = Array.from(courseAgg.entries())
-                .filter(([ck]) => ck.startsWith(`${unit}||${platform}||`))
-                .map(([ck, cAgg]) => {
-                  const course = ck.split("||")[2] ?? "(Sem curso)";
-                  return { course, budget: cAgg.budget, spend: cAgg.spend };
+              const platforms = Array.from(platformAgg.entries())
+                .filter(([pk]) => pk.startsWith(`${unit}||${course}||`))
+                .map(([pk, pAgg]) => {
+                  const platform = pk.split("||")[2] ?? "(Sem plataforma)";
+                  return { platform, budget: pAgg.budget, spend: pAgg.spend };
                 })
                 .sort((a, b) => (b.budget || b.spend) - (a.budget || a.spend));
 
               return {
-                platform,
-                budget: pAgg.budget,
-                spend: pAgg.spend,
-                courses,
+                course,
+                budget: cAgg.budget,
+                spend: cAgg.spend,
+                platforms,
               };
             })
             .sort((a, b) => (b.budget || b.spend) - (a.budget || a.spend));
 
-          return { unit, budget: u.budget, spend: u.spend, platforms };
+          return { unit, budget: u.budget, spend: u.spend, courses };
         })
         .filter((u) => u.unit !== "(Sem unidade)")
         .sort((a, b) => (b.budget || b.spend) - (a.budget || a.spend));
@@ -261,12 +341,12 @@ export default function BudgetPage() {
 
       const spendToDate = isCurrent
         ? (weeklyRows ?? []).reduce((acc: number, r: WeeklyViewRow) => {
-            const iso = String(r?.data_inicio_semana ?? "");
-            const d = iso ? new Date(iso) : null;
-            if (!d) return acc;
-            if (d <= now) return acc + safeNumber(r?.gasto_real);
-            return acc;
-          }, 0)
+          const iso = String(r?.data_inicio_semana ?? "");
+          const d = iso ? new Date(iso) : null;
+          if (!d) return acc;
+          if (d <= now) return acc + safeNumber(r?.gasto_real);
+          return acc;
+        }, 0)
         : spendMonth;
 
       const forecast = isCurrent && dayOfMonth > 0 ? (spendToDate / dayOfMonth) * totalDays : spendMonth;
@@ -276,6 +356,7 @@ export default function BudgetPage() {
       const kpis: BudgetKpis = {
         plannedMonth,
         spendMonth,
+        spendSemEad,
         forecast: plannedMonth > 0 ? forecast : null,
         netVariance,
         pacing,
@@ -286,6 +367,7 @@ export default function BudgetPage() {
         dailySeries,
         unitRows,
         investmentMatrix,
+        weeklyRows,
         budgetHasUnitGranularity: !!budgetCols.unitCol,
       };
     },
@@ -320,16 +402,33 @@ export default function BudgetPage() {
         </Card>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" aria-label="KPIs">
+      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-5" aria-label="KPIs">
         <KpiCard
           title="Budget Total"
           value={isLoading ? "…" : kpis?.plannedMonth != null ? brl(kpis.plannedMonth) : "-"}
           hint="Soma do budget planejado"
+          tooltip="Valor total planejado para investimento em mídia no mês selecionado, considerando todas as unidades e plataformas."
+          status="neutral"
         />
         <KpiCard
           title="Forecast"
           value={isLoading ? "…" : kpis?.forecast != null ? brl(kpis.forecast) : "-"}
           hint="Projeção de fechamento"
+          tooltip="Estimativa de quanto será gasto até o fim do mês, baseado no ritmo atual de consumo. Calculado como: (gasto até hoje / dia do mês) × total de dias."
+          status={(() => {
+            if (isLoading || kpis?.forecast == null || kpis?.plannedMonth == null) return "neutral";
+            const ratio = kpis.forecast / kpis.plannedMonth;
+            if (ratio <= 1.05) return "success";
+            if (ratio <= 1.15) return "warning";
+            return "danger";
+          })()}
+          trend={(() => {
+            if (isLoading || kpis?.forecast == null || kpis?.plannedMonth == null) return undefined;
+            const ratio = kpis.forecast / kpis.plannedMonth;
+            if (ratio > 1.05) return "up";
+            if (ratio < 0.95) return "down";
+            return "stable";
+          })()}
         />
         <KpiCard
           title="Net Variance"
@@ -341,11 +440,73 @@ export default function BudgetPage() {
                 : "-"
           }
           hint="Budget - forecast"
+          tooltip="Diferença entre o budget planejado e o forecast. Valor positivo indica economia projetada; negativo indica estouro."
+          status={(() => {
+            if (isLoading || kpis?.netVariance == null) return "neutral";
+            if (kpis.netVariance >= 0) return "success";
+            if (kpis.netVariance >= -kpis.plannedMonth! * 0.1) return "warning";
+            return "danger";
+          })()}
+          trend={(() => {
+            if (isLoading || kpis?.netVariance == null) return undefined;
+            if (kpis.netVariance > 0) return "up";
+            if (kpis.netVariance < 0) return "down";
+            return "stable";
+          })()}
         />
         <KpiCard
           title="Pacing Global"
           value={isLoading ? "…" : kpis?.pacing != null ? pct(kpis.pacing) : "-"}
           hint="% gasto / budget"
+          tooltip="Percentual do budget já consumido. Compare com o progresso do mês (ex: dia 15 de um mês de 30 = 50% esperado). Verde = on track, Vermelho = desvio."
+          status={(() => {
+            if (isLoading || kpis?.pacing == null) return "neutral";
+            // Calcular o progresso esperado do mês
+            const now = new Date();
+            const isCurrent = isSameMonth(monthStart, now);
+            const totalDays = monthEnd.getDate();
+            const dayOfMonth = isCurrent ? Math.min(now.getDate(), totalDays) : totalDays;
+            const expectedPacing = dayOfMonth / totalDays;
+            return getPacingStatus(kpis.pacing, expectedPacing);
+          })()}
+          trend={(() => {
+            if (isLoading || kpis?.pacing == null) return undefined;
+            // Calcular o progresso esperado do mês
+            const now = new Date();
+            const isCurrent = isSameMonth(monthStart, now);
+            const totalDays = monthEnd.getDate();
+            const dayOfMonth = isCurrent ? Math.min(now.getDate(), totalDays) : totalDays;
+            const expectedPacing = dayOfMonth / totalDays;
+            if (kpis.pacing > expectedPacing * 1.1) return "up";
+            if (kpis.pacing < expectedPacing * 0.9) return "down";
+            return "stable";
+          })()}
+          trendLabel={(() => {
+            if (isLoading || kpis?.pacing == null) return undefined;
+            const now = new Date();
+            const isCurrent = isSameMonth(monthStart, now);
+            const totalDays = monthEnd.getDate();
+            const dayOfMonth = isCurrent ? Math.min(now.getDate(), totalDays) : totalDays;
+            const expectedPacing = dayOfMonth / totalDays;
+            const diff = ((kpis.pacing - expectedPacing) * 100).toFixed(0);
+            return `${Number(diff) > 0 ? "+" : ""}${diff}pp`;
+          })()}
+        />
+        <KpiCard
+          title="Gasto Presencial"
+          value={isLoading ? "…" : kpis?.spendSemEad != null ? brl(kpis.spendSemEad) : "-"}
+          hint="Total sem EAD"
+          tooltip="Gasto acumulado excluindo unidades de EAD. Útil para analisar o investimento apenas no ensino presencial."
+          status={(() => {
+            if (isLoading || kpis?.spendSemEad == null || kpis?.spendMonth == null) return "neutral";
+            return "neutral";
+          })()}
+          trendLabel={(() => {
+            if (isLoading || kpis?.spendSemEad == null || kpis?.spendMonth == null || kpis.spendMonth === 0) return undefined;
+            const eadSpend = kpis.spendMonth - kpis.spendSemEad;
+            const eadPct = (eadSpend / kpis.spendMonth) * 100;
+            return `EAD: ${eadPct.toFixed(0)}%`;
+          })()}
         />
       </section>
 
@@ -365,17 +526,31 @@ export default function BudgetPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={(budgetDataQuery.data?.unitRows ?? []).slice(0, 12)}
-                    margin={{ top: 8, right: 12, bottom: 8, left: 12 }}
+                    margin={{ top: 8, right: 30, bottom: 8, left: 45 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="unit" hide />
-                    <YAxis tickFormatter={(v) => brl(Number(v))} width={90} />
-                    <Tooltip
-                      formatter={(value: any, name: any) => [brl(Number(value)), name]}
-                      labelFormatter={(label) => String(label)}
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="unit"
+                      angle={-45}
+                      textAnchor="end"
+                      height={70}
+                      interval={0}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(value) => value.length > 15 ? `${value.substring(0, 15)}...` : value}
                     />
-                    <Bar dataKey="planned" name="Planejado" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="spend" name="Gasto" fill="hsl(var(--secondary))" radius={[4, 4, 0, 0]} />
+                    <YAxis
+                      tickFormatter={(v) => `R$${(Number(v) / 1000).toFixed(0)}k`}
+                      width={80}
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      content={<ChartTooltip />}
+                      cursor={{ fill: 'hsl(var(--muted)/0.4)' }}
+                    />
+                    <Bar dataKey="planned" name="Planejado" fill="#cbd5e1" radius={[4, 4, 0, 0]} barSize={20} />
+                    <Bar dataKey="spend" name="Gasto" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={20} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -403,18 +578,32 @@ export default function BudgetPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
                     data={budgetDataQuery.data?.dailySeries ?? []}
-                    margin={{ top: 8, right: 12, bottom: 8, left: 12 }}
+                    margin={{ top: 8, right: 30, bottom: 8, left: 45 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="day" tickFormatter={(v) => format(new Date(v), "dd") as any} />
-                    <YAxis tickFormatter={(v) => brl(Number(v))} width={90} />
-                    <Tooltip formatter={(value: any) => brl(Number(value))} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="day"
+                      tickFormatter={(v) => format(new Date(v), "dd") as any}
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      tickFormatter={(v) => `R$${(Number(v) / 1000).toFixed(0)}k`}
+                      width={80}
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      content={<ChartTooltip />}
+                    />
                     <Line
                       type="monotone"
                       dataKey="idealCum"
                       name="Ideal"
-                      stroke="hsl(var(--muted-foreground))"
-                      strokeWidth={2}
+                      stroke="#cbd5e1"
+                      strokeWidth={3}
                       dot={false}
                     />
                     <Line
@@ -422,7 +611,7 @@ export default function BudgetPage() {
                       dataKey="spendCum"
                       name="Real"
                       stroke="hsl(var(--primary))"
-                      strokeWidth={2}
+                      strokeWidth={3}
                       dot={false}
                     />
                   </LineChart>
@@ -431,6 +620,16 @@ export default function BudgetPage() {
             )}
           </CardContent>
         </Card>
+
+      </section>
+
+      <section aria-label="Visão Estratégica" className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <WeeklyComparisonChart data={budgetDataQuery.data?.weeklyRows ?? []} />
+        </div>
+        <div>
+          <FunnelStrategyChart data={budgetDataQuery.data?.investmentMatrix ?? []} />
+        </div>
       </section>
 
       <section aria-label="Tabela matriz">
@@ -438,7 +637,7 @@ export default function BudgetPage() {
           <CardHeader>
             <CardTitle>Matriz de Investimento</CardTitle>
             <CardDescription>
-              Clique na unidade para abrir e ver cursos agrupados por plataforma.
+              Visão hierárquica por estratégia, unidade e localização.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -447,7 +646,7 @@ export default function BudgetPage() {
                 Carregando…
               </div>
             ) : (
-              <InvestmentMatrix data={budgetDataQuery.data?.investmentMatrix ?? []} />
+              <InvestmentTreeTable data={budgetDataQuery.data?.weeklyRows ?? []} />
             )}
           </CardContent>
         </Card>
@@ -456,20 +655,40 @@ export default function BudgetPage() {
       <footer className="text-xs text-muted-foreground">
         Filtros ativos: {JSON.stringify({ ...filters, month: filters.month.toISOString().slice(0, 10) })}
       </footer>
-    </div>
-  );
-}
 
-function KpiCard({ title, value, hint }: { title: string; value: string; hint?: string }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        {hint ? <CardDescription>{hint}</CardDescription> : null}
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-semibold tabular-nums">{value}</div>
-      </CardContent>
-    </Card>
+      {/* Drawer de drill-down semanal */}
+      <WeeklyDrawer
+        open={selectedUnit !== null}
+        onOpenChange={(open) => !open && setSelectedUnit(null)}
+        unitName={selectedUnit}
+        weeklyData={(() => {
+          if (!selectedUnit) return [];
+          // Agregar dados semanais para a unidade selecionada
+          const weeklyRows = budgetDataQuery.data?.weeklyRows ?? [];
+          const byWeek = new Map<string, { semana: string; weekStart: string; orcado: number; realizado: number }>();
+
+          for (const r of weeklyRows as any[]) {
+            const unit = String(r?.unidade ?? "").trim();
+            if (unit !== selectedUnit) continue;
+
+            const weekStart = String(r?.data_inicio_semana ?? "").slice(0, 10);
+            if (!weekStart) continue;
+
+            const curr = byWeek.get(weekStart) ?? {
+              semana: r?.semana_label ?? weekStart,
+              weekStart,
+              orcado: 0,
+              realizado: 0
+            };
+            curr.orcado += Number(r?.orcamento_semanal ?? 0) || 0;
+            curr.realizado += Number(r?.gasto_real ?? 0) || 0;
+            if (r?.semana_label) curr.semana = r.semana_label;
+            byWeek.set(weekStart, curr);
+          }
+
+          return Array.from(byWeek.values()).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+        })()}
+      />
+    </div >
   );
 }

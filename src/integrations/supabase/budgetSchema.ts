@@ -7,6 +7,8 @@ export type BudgetColumns = {
   plannedCol: string;
   platformCol: string | null;
   unitCol: string | null;
+  funnelCol: string | null;
+  locationCol: string | null;
 };
 
 let _cached: BudgetColumns | null = null;
@@ -26,7 +28,7 @@ async function firstWorkingColumn(client: SupabaseClient, candidates: string[]):
 
   throw new Error(
     `Não consegui detectar colunas na tabela ${TABLE}. Testados: ${candidates.join(", ")}. ` +
-      `Confirme os nomes (mês/data e valor planejado) e me diga quais são.`
+    `Confirme os nomes (mês/data e valor planejado) e me diga quais são.`
   );
 }
 
@@ -91,6 +93,22 @@ export async function resolveBudgetColumns(client: SupabaseClient): Promise<Budg
     "unidade",
   ]);
 
-  _cached = { monthCol, plannedCol, platformCol, unitCol };
+  const funnelCol = await firstOptionalWorkingColumn(client, [
+    "funnel_stage",
+    "etapa_funil",
+    "funnel",
+    "stage",
+    "etapa",
+  ]);
+
+  const locationCol = await firstOptionalWorkingColumn(client, [
+    "location",
+    "city",
+    "cidade",
+    "region",
+    "regiao",
+  ]);
+
+  _cached = { monthCol, plannedCol, platformCol, unitCol, funnelCol, locationCol };
   return _cached;
 }

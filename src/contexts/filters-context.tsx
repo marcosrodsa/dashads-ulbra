@@ -2,12 +2,15 @@ import * as React from "react";
 import { startOfMonth } from "date-fns";
 
 export type AdsPlatform = string;
+export type FunnelStage = "all" | "awareness" | "consideration" | "conversion";
 
 export type FiltersState = {
   month: Date; // first day of the selected month
   businessUnit: string | null;
   course: string | null;
   platform: AdsPlatform | null;
+  funnelStage: FunnelStage;
+  excludeEad: boolean;
 };
 
 type FiltersContextValue = {
@@ -16,6 +19,8 @@ type FiltersContextValue = {
   setBusinessUnit: (businessUnit: string | null) => void;
   setCourse: (course: string | null) => void;
   setPlatform: (platform: AdsPlatform | null) => void;
+  setFunnelStage: (stage: FunnelStage) => void;
+  setExcludeEad: (exclude: boolean) => void;
   clear: () => void;
 };
 
@@ -26,6 +31,8 @@ const defaultFilters = (): FiltersState => ({
   businessUnit: null,
   course: null,
   platform: null,
+  funnelStage: "all",
+  excludeEad: false,
 });
 
 export function FiltersProvider({ children }: { children: React.ReactNode }) {
@@ -36,7 +43,6 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setBusinessUnit = React.useCallback((businessUnit: string | null) => {
-    // Cascata obrigatória: trocar unidade reseta curso.
     setFilters((prev) => ({ ...prev, businessUnit, course: null }));
   }, []);
 
@@ -48,13 +54,21 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
     setFilters((prev) => ({ ...prev, platform }));
   }, []);
 
+  const setFunnelStage = React.useCallback((funnelStage: FunnelStage) => {
+    setFilters((prev) => ({ ...prev, funnelStage }));
+  }, []);
+
+  const setExcludeEad = React.useCallback((excludeEad: boolean) => {
+    setFilters((prev) => ({ ...prev, excludeEad }));
+  }, []);
+
   const clear = React.useCallback(() => {
     setFilters(defaultFilters());
   }, []);
 
   const value = React.useMemo<FiltersContextValue>(
-    () => ({ filters, setMonth, setBusinessUnit, setCourse, setPlatform, clear }),
-    [filters, setMonth, setBusinessUnit, setCourse, setPlatform, clear],
+    () => ({ filters, setMonth, setBusinessUnit, setCourse, setPlatform, setFunnelStage, setExcludeEad, clear }),
+    [filters, setMonth, setBusinessUnit, setCourse, setPlatform, setFunnelStage, setExcludeEad, clear],
   );
 
   return <FiltersContext.Provider value={value}>{children}</FiltersContext.Provider>;
@@ -65,3 +79,5 @@ export function useFilters() {
   if (!ctx) throw new Error("useFilters must be used within FiltersProvider");
   return ctx;
 }
+
+
