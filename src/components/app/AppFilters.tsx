@@ -138,7 +138,7 @@ async function fetchBusinessUnitsWeeklyView(client: SupabaseClient, month: Date)
     const from = startOfMonth(month);
     const to = endOfMonth(month);
     const { data, error } = await client
-        .from("vw_dashboard_semanal_detalhado2")
+        .from("vw_dashboard_semanal_detalhado")
         .select("unidade")
         .gte("data_inicio_semana", format(from, "yyyy-MM-dd"))
         .lte("data_inicio_semana", format(to, "yyyy-MM-dd"));
@@ -154,7 +154,7 @@ async function fetchCoursesWeeklyView(client: SupabaseClient, month: Date, busin
     const from = startOfMonth(month);
     const to = endOfMonth(month);
     const { data, error } = await client
-        .from("vw_dashboard_semanal_detalhado2")
+        .from("vw_dashboard_semanal_detalhado")
         .select("curso")
         .eq("unidade", businessUnit)
         .gte("data_inicio_semana", format(from, "yyyy-MM-dd"))
@@ -170,7 +170,7 @@ async function fetchPlatformsWeeklyView(client: SupabaseClient, month: Date) {
     const from = startOfMonth(month);
     const to = endOfMonth(month);
     const { data, error } = await client
-        .from("vw_dashboard_semanal_detalhado2")
+        .from("vw_dashboard_semanal_detalhado")
         .select("plataforma")
         .gte("data_inicio_semana", format(from, "yyyy-MM-dd"))
         .lte("data_inicio_semana", format(to, "yyyy-MM-dd"));

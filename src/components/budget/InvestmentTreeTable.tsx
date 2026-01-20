@@ -18,6 +18,7 @@ export type TreeDataRow = {
     curso: string | null;
     orcamento_semanal: number | string | null;
     gasto_real: number | string | null;
+    leads: number | string | null;
     funnel_stage?: string | null;
     location?: string | null;
 };
@@ -35,6 +36,7 @@ interface TreeNode {
     level: number;
     budget: number;
     spend: number;
+    leads: number;
     children: TreeNode[];
     isLeaf: boolean;
     // Expanded state is controlled by component
@@ -67,13 +69,13 @@ export function InvestmentTreeTable({ data, onViewWeekly }: InvestmentTreeTableP
     // --- Build Tree Logic ---
     const rootNodes = React.useMemo(() => {
         // Groups
-        const eadGroup: TreeNode = { id: "1-ead", label: "1. EAD", level: 0, budget: 0, spend: 0, children: [], isLeaf: false };
-        const brandingGroup: TreeNode = { id: "2-branding", label: "2. Branding", level: 0, budget: 0, spend: 0, children: [], isLeaf: false };
-        const conversionGroup: TreeNode = { id: "3-conversion", label: "3. Mkt de Conversão", level: 0, budget: 0, spend: 0, children: [], isLeaf: false };
+        const eadGroup: TreeNode = { id: "1-ead", label: "1. EAD", level: 0, budget: 0, spend: 0, leads: 0, children: [], isLeaf: false };
+        const brandingGroup: TreeNode = { id: "2-branding", label: "2. Branding", level: 0, budget: 0, spend: 0, leads: 0, children: [], isLeaf: false };
+        const conversionGroup: TreeNode = { id: "3-conversion", label: "3. Mkt de Conversão", level: 0, budget: 0, spend: 0, leads: 0, children: [], isLeaf: false };
 
         // Subgroups of Conversion
-        const medSubGroup: TreeNode = { id: "3.1-med", label: "3.1 Medicina", level: 1, budget: 0, spend: 0, children: [], isLeaf: false };
-        const coursesSubGroup: TreeNode = { id: "3.2-courses", label: "3.2 Cursos", level: 1, budget: 0, spend: 0, children: [], isLeaf: false };
+        const medSubGroup: TreeNode = { id: "3.1-med", label: "3.1 Medicina", level: 1, budget: 0, spend: 0, leads: 0, children: [], isLeaf: false };
+        const coursesSubGroup: TreeNode = { id: "3.2-courses", label: "3.2 Cursos", level: 1, budget: 0, spend: 0, leads: 0, children: [], isLeaf: false };
 
         // Temporary Maps for aggregation
         const eadPlatforms = new Map<string, TreeNode>();
@@ -84,6 +86,7 @@ export function InvestmentTreeTable({ data, onViewWeekly }: InvestmentTreeTableP
         data.forEach(row => {
             const budget = safeNumber(row.orcamento_semanal);
             const spend = safeNumber(row.gasto_real);
+            const leads = safeNumber(row.leads);
             const unit = (row.unidade || "").toLowerCase();
             const course = (row.curso || "Outros").toLowerCase();
             const platform = row.plataforma || "Outras";
@@ -101,55 +104,64 @@ export function InvestmentTreeTable({ data, onViewWeekly }: InvestmentTreeTableP
                 // Grupo 1: EAD -> Agrupar por Platform
                 eadGroup.budget += budget;
                 eadGroup.spend += spend;
+                eadGroup.leads += leads;
 
                 if (!eadPlatforms.has(platform)) {
-                    eadPlatforms.set(platform, { id: `ead-${platform}`, label: platform, level: 1, budget: 0, spend: 0, children: [], isLeaf: true });
+                    eadPlatforms.set(platform, { id: `ead-${platform}`, label: platform, level: 1, budget: 0, spend: 0, leads: 0, children: [], isLeaf: true });
                 }
                 const pNode = eadPlatforms.get(platform)!;
                 pNode.budget += budget;
                 pNode.spend += spend;
+                pNode.leads += leads;
 
             } else if (isBranding) {
                 // Grupo 2: Branding -> Agrupar por Platform
                 brandingGroup.budget += budget;
                 brandingGroup.spend += spend;
+                brandingGroup.leads += leads;
 
                 if (!brandingPlatforms.has(platform)) {
-                    brandingPlatforms.set(platform, { id: `brand-${platform}`, label: platform, level: 1, budget: 0, spend: 0, children: [], isLeaf: true });
+                    brandingPlatforms.set(platform, { id: `brand-${platform}`, label: platform, level: 1, budget: 0, spend: 0, leads: 0, children: [], isLeaf: true });
                 }
                 const pNode = brandingPlatforms.get(platform)!;
                 pNode.budget += budget;
                 pNode.spend += spend;
+                pNode.leads += leads;
 
             } else {
                 // Grupo 3: Conversão
                 conversionGroup.budget += budget;
                 conversionGroup.spend += spend;
+                conversionGroup.leads += leads;
 
                 if (course.includes("medicina")) {
                     // 3.1 Medicina -> Agrupar por Platform
                     medSubGroup.budget += budget;
                     medSubGroup.spend += spend;
+                    medSubGroup.leads += leads;
 
                     if (!medPlatforms.has(platform)) {
-                        medPlatforms.set(platform, { id: `med-${platform}`, label: platform, level: 2, budget: 0, spend: 0, children: [], isLeaf: true });
+                        medPlatforms.set(platform, { id: `med-${platform}`, label: platform, level: 2, budget: 0, spend: 0, leads: 0, children: [], isLeaf: true });
                     }
                     const pNode = medPlatforms.get(platform)!;
                     pNode.budget += budget;
                     pNode.spend += spend;
+                    pNode.leads += leads;
 
                 } else {
                     // 3.2 Cursos -> Agrupar por Unidade -> Curso -> Plataforma
                     coursesSubGroup.budget += budget;
                     coursesSubGroup.spend += spend;
+                    coursesSubGroup.leads += leads;
 
                     const unitLabel = row.unidade || "Sem Unidade";
                     if (!unitMap.has(unitLabel)) {
-                        unitMap.set(unitLabel, { id: `unit-${unitLabel}`, label: unitLabel, level: 2, budget: 0, spend: 0, children: [], isLeaf: false });
+                        unitMap.set(unitLabel, { id: `unit-${unitLabel}`, label: unitLabel, level: 2, budget: 0, spend: 0, leads: 0, children: [], isLeaf: false });
                     }
                     const uNode = unitMap.get(unitLabel)!;
                     uNode.budget += budget;
                     uNode.spend += spend;
+                    uNode.leads += leads;
 
                     // Nível Curso dentro da Unidade
                     let courseLabel = row.curso || "Geral";
@@ -157,20 +169,22 @@ export function InvestmentTreeTable({ data, onViewWeekly }: InvestmentTreeTableP
 
                     let courseNode = uNode.children.find(c => c.label.toLowerCase() === courseLabel.toLowerCase());
                     if (!courseNode) {
-                        courseNode = { id: `unit-${unitLabel}-${courseLabel}`, label: courseLabel, level: 3, budget: 0, spend: 0, children: [], isLeaf: false };
+                        courseNode = { id: `unit-${unitLabel}-${courseLabel}`, label: courseLabel, level: 3, budget: 0, spend: 0, leads: 0, children: [], isLeaf: false };
                         uNode.children.push(courseNode);
                     }
                     courseNode.budget += budget;
                     courseNode.spend += spend;
+                    courseNode.leads += leads;
 
                     // Nível Plataforma dentro do Curso
                     let platNode = courseNode.children.find(p => p.label === platform);
                     if (!platNode) {
-                        platNode = { id: `unit-${unitLabel}-${courseLabel}-${platform}`, label: platform, level: 4, budget: 0, spend: 0, children: [], isLeaf: true };
+                        platNode = { id: `unit-${unitLabel}-${courseLabel}-${platform}`, label: platform, level: 4, budget: 0, spend: 0, leads: 0, children: [], isLeaf: true };
                         courseNode.children.push(platNode);
                     }
                     platNode.budget += budget;
                     platNode.spend += spend;
+                    platNode.leads += leads;
                 }
             }
         });
@@ -211,6 +225,8 @@ export function InvestmentTreeTable({ data, onViewWeekly }: InvestmentTreeTableP
         const statusColor = status === "error" ? "text-red-500" : status === "warning" ? "text-yellow-500" : "text-emerald-500";
         // PT-BR Status Translations
         const statusLabel = status === "error" ? "Acima" : status === "warning" ? "Abaixo" : "Ideal";
+
+        const cpl = node.leads > 0 ? node.spend / node.leads : 0;
 
         // Progress Bar Color
         const progressBarColor = status === "error" ? "bg-red-500" : status === "warning" ? "bg-yellow-500" : "bg-emerald-500";
@@ -266,6 +282,12 @@ export function InvestmentTreeTable({ data, onViewWeekly }: InvestmentTreeTableP
                     <TableCell className={`text-right py-2 font-mono text-sm ${variance < 0 ? "text-red-600" : "text-emerald-600"}`}>
                         {brl(variance)}
                     </TableCell>
+                    <TableCell className="text-right py-2 font-mono text-sm max-w-[80px]">
+                        {node.leads > 0 ? node.leads.toLocaleString('pt-BR') : '-'}
+                    </TableCell>
+                    <TableCell className="text-right py-2 font-mono text-sm max-w-[100px]">
+                        {cpl > 0 ? brl(cpl) : '-'}
+                    </TableCell>
                     <TableCell className="text-center py-2">
                         <span className={`text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
                     </TableCell>
@@ -301,6 +323,8 @@ export function InvestmentTreeTable({ data, onViewWeekly }: InvestmentTreeTableP
                         <TableHead className="text-right">Gasto Realizado</TableHead>
                         <TableHead className="text-right">Utilização</TableHead>
                         <TableHead className="text-right">Variância (R$)</TableHead>
+                        <TableHead className="text-right max-w-[80px]">Leads</TableHead>
+                        <TableHead className="text-right max-w-[100px]">CPL</TableHead>
                         <TableHead className="text-center">Status</TableHead>
                         <TableHead className="text-center w-[50px]">Semana</TableHead>
                     </TableRow>

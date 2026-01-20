@@ -48,6 +48,8 @@ type BudgetKpis = {
   forecast: number | null;
   netVariance: number | null;
   pacing: number | null;
+  totalLeads: number | null;
+  cpl: number | null;
 };
 
 type UnitRow = {
@@ -145,18 +147,16 @@ export default function BudgetPage() {
       const { data: budgetRows, error: budgetErr } = await budgetQ;
       if (budgetErr) throw budgetErr;
 
-      // --- Realizado (view semanal)
+      // --- Realizado (view semanal: vw_dashboard_semanal_detalhado)
       let weeklyQ = (client as SupabaseClient)
-        .from("vw_dashboard_semanal_detalhado2")
-        .select(
-          "data_inicio_semana,semana_label,unidade,plataforma,curso,orcamento_semanal,gasto_real,diferenca,leads,percentual_consumido",
-        )
+        .from("vw_dashboard_semanal_detalhado")
+        .select("*")
         .gte("data_inicio_semana", fromDate)
         .lte("data_inicio_semana", toDate);
 
-      if (filters.platform) weeklyQ = weeklyQ.eq("plataforma", filters.platform);
-      if (filters.businessUnit) weeklyQ = weeklyQ.eq("unidade", filters.businessUnit);
-      if (filters.course) weeklyQ = weeklyQ.eq("curso", filters.course);
+      if (filters.platform) weeklyQ = weeklyQ.eq("platform", filters.platform);
+      if (filters.businessUnit) weeklyQ = weeklyQ.eq("business_unit", filters.businessUnit);
+      if (filters.course) weeklyQ = weeklyQ.eq("course", filters.course);
 
       const { data: weeklyRowsRaw, error: weeklyErr } = await weeklyQ;
       if (weeklyErr) throw weeklyErr;
@@ -206,11 +206,20 @@ export default function BudgetPage() {
       const weeklyRows: WeeklyViewRow[] = (weeklyRowsRaw ?? []).map((r) => {
         const unit = r.unidade ?? "";
         const meta = metadataMap.get(unit) ?? {};
+        const leadsVal = r.leads ?? r.leads_total ?? r.conversions ?? 0;
+
         return {
           ...r,
+          leads: Number(leadsVal),
           funnel_stage: meta.funnel ?? null,
           location: meta.location ?? null,
         };
+      });
+
+      console.log("WeeklyRows Debug:", {
+        count: weeklyRows.length,
+        sample: weeklyRows.slice(0, 3),
+        totalLeads: weeklyRows.reduce((a, b) => a + Number(b.leads || 0), 0)
       });
 
       const plannedMonth = (budgetRows ?? []).reduce((acc: number, r: any) => acc + safeNumber(r?.[budgetCols.plannedCol]), 0);
@@ -372,6 +381,9 @@ export default function BudgetPage() {
       const pacing = plannedMonth > 0 ? spendMonth / plannedMonth : null;
       const netVariance = plannedMonth > 0 ? plannedMonth - forecast : null;
 
+      const totalLeads = (weeklyRows ?? []).reduce((acc: number, r: WeeklyViewRow) => acc + safeNumber(r?.leads), 0);
+      const cpl = totalLeads > 0 ? spendMonth / totalLeads : null;
+
       const kpis: BudgetKpis = {
         plannedMonth,
         spendMonth,
@@ -379,6 +391,8 @@ export default function BudgetPage() {
         forecast: plannedMonth > 0 ? forecast : null,
         netVariance,
         pacing,
+        totalLeads,
+        cpl,
       };
 
       return {
@@ -421,66 +435,28 @@ export default function BudgetPage() {
         </Card>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-5" aria-label="KPIs">
+      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" aria-label="KPIs Financeiros">
         <KpiCard
           title="Budget Total"
           value={isLoading ? "…" : kpis?.plannedMonth != null ? brl(kpis.plannedMonth) : "-"}
           hint="Soma do budget planejado"
-          tooltip="Valor total planejado para investimento em mídia no mês selecionado, considerando todas as unidades e plataformas."
+          tooltip="Valor total planejado para investimento em mídia no mês selecionado."
           status="neutral"
         />
         <KpiCard
-          title="Forecast"
-          value={isLoading ? "…" : kpis?.forecast != null ? brl(kpis.forecast) : "-"}
-          hint="Projeção de fechamento"
-          tooltip="Estimativa de quanto será gasto até o fim do mês, baseado no ritmo atual de consumo. Calculado como: (gasto até hoje / dia do mês) × total de dias."
-          status={(() => {
-            if (isLoading || kpis?.forecast == null || kpis?.plannedMonth == null) return "neutral";
-            const ratio = kpis.forecast / kpis.plannedMonth;
-            if (ratio <= 1.05) return "success";
-            if (ratio <= 1.15) return "warning";
-            return "danger";
-          })()}
-          trend={(() => {
-            if (isLoading || kpis?.forecast == null || kpis?.plannedMonth == null) return undefined;
-            const ratio = kpis.forecast / kpis.plannedMonth;
-            if (ratio > 1.05) return "up";
-            if (ratio < 0.95) return "down";
-            return "stable";
-          })()}
-        />
-        <KpiCard
-          title="Net Variance"
-          value={
-            isLoading
-              ? "…"
-              : kpis?.netVariance != null
-                ? brl(kpis.netVariance)
-                : "-"
-          }
-          hint="Budget - forecast"
-          tooltip="Diferença entre o budget planejado e o forecast. Valor positivo indica economia projetada; negativo indica estouro."
-          status={(() => {
-            if (isLoading || kpis?.netVariance == null) return "neutral";
-            if (kpis.netVariance >= 0) return "success";
-            if (kpis.netVariance >= -kpis.plannedMonth! * 0.1) return "warning";
-            return "danger";
-          })()}
-          trend={(() => {
-            if (isLoading || kpis?.netVariance == null) return undefined;
-            if (kpis.netVariance > 0) return "up";
-            if (kpis.netVariance < 0) return "down";
-            return "stable";
-          })()}
+          title="Gasto Realizado"
+          value={isLoading ? "…" : kpis?.spendMonth != null ? brl(kpis.spendMonth) : "-"}
+          hint="Valor executado até hoje"
+          tooltip="Total já investido nas campanhas até o momento (Realizado)."
+          status="neutral"
         />
         <KpiCard
           title="Pacing Global"
           value={isLoading ? "…" : kpis?.pacing != null ? pct(kpis.pacing) : "-"}
           hint="% gasto / budget"
-          tooltip="Percentual do budget já consumido. Compare com o progresso do mês (ex: dia 15 de um mês de 30 = 50% esperado). Verde = on track, Vermelho = desvio."
+          tooltip="Velocidade consumo do budget. Verde = Dentro do planejado."
           status={(() => {
             if (isLoading || kpis?.pacing == null) return "neutral";
-            // Calcular o progresso esperado do mês
             const now = new Date();
             const isCurrent = isSameMonth(monthStart, now);
             const totalDays = monthEnd.getDate();
@@ -488,30 +464,56 @@ export default function BudgetPage() {
             const expectedPacing = dayOfMonth / totalDays;
             return getPacingStatus(kpis.pacing, expectedPacing);
           })()}
-          trend={(() => {
-            if (isLoading || kpis?.pacing == null) return undefined;
-            // Calcular o progresso esperado do mês
-            const now = new Date();
-            const isCurrent = isSameMonth(monthStart, now);
-            const totalDays = monthEnd.getDate();
-            const dayOfMonth = isCurrent ? Math.min(now.getDate(), totalDays) : totalDays;
-            const expectedPacing = dayOfMonth / totalDays;
-            if (kpis.pacing > expectedPacing * 1.1) return "up";
-            if (kpis.pacing < expectedPacing * 0.9) return "down";
-            return "stable";
-          })()}
-          trendLabel={(() => {
-            if (isLoading || kpis?.pacing == null) return undefined;
-            const now = new Date();
-            const isCurrent = isSameMonth(monthStart, now);
-            const totalDays = monthEnd.getDate();
-            const dayOfMonth = isCurrent ? Math.min(now.getDate(), totalDays) : totalDays;
-            const expectedPacing = dayOfMonth / totalDays;
-            const diff = ((kpis.pacing - expectedPacing) * 100).toFixed(0);
-            return `${Number(diff) > 0 ? "+" : ""}${diff}pp`;
+        />
+        <KpiCard
+          title="Net Variance"
+          value={isLoading ? "…" : kpis?.netVariance != null ? brl(kpis.netVariance) : "-"}
+          hint="Budget - Forecast"
+          tooltip="Sobra ou falta projetada. Amarelo/Positivo = Sobra (Sub-investimento). Vermelho/Negativo = Estouro. Verde ~ 0."
+          status={(() => {
+            if (isLoading || kpis?.netVariance == null || kpis?.plannedMonth == null) return "neutral";
+            const variance = kpis.netVariance;
+            const threshold = kpis.plannedMonth * 0.05; // 5% de tolerância
+
+            // Se sobrar muito dinheiro (Positivo > 5%), é ruim (Amarelo - Atenção Sub-investimento)
+            if (variance > threshold) return "warning";
+
+            // Se estourar o budget (Negativo < -5%), é ruim (Vermelho - Estouro)
+            if (variance < -threshold) return "danger";
+
+            // Se estiver próximo de 0 (dentro de +/- 5%), é bom (Verde - Execução Perfeita)
+            return "success";
           })()}
         />
+      </section>
 
+      <section className="grid gap-4 md:grid-cols-3 lg:grid-cols-3 pt-2" aria-label="KPIs Performance">
+        <KpiCard
+          title="Forecast"
+          value={isLoading ? "…" : kpis?.forecast != null ? brl(kpis.forecast) : "-"}
+          hint="Projeção de fechamento"
+          tooltip="Quanto vamos gastar se continuarmos no ritmo atual."
+          status="neutral"
+        />
+        <KpiCard
+          title="Leads Totais"
+          value={isLoading ? "…" : kpis?.totalLeads != null ? kpis.totalLeads.toLocaleString('pt-BR') : "-"}
+          hint="Volume de inscritos"
+          tooltip="Total de leads gerados no período selecionado."
+          status="neutral"
+        />
+        <KpiCard
+          title="CPL Médio"
+          value={isLoading ? "…" : kpis?.cpl != null ? brl(kpis.cpl) : "-"}
+          hint="Custo por Lead"
+          tooltip="Eficiência: Quanto custou cada lead em média (Gasto / Leads)."
+          status={(() => {
+            // Regra de exemplo: Abaixo de 50 é bom, acima de 100 é ruim? 
+            // Como não temos meta definida no banco, deixamos neutro ou fixo por enquanto.
+            // O usuário disse: Se CPL R$ 200 é fracasso.
+            return "neutral";
+          })()}
+        />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2" aria-label="Gráficos">
