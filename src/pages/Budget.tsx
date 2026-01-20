@@ -8,6 +8,8 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ComposedChart,
+  Area,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -260,8 +262,13 @@ export default function BudgetPage() {
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([weekStart, v]) => ({ weekStart, spend: v.spend, label: v.label }));
 
+      // Filter weeks based on week filter (if set)
+      const filteredWeeks = filters.week
+        ? weeksSorted.filter(w => w.weekStart >= filters.week!)
+        : weeksSorted;
+
       let running = 0;
-      const dailySeries = weeksSorted.map((w) => {
+      const dailySeries = filteredWeeks.map((w) => {
         running += w.spend;
         const d = new Date(w.weekStart);
         const dayOfMonth = Number(format(d, "dd"));
@@ -582,17 +589,31 @@ export default function BudgetPage() {
             ) : (
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
+                  <ComposedChart
                     data={budgetDataQuery.data?.dailySeries ?? []}
                     margin={{ top: 8, right: 30, bottom: 8, left: 45 }}
                   >
+                    <defs>
+                      {/* Gradient for underpacing (red) */}
+                      <linearGradient id="underpacingGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0.05} />
+                      </linearGradient>
+                      {/* Gradient for overpacing (green) */}
+                      <linearGradient id="overpacingGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis
-                      dataKey="day"
-                      tickFormatter={(v) => format(new Date(v), "dd") as any}
-                      fontSize={12}
+                      dataKey="label"
+                      fontSize={10}
                       tickLine={false}
                       axisLine={false}
+                      angle={-15}
+                      textAnchor="end"
+                      height={50}
                     />
                     <YAxis
                       tickFormatter={(v) => `R$${(Number(v) / 1000).toFixed(0)}k`}
@@ -602,25 +623,69 @@ export default function BudgetPage() {
                       axisLine={false}
                     />
                     <Tooltip
-                      content={<ChartTooltip />}
+                      content={({ active, payload }) => {
+                        if (!active || !payload || !payload.length) return null;
+                        const data = payload[0].payload;
+                        const ideal = data.idealCum || 0;
+                        const real = data.spendCum || 0;
+                        const gap = real - ideal;
+                        const gapPct = ideal > 0 ? (gap / ideal) * 100 : 0;
+
+                        return (
+                          <div className="rounded-lg border bg-background p-2 shadow-sm">
+                            <div className="grid gap-2">
+                              <div className="flex flex-col">
+                                <span className="text-[0.70rem] uppercase text-muted-foreground">Dia {format(new Date(data.day), "dd/MM")}</span>
+                              </div>
+                              <div className="grid gap-1">
+                                <div className="flex items-center justify-between gap-8">
+                                  <span className="text-xs text-muted-foreground">Ideal:</span>
+                                  <span className="text-xs font-medium">{brl(ideal)}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-8">
+                                  <span className="text-xs text-muted-foreground">Real:</span>
+                                  <span className="text-xs font-medium">{brl(real)}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-8 border-t pt-1">
+                                  <span className="text-xs font-medium">Gap:</span>
+                                  <span className={`text-xs font-bold ${gap >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                    {gap >= 0 ? '+' : ''}{brl(gap)} ({gapPct >= 0 ? '+' : ''}{gapPct.toFixed(1)}%)
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }}
                     />
+                    {/* Area for the gap - will be filled conditionally */}
+                    <Area
+                      type="monotone"
+                      dataKey="spendCum"
+                      fill="url(#underpacingGradient)"
+                      stroke="none"
+                      fillOpacity={1}
+                    />
+                    {/* Ideal line (dashed reference) */}
                     <Line
                       type="monotone"
                       dataKey="idealCum"
                       name="Ideal"
-                      stroke="#cbd5e1"
-                      strokeWidth={3}
+                      stroke="#94a3b8"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
                       dot={false}
                     />
+                    {/* Real line (solid) */}
                     <Line
                       type="monotone"
                       dataKey="spendCum"
-                      name="Real"
+                      name="Realizado"
                       stroke="hsl(var(--primary))"
                       strokeWidth={3}
                       dot={false}
                     />
-                  </LineChart>
+                  </ComposedChart>
                 </ResponsiveContainer>
               </div>
             )}
@@ -654,6 +719,7 @@ export default function BudgetPage() {
             ) : (
               <InvestmentTreeTable
                 data={budgetDataQuery.data?.weeklyRows ?? []}
+                monthDate={filters.month}
                 onViewWeekly={(node) => {
                   // Create WeeklyData from Node
                   const rows = budgetDataQuery.data?.weeklyRows ?? [];
@@ -827,9 +893,10 @@ export default function BudgetPage() {
         open={selectedUnit !== null}
         onOpenChange={(open) => !open && setSelectedUnit(null)}
         unitName={selectedUnit?.unit ?? null}
+        monthDate={filters.month}
         weeklyData={(() => {
           if (!selectedUnit) return [];
-          const byWeek = new Map<string, { semana: string; weekStart: string; orcado: number; realizado: number }>();
+          const byWeek = new Map<string, { semana: string; weekStart: string; orcado: number; realizado: number; leads: number; cpl: number }>();
 
           for (const r of selectedUnit.rows) {
             // Already filtered by onViewWeekly logic
@@ -840,15 +907,24 @@ export default function BudgetPage() {
               semana: r?.semana_label ?? weekStart,
               weekStart,
               orcado: 0,
-              realizado: 0
+              realizado: 0,
+              leads: 0,
+              cpl: 0
             };
             curr.orcado += Number(r?.orcamento_semanal ?? 0) || 0;
             curr.realizado += Number(r?.gasto_real ?? 0) || 0;
+            curr.leads += Number(r?.leads ?? 0) || 0;
             if (r?.semana_label) curr.semana = r.semana_label;
             byWeek.set(weekStart, curr);
           }
 
-          return Array.from(byWeek.values()).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+          // Calculate CPL for each week after aggregation
+          const result = Array.from(byWeek.values()).map(w => ({
+            ...w,
+            cpl: w.leads > 0 ? w.realizado / w.leads : 0
+          }));
+
+          return result.sort((a, b) => a.weekStart.localeCompare(b.weekStart));
         })()}
       />
     </div >

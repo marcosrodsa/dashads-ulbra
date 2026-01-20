@@ -8,8 +8,10 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, ChevronDown, Calendar } from "lucide-react";
+import { ChevronRight, ChevronDown, Calendar, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { getDynamicPacingStatus, getPacingStatusLabel, getDynamicThresholds, formatExpectedRange, type PacingStatus } from "@/lib/pacing-utils";
 
 // Reutilizar tipo se exportado, ou redefinir compativel
 export type TreeDataRow = {
@@ -26,6 +28,7 @@ export type TreeDataRow = {
 interface InvestmentTreeTableProps {
     data: TreeDataRow[];
     onViewWeekly: (node: TreeNode) => void;
+    monthDate: Date; // Month being analyzed for dynamic pacing
 }
 
 type NodeStatus = "success" | "warning" | "error";
@@ -56,7 +59,7 @@ function pct(v: number) {
     return new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(v);
 }
 
-export function InvestmentTreeTable({ data, onViewWeekly }: InvestmentTreeTableProps) {
+export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: InvestmentTreeTableProps) {
     const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
 
     const toggle = (id: string) => {
@@ -217,14 +220,12 @@ export function InvestmentTreeTable({ data, onViewWeekly }: InvestmentTreeTableP
         const utilization = node.budget > 0 ? (node.spend / node.budget) : 0;
         const variance = node.budget - node.spend; // Positivo = Sobrou budget (Good), Negativo = Estourou (Bad)
 
-        // Status Pacing Logic (simplified)
-        let status: NodeStatus = "success";
-        if (utilization > 1.05) status = "error"; // > 105% spend
-        else if (utilization < 0.8) status = "warning"; // Underpacing
+        // Dynamic Status Logic based on month progress
+        const currentDate = new Date();
+        const status: PacingStatus = getDynamicPacingStatus(utilization, currentDate, monthDate);
 
         const statusColor = status === "error" ? "text-red-500" : status === "warning" ? "text-yellow-500" : "text-emerald-500";
-        // PT-BR Status Translations
-        const statusLabel = status === "error" ? "Acima" : status === "warning" ? "Abaixo" : "Ideal";
+        const statusLabel = getPacingStatusLabel(status);
 
         const cpl = node.leads > 0 ? node.spend / node.leads : 0;
 
@@ -289,7 +290,28 @@ export function InvestmentTreeTable({ data, onViewWeekly }: InvestmentTreeTableP
                         {cpl > 0 ? brl(cpl) : '-'}
                     </TableCell>
                     <TableCell className="text-center py-2">
-                        <span className={`text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
+                        <div className="flex items-center justify-center gap-1">
+                            <span className={`text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs">
+                                        <div className="space-y-1 text-xs">
+                                            <p className="font-semibold">Status: {statusLabel}</p>
+                                            <p>Utilização: {pct(utilization)}</p>
+                                            <p>Faixa ideal: {formatExpectedRange(getDynamicThresholds(new Date(), monthDate))}</p>
+                                            <p className="text-muted-foreground">
+                                                {status === "error" && "Fora da margem aceitável para o dia atual."}
+                                                {status === "warning" && "Próximo aos limites, requer atenção."}
+                                                {status === "success" && "Dentro do ritmo esperado para o dia atual."}
+                                            </p>
+                                        </div>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
+                        </div>
                     </TableCell>
                     <TableCell className="text-center py-2">
                         <Button

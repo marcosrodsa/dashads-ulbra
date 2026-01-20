@@ -389,25 +389,6 @@ export function AppFilters() {
                         </Select>
                     </div>
 
-                    {/* Excluir EAD */}
-                    {isBudgetRoute && (
-                        <div className="flex items-center justify-between rounded-md border p-3 bg-muted/20">
-                            <div className="space-y-0.5">
-                                <Label htmlFor="exclude-ead-sheet" className="text-sm font-medium cursor-pointer">
-                                    Excluir EAD
-                                </Label>
-                                <p className="text-xs text-muted-foreground">
-                                    Mostrar apenas presencial
-                                </p>
-                            </div>
-                            <Switch
-                                id="exclude-ead-sheet"
-                                checked={filters.excludeEad}
-                                onCheckedChange={setExcludeEad}
-                            />
-                        </div>
-                    )}
-
                     <Button variant="secondary" className="w-full" onClick={clear}>
                         Limpar filtros
                     </Button>

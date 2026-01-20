@@ -1,5 +1,6 @@
 import * as React from "react";
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, Info } from "lucide-react";
+import { getDynamicPacingStatus, getPacingStatusLabel, getDynamicThresholds, formatExpectedRange, type PacingStatus } from "@/lib/pacing-utils";
 import {
     Dialog,
     DialogContent,
@@ -10,13 +11,14 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
     BarChart,
     Bar,
     XAxis,
     YAxis,
     CartesianGrid,
-    Tooltip,
+    Tooltip as RechartsTooltip,
     Legend,
     ResponsiveContainer,
     Cell,
@@ -27,6 +29,8 @@ export type WeeklyData = {
     weekStart: string;
     orcado: number;
     realizado: number;
+    leads: number;
+    cpl: number;
 };
 
 interface WeeklyDrawerProps {
@@ -34,22 +38,28 @@ interface WeeklyDrawerProps {
     onOpenChange: (open: boolean) => void;
     unitName: string | null;
     weeklyData: WeeklyData[];
+    monthDate: Date; // Month being analyzed for dynamic pacing
 }
 
 function brl(v: number) {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 }
 
-function getStatus(orcado: number, realizado: number): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
+function getStatus(orcado: number, realizado: number, weekEndDate: Date, monthDate: Date): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
     if (orcado === 0 && realizado > 0) return { label: "Sem budget", variant: "destructive" };
     if (orcado === 0) return { label: "-", variant: "outline" };
-    const ratio = realizado / orcado;
-    if (ratio <= 0.9) return { label: "OK", variant: "secondary" };
-    if (ratio <= 1.1) return { label: "No limite", variant: "default" };
-    return { label: "Estouro", variant: "destructive" };
+
+    const utilization = realizado / orcado;
+
+    // Use dynamic pacing status based on week end date
+    const status: PacingStatus = getDynamicPacingStatus(utilization, weekEndDate, monthDate);
+    const label = getPacingStatusLabel(status);
+
+    const variant = status === "error" ? "destructive" : status === "warning" ? "default" : "secondary";
+    return { label, variant };
 }
 
-export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData }: WeeklyDrawerProps) {
+export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData, monthDate }: WeeklyDrawerProps) {
     // Dados para o gráfico
     const chartData = weeklyData.map((w) => ({
         name: w.semana,
@@ -60,6 +70,8 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData }: Weekl
     // Totais
     const totalOrcado = weeklyData.reduce((acc, w) => acc + w.orcado, 0);
     const totalRealizado = weeklyData.reduce((acc, w) => acc + w.realizado, 0);
+    const totalLeads = weeklyData.reduce((acc, w) => acc + w.leads, 0);
+    const avgCpl = totalLeads > 0 ? totalRealizado / totalLeads : 0;
     const variance = totalOrcado - totalRealizado;
 
     return (
@@ -115,7 +127,7 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData }: Weekl
                                         axisLine={false}
                                         tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
                                     />
-                                    <Tooltip
+                                    <RechartsTooltip
                                         formatter={(value: number) => brl(value)}
                                         labelStyle={{ color: "hsl(var(--foreground))" }}
                                         contentStyle={{
@@ -152,13 +164,18 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData }: Weekl
                                         <TableHead className="text-right">Orçado</TableHead>
                                         <TableHead className="text-right">Realizado</TableHead>
                                         <TableHead className="text-right">Var</TableHead>
+                                        <TableHead className="text-right">Leads</TableHead>
+                                        <TableHead className="text-right">CPL</TableHead>
                                         <TableHead className="text-right">Status</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {weeklyData.map((w) => {
                                         const var_ = w.orcado - w.realizado;
-                                        const status = getStatus(w.orcado, w.realizado);
+                                        // Calculate week end date (week start + 6 days)
+                                        const weekEndDate = new Date(w.weekStart);
+                                        weekEndDate.setDate(weekEndDate.getDate() + 6);
+                                        const status = getStatus(w.orcado, w.realizado, weekEndDate, monthDate);
                                         return (
                                             <TableRow key={w.weekStart}>
                                                 <TableCell className="font-medium text-sm">{w.semana}</TableCell>
@@ -167,8 +184,35 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData }: Weekl
                                                 <TableCell className={`text-right tabular-nums text-sm ${var_ >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                                                     {brl(var_)}
                                                 </TableCell>
+                                                <TableCell className="text-right tabular-nums text-sm">
+                                                    {w.leads > 0 ? w.leads.toLocaleString('pt-BR') : '-'}
+                                                </TableCell>
+                                                <TableCell className="text-right tabular-nums text-sm">
+                                                    {w.cpl > 0 ? brl(w.cpl) : '-'}
+                                                </TableCell>
                                                 <TableCell className="text-right">
-                                                    <Badge variant={status.variant} className="text-xs">{status.label}</Badge>
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        <Badge variant={status.variant} className="text-xs">{status.label}</Badge>
+                                                        <TooltipProvider>
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                                                                </TooltipTrigger>
+                                                                <TooltipContent className="max-w-xs">
+                                                                    <div className="space-y-1 text-xs">
+                                                                        <p className="font-semibold">Status: {status.label}</p>
+                                                                        <p>Utilização: {((w.realizado / w.orcado) * 100).toFixed(1)}%</p>
+                                                                        <p>Faixa ideal: {formatExpectedRange(getDynamicThresholds(weekEndDate, monthDate))}</p>
+                                                                        <p className="text-muted-foreground">
+                                                                            {status.variant === "destructive" && "Fora da margem aceitável para esta semana."}
+                                                                            {status.variant === "default" && "Próximo aos limites, requer atenção."}
+                                                                            {status.variant === "secondary" && "Dentro do ritmo esperado para esta semana."}
+                                                                        </p>
+                                                                    </div>
+                                                                </TooltipContent>
+                                                            </Tooltip>
+                                                        </TooltipProvider>
+                                                    </div>
                                                 </TableCell>
                                             </TableRow>
                                         );

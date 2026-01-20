@@ -38,7 +38,7 @@ export function AppSidebar() {
           {!collapsed ? (
             <img src="/university-logo.png" alt="Logo" className="h-12 w-auto object-contain" />
           ) : (
-            <img src="/ulbra-logo-icon.png" alt="Logo" className="size-8 object-contain" />
+            <img src="/favicon.png" alt="Logo" className="size-8 object-contain" />
           )}
         </div>
       </SidebarHeader>
