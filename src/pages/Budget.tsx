@@ -224,6 +224,23 @@ export default function BudgetPage() {
         totalLeads: weeklyRows.reduce((a, b) => a + Number(b.leads || 0), 0)
       });
 
+      // Debug: Cursos da Ulbra Canoas
+      const ulbraCanoasRows = weeklyRows.filter(r => r.unidade?.toLowerCase().includes("canoas"));
+      const uniqueCourses = new Set(ulbraCanoasRows.map(r => r.curso || "Geral"));
+      const biomedicinaRows = ulbraCanoasRows.filter(r => r.curso?.toLowerCase().includes("biomedicina"));
+      console.log("🎓 Ulbra Canoas Debug:", {
+        totalRows: ulbraCanoasRows.length,
+        uniqueCourses: Array.from(uniqueCourses).sort(),
+        coursesWithBudget: ulbraCanoasRows.filter(r => r.orcamento_semanal > 0).map(r => r.curso).filter((v, i, a) => a.indexOf(v) === i),
+        coursesWithSpend: ulbraCanoasRows.filter(r => r.gasto_real > 0).map(r => r.curso).filter((v, i, a) => a.indexOf(v) === i),
+        biomedicina: {
+          rows: biomedicinaRows.length,
+          totalBudget: biomedicinaRows.reduce((a, b) => a + (b.orcamento_semanal || 0), 0),
+          totalSpend: biomedicinaRows.reduce((a, b) => a + (b.gasto_real || 0), 0),
+          sample: biomedicinaRows[0]
+        }
+      });
+
       const plannedMonth = (budgetRows ?? []).reduce((acc: number, r: any) => acc + safeNumber(r?.[budgetCols.plannedCol]), 0);
 
       const spendMonth = (weeklyRows ?? []).reduce(
