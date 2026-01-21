@@ -156,9 +156,9 @@ export default function BudgetPage() {
         .gte("data_inicio_semana", fromDate)
         .lte("data_inicio_semana", toDate);
 
-      if (filters.platform) weeklyQ = weeklyQ.eq("platform", filters.platform);
-      if (filters.businessUnit) weeklyQ = weeklyQ.eq("business_unit", filters.businessUnit);
-      if (filters.course) weeklyQ = weeklyQ.eq("course", filters.course);
+      if (filters.platform) weeklyQ = weeklyQ.eq("plataforma", filters.platform);
+      if (filters.businessUnit) weeklyQ = weeklyQ.eq("unidade", filters.businessUnit);
+      if (filters.course) weeklyQ = weeklyQ.eq("curso", filters.course);
 
       const { data: weeklyRowsRaw, error: weeklyErr } = await weeklyQ;
       if (weeklyErr) throw weeklyErr;
@@ -437,7 +437,7 @@ export default function BudgetPage() {
   const kpis = budgetDataQuery.data?.kpis;
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6 p-6">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-6 p-6">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Controle de Budget</h1>
         <p className="text-sm text-muted-foreground">
@@ -552,11 +552,11 @@ export default function BudgetPage() {
                 Carregando…
               </div>
             ) : (
-              <div className="h-64">
+              <div className="h-64 w-full overflow-hidden">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={(budgetDataQuery.data?.unitRows ?? []).slice(0, 12)}
-                    margin={{ top: 8, right: 30, bottom: 8, left: 45 }}
+                    margin={{ top: 8, right: typeof window !== 'undefined' && window.innerWidth < 640 ? 10 : 30, bottom: 8, left: typeof window !== 'undefined' && window.innerWidth < 640 ? 10 : 45 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis
@@ -604,11 +604,11 @@ export default function BudgetPage() {
                 Carregando…
               </div>
             ) : (
-              <div className="h-64">
+              <div className="h-64 w-full overflow-hidden">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart
                     data={budgetDataQuery.data?.dailySeries ?? []}
-                    margin={{ top: 8, right: 30, bottom: 8, left: 45 }}
+                    margin={{ top: 8, right: typeof window !== 'undefined' && window.innerWidth < 640 ? 10 : 30, bottom: 8, left: typeof window !== 'undefined' && window.innerWidth < 640 ? 10 : 45 }}
                   >
                     <defs>
                       {/* Gradient for underpacing (red) */}

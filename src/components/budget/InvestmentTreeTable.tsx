@@ -355,7 +355,7 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
     };
 
     return (
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto min-w-0">
             <Table>
                 <TableHeader>
                     <TableRow>

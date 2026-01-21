@@ -21,7 +21,7 @@ import { getSupabaseClient } from "@/integrations/supabase/client";
 
 const navItems = [
   { title: "Controle de Budget", url: "/budget", icon: Gauge },
-  { title: "Inteligência Tática", url: "/performance", icon: BarChart3 },
+  // { title: "Inteligência Tática", url: "/performance", icon: BarChart3 }, // Hidden per user request
 ];
 
 export function AppSidebar() {

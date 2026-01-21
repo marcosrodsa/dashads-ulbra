@@ -36,7 +36,7 @@ function monthOptions(count = 18) {
             label: format(d, "MMMM yyyy", { locale: ptBR }),
             date: d,
         };
-    });
+    }).filter(option => option.date.getFullYear() >= 2026);
 }
 
 function weekOptions(month: Date) {
@@ -239,7 +239,7 @@ export function AppFilters() {
 
     return (
         <Sheet open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
-            <SheetContent side="right" className="w-[400px] sm:w-[540px] overflow-y-auto">
+            <SheetContent side="right" className="w-full max-w-md sm:max-w-lg overflow-y-auto">
                 <SheetHeader>
                     <SheetTitle>Segmentação</SheetTitle>
                     <SheetDescription>
