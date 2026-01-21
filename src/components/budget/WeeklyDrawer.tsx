@@ -76,7 +76,7 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData, monthDa
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="w-full sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <CalendarDays className="h-5 w-5" />
@@ -89,7 +89,7 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData, monthDa
 
                 <div className="mt-6 space-y-6">
                     {/* KPIs resumidos */}
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <Card className="p-3">
                             <p className="text-xs text-muted-foreground">Orçado</p>
                             <p className="text-lg font-semibold">{brl(totalOrcado)}</p>
@@ -193,7 +193,7 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData, monthDa
                                                 <TableCell className="text-right">
                                                     <div className="flex items-center justify-end gap-1">
                                                         <Badge variant={status.variant} className="text-xs">{status.label}</Badge>
-                                                        <TooltipProvider>
+                                                        <TooltipProvider delayDuration={0}>
                                                             <Tooltip>
                                                                 <TooltipTrigger asChild>
                                                                     <Info className="h-3 w-3 text-muted-foreground cursor-help" />

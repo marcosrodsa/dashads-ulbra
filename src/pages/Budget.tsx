@@ -459,7 +459,7 @@ export default function BudgetPage() {
         </Card>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" aria-label="KPIs Financeiros">
+      <section className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" aria-label="KPIs Financeiros">
         <KpiCard
           title="Budget Total"
           value={isLoading ? "…" : kpis?.plannedMonth != null ? brl(kpis.plannedMonth) : "-"}
@@ -511,7 +511,7 @@ export default function BudgetPage() {
         />
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3 lg:grid-cols-3 pt-2" aria-label="KPIs Performance">
+      <section className="grid gap-3 grid-cols-1 sm:grid-cols-3 pt-2" aria-label="KPIs Performance">
         <KpiCard
           title="Forecast"
           value={isLoading ? "…" : kpis?.forecast != null ? brl(kpis.forecast) : "-"}

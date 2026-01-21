@@ -2,7 +2,7 @@ import * as React from "react";
 import { TrendingUp, TrendingDown, Minus, Info } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export type KpiStatus = "success" | "warning" | "danger" | "neutral";
@@ -89,14 +89,16 @@ export function KpiCard({
         <div className="flex items-center gap-1.5">
           <CardTitle className="text-sm font-medium">{title}</CardTitle>
           {tooltip && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-[200px] text-xs">
-                {tooltip}
-              </TooltipContent>
-            </Tooltip>
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[200px] text-xs">
+                  {tooltip}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
         </div>
         {hint ? <CardDescription>{hint}</CardDescription> : null}
@@ -119,4 +121,3 @@ export function KpiCard({
 
   return cardContent;
 }
-
