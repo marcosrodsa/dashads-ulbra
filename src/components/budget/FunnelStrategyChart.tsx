@@ -148,7 +148,16 @@ export function FunnelStrategyChart({ data }: FunnelStrategyChartProps) {
                                 cursor={{ fill: "transparent" }}
                                 wrapperStyle={{ zIndex: 100 }}
                             />
-                            <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '11px' }} />
+                            <Legend
+                                verticalAlign="bottom"
+                                height={36}
+                                iconType="circle"
+                                wrapperStyle={{ fontSize: '11px' }}
+                                formatter={(value, entry: any) => {
+                                    const percentage = totalSpend > 0 ? (entry.payload.value / totalSpend) : 0;
+                                    return `${value} (${pct(percentage)})`;
+                                }}
+                            />
                         </PieChart>
                     </ResponsiveContainer>
                 </div>
