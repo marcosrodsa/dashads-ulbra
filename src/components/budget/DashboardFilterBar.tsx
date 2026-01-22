@@ -1,7 +1,7 @@
 import * as React from "react";
 import { format, subMonths, startOfMonth, endOfMonth, eachWeekOfInterval, startOfWeek, endOfWeek, isSameMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Filter, Building2, GraduationCap, Globe, CalendarDays, X } from "lucide-react";
+import { Filter, Building2, GraduationCap, Globe, CalendarDays, X, ChevronDown, ChevronUp } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -182,6 +182,9 @@ export function DashboardFilterBar() {
         clear
     } = useFilters();
 
+    // Estado para controlar expansão no mobile
+    const [isMobileOpen, setIsMobileOpen] = React.useState(false);
+
     // Contagem de filtros ativos para feedback visual
     const activeFiltersCount = [
         filters.businessUnit,
@@ -235,8 +238,11 @@ export function DashboardFilterBar() {
             <CardContent className="p-4">
                 <div className="flex flex-col gap-4">
 
-                    {/* Linha de Título + Botão Limpar */}
-                    <div className="flex items-center justify-between lg:hidden">
+                    {/* Linha de Título + Botão Limpar (Mobile - Interativo) */}
+                    <div
+                        className="flex items-center justify-between lg:hidden cursor-pointer select-none py-1"
+                        onClick={() => setIsMobileOpen(!isMobileOpen)}
+                    >
                         <div className="flex items-center gap-2">
                             <Filter className="h-4 w-4 text-primary" />
                             <span className="font-semibold text-sm">Filtros</span>
@@ -245,21 +251,29 @@ export function DashboardFilterBar() {
                                     {activeFiltersCount}
                                 </Badge>
                             )}
+                            {isMobileOpen ? (
+                                <ChevronUp className="h-4 w-4 text-muted-foreground ml-1" />
+                            ) : (
+                                <ChevronDown className="h-4 w-4 text-muted-foreground ml-1" />
+                            )}
                         </div>
                         {activeFiltersCount > 0 && (
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 text-xs text-muted-foreground hover:text-foreground"
-                                onClick={clear}
+                                className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    clear();
+                                }}
                             >
                                 Limpar
                             </Button>
                         )}
                     </div>
 
-                    {/* Grid de Filtros */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    {/* Grid de Filtros - Oculto no mobile se fechado, sempre visível no desktop */}
+                    <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 ${!isMobileOpen ? 'hidden lg:grid' : ''}`}>
 
                         {/* Mês */}
                         <div className="space-y-1.5">
