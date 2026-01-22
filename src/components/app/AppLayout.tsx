@@ -6,7 +6,7 @@ import { AppSidebar } from "./AppSidebar";
 export function AppLayout() {
   return (
     <FiltersProvider>
-      <SidebarProvider defaultOpen>
+      <SidebarProvider defaultOpen={false}>
         <div className="min-h-svh flex w-full">
           <AppSidebar />
 

@@ -15,6 +15,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { getSupabaseClient } from "@/integrations/supabase/client";
@@ -34,12 +35,17 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon" className={collapsed ? "w-14" : "w-80"}>
-      <SidebarHeader className="gap-2">
-        <div className="flex items-center justify-center py-4">
+      <SidebarHeader className="gap-2 relative">
+        <div className="flex items-center justify-between px-2 py-4">
           {!collapsed ? (
-            <img src="/university-logo.png" alt="Logo" className="h-12 w-auto object-contain" />
+            <>
+              <img src="/university-logo.png" alt="Logo" className="h-12 w-auto object-contain" />
+              <SidebarTrigger />
+            </>
           ) : (
-            <img src="/favicon.png" alt="Logo" className="size-8 object-contain" />
+            <div className="flex w-full justify-center">
+              <SidebarTrigger />
+            </div>
           )}
         </div>
       </SidebarHeader>
