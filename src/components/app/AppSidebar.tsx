@@ -63,12 +63,14 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               ))}
 
+              {/* Filtros removido - agora está no topo do Dashboard
               <SidebarMenuItem>
                 <SidebarMenuButton tooltip="Filtros" onClick={toggleFilters}>
                   <Filter className="size-4" />
                   {!collapsed && <span>Filtros</span>}
                 </SidebarMenuButton>
-              </SidebarMenuItem>
+              </SidebarMenuItem> 
+              */}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

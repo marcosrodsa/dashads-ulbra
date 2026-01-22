@@ -25,6 +25,7 @@ import { WeeklyComparisonChart } from "@/components/budget/WeeklyComparisonChart
 import { FunnelStrategyChart } from "@/components/budget/FunnelStrategyChart";
 import { PlatformDonutChart } from "@/components/budget/PlatformDonutChart";
 import { ChartTooltip } from "@/components/budget/ChartTooltip";
+import { DashboardFilterBar } from "@/components/budget/DashboardFilterBar";
 import { useFilters } from "@/contexts/filters-context";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { resolveBudgetColumns } from "@/integrations/supabase/budgetSchema";
@@ -494,6 +495,9 @@ export default function BudgetPage() {
           Visão executiva de orçado vs realizado (mês, unidade, curso e plataforma).
         </p>
       </header>
+
+      {/* Filtros em destaque */}
+      <DashboardFilterBar />
 
       {error ? (
         <Card>
@@ -983,9 +987,7 @@ export default function BudgetPage() {
         </Card>
       </section>
 
-      <footer className="text-xs text-muted-foreground">
-        Filtros ativos: {JSON.stringify({ ...filters, month: filters.month.toISOString().slice(0, 10) })}
-      </footer>
+
 
       {/* Drawer de drill-down semanal */}
       <WeeklyDrawer
