@@ -74,13 +74,13 @@ export function WeeklyComparisonChart({ data }: WeeklyComparisonChartProps) {
                             <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-muted" />
                             <XAxis
                                 dataKey="name"
-                                fontSize={12}
+                                fontSize={10}
                                 tickLine={false}
                                 axisLine={false}
                             />
                             <YAxis
                                 tickFormatter={(value) => `R$${(value / 1000).toFixed(0)}k`}
-                                fontSize={12}
+                                fontSize={10}
                                 tickLine={false}
                                 axisLine={false}
                             />

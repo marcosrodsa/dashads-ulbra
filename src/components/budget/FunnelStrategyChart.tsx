@@ -22,6 +22,10 @@ function brl(v: number) {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 }
 
+function pct(v: number) {
+    return new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(v);
+}
+
 const COLORS = {
     Branding: "hsl(var(--primary))", // Roxo
     Conversão: "#000000",            // Preto
@@ -97,7 +101,7 @@ export function FunnelStrategyChart({ data }: FunnelStrategyChartProps) {
                                                     <tspan
                                                         x={viewBox.cx}
                                                         y={viewBox.cy}
-                                                        className="fill-foreground text-2xl font-bold"
+                                                        className="fill-foreground text-lg font-bold"
                                                     >
                                                         {brl(totalSpend)}
                                                     </tspan>
@@ -117,11 +121,34 @@ export function FunnelStrategyChart({ data }: FunnelStrategyChartProps) {
                                 />
                             </Pie>
                             <Tooltip
-                                content={<ChartTooltip />}
+                                content={({ active, payload }) => {
+                                    if (!active || !payload || !payload.length) return null;
+                                    const data = payload[0].payload;
+                                    const percentage = totalSpend > 0 ? (data.value / totalSpend) : 0;
+                                    return (
+                                        <div className="rounded-lg border bg-background p-2 shadow-sm">
+                                            <div className="grid gap-2">
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm font-semibold">{data.name}</span>
+                                                </div>
+                                                <div className="grid gap-1">
+                                                    <div className="flex items-center justify-between gap-8">
+                                                        <span className="text-xs text-muted-foreground">Valor:</span>
+                                                        <span className="text-xs font-medium">{brl(data.value)}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-8">
+                                                        <span className="text-xs text-muted-foreground">Percentual:</span>
+                                                        <span className="text-xs font-bold">{pct(percentage)}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                }}
                                 cursor={{ fill: "transparent" }}
                                 wrapperStyle={{ zIndex: 100 }}
                             />
-                            <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                            <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '11px' }} />
                         </PieChart>
                     </ResponsiveContainer>
                 </div>

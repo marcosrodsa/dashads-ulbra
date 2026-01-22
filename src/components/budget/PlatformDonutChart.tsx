@@ -168,6 +168,7 @@ export function PlatformDonutChart({ data }: PlatformDonutChartProps) {
                                 verticalAlign="bottom"
                                 height={36}
                                 iconType="circle"
+                                wrapperStyle={{ fontSize: '11px' }}
                                 formatter={(value, entry: any) => {
                                     const percentage = entry.payload?.percentage || 0;
                                     return `${value} (${pct(percentage)})`;
