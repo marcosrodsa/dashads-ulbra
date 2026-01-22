@@ -90,8 +90,9 @@ export function KpiCard({
       <CardHeader className="pb-2">
         <div className="flex items-center gap-1.5">
           <CardTitle className="text-sm font-medium">{title}</CardTitle>
+          {/* Desktop: checkbox ao lado do título */}
           {checkboxControl && (
-            <div className="ml-auto">{checkboxControl}</div>
+            <div className="ml-auto hidden sm:flex">{checkboxControl}</div>
           )}
           {tooltip && (
             <TooltipProvider delayDuration={0}>
@@ -106,6 +107,10 @@ export function KpiCard({
             </TooltipProvider>
           )}
         </div>
+        {/* Mobile: checkbox em linha separada */}
+        {checkboxControl && (
+          <div className="mt-2 sm:hidden">{checkboxControl}</div>
+        )}
         {hint ? <CardDescription>{hint}</CardDescription> : null}
       </CardHeader>
       <CardContent>
