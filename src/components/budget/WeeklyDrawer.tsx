@@ -198,7 +198,7 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData, monthDa
                                                                 <TooltipTrigger asChild>
                                                                     <Info className="h-3 w-3 text-muted-foreground cursor-help" />
                                                                 </TooltipTrigger>
-                                                                <TooltipContent className="max-w-xs">
+                                                                <TooltipContent className="max-w-sm whitespace-normal">
                                                                     <div className="space-y-1 text-xs">
                                                                         <p className="font-semibold">Status: {status.label}</p>
                                                                         <p>Utilização: {((w.realizado / w.orcado) * 100).toFixed(1)}%</p>
