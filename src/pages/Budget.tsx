@@ -17,6 +17,7 @@ import {
 } from "recharts";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { type InvestmentMatrixUnitGroup } from "@/components/budget/InvestmentMatrix";
 import { InvestmentTreeTable } from "@/components/budget/InvestmentTreeTable";
 import { KpiCard, getPacingStatus, type KpiStatus } from "@/components/budget/KpiCard";
@@ -48,6 +49,7 @@ type BudgetKpis = {
   plannedMonth: number | null;
   spendMonth: number | null;
   spendSemEad: number | null;
+  spendBranding: number | null;  // NOVO
   forecast: number | null;
   netVariance: number | null;
   pacing: number | null;
@@ -86,6 +88,9 @@ export default function BudgetPage() {
 
   // Estado para drill-down semanal
   const [selectedUnit, setSelectedUnit] = React.useState<SelectedUnitState>(null);
+
+  // Estado para controlar se CPL exclui Branding
+  const [excludeBranding, setExcludeBranding] = React.useState(false);
 
   const monthStart = startOfMonth(filters.month);
   const monthEnd = endOfMonth(filters.month);
@@ -248,6 +253,35 @@ export default function BudgetPage() {
         (acc: number, r: WeeklyViewRow) => acc + safeNumber(r?.gasto_real),
         0
       );
+
+      // Buscar dados de funnel_stage para calcular gasto de Branding
+      let spendBranding = 0;
+      if (budgetCols.funnelCol) {
+        let strategyQ = (client as SupabaseClient)
+          .from("fact_ads_budget")
+          .select(`${budgetCols.funnelCol}, ${budgetCols.spendCol}`)
+          .gte(budgetCols.monthCol, fromDate)
+          .lte(budgetCols.monthCol, toDate);
+
+        // Aplicar mesmos filtros
+        if (filters.platform && budgetCols.platformCol) {
+          strategyQ = strategyQ.eq(budgetCols.platformCol, filters.platform);
+        }
+        if (filters.businessUnit && budgetCols.unitCol) {
+          strategyQ = strategyQ.eq(budgetCols.unitCol, filters.businessUnit);
+        }
+        if (filters.course && budgetCols.courseCol) {
+          strategyQ = strategyQ.eq(budgetCols.courseCol, filters.course);
+        }
+
+        const { data: strategyData } = await strategyQ;
+
+        if (strategyData) {
+          spendBranding = strategyData
+            .filter((r: any) => r[budgetCols.funnelCol!]?.toLowerCase() === "branding")
+            .reduce((acc: number, r: any) => acc + safeNumber(r[budgetCols.spendCol]), 0);
+        }
+      }
 
       // Função helper para verificar se é EAD
       const isEadUnit = (unit: string) => {
@@ -413,6 +447,7 @@ export default function BudgetPage() {
         plannedMonth,
         spendMonth,
         spendSemEad,
+        spendBranding,  // NOVO
         forecast: plannedMonth > 0 ? forecast : null,
         netVariance,
         pacing,
@@ -529,15 +564,63 @@ export default function BudgetPage() {
         />
         <KpiCard
           title="CPL Médio"
-          value={isLoading ? "…" : kpis?.cpl != null ? brl(kpis.cpl) : "-"}
-          hint="Custo por Lead"
-          tooltip="Eficiência: Quanto custou cada lead em média (Gasto / Leads)."
+          value={(() => {
+            if (isLoading) return "…";
+            if (!kpis?.cpl) return "-";
+
+            // Se checkbox marcado, calcular CPL sem Branding
+            if (excludeBranding && budgetDataQuery.data?.investmentMatrix) {
+              const investmentMatrix = budgetDataQuery.data.investmentMatrix;
+
+              // Calcular gasto de Branding baseado na categorização do FunnelStrategyChart
+              let brandingSpend = 0;
+              investmentMatrix.forEach((unitGroup) => {
+                const name = unitGroup.unit.toLowerCase();
+                if (name.includes("branding") || name.includes("institucional")) {
+                  brandingSpend += unitGroup.spend;
+                }
+              });
+
+              // CPL sem Branding = (Gasto Total - Gasto Branding) / Total Leads
+              const totalSpend = kpis.spendMonth || 0;
+              const totalLeads = kpis.totalLeads || 0;
+              const spendWithoutBranding = totalSpend - brandingSpend;
+
+              if (totalLeads > 0 && spendWithoutBranding > 0) {
+                const cplWithoutBranding = spendWithoutBranding / totalLeads;
+                return brl(cplWithoutBranding);
+              }
+            }
+
+            return brl(kpis.cpl);
+          })()}
+          hint={excludeBranding ? "Custo por Lead (sem Branding)" : "Custo por Lead"}
+          tooltip={
+            excludeBranding
+              ? "CPL calculado excluindo investimento de Branding, que não gera leads diretos."
+              : "Eficiência: Quanto custou cada lead em média (Gasto / Leads)."
+          }
           status={(() => {
             // Regra de exemplo: Abaixo de 50 é bom, acima de 100 é ruim? 
             // Como não temos meta definida no banco, deixamos neutro ou fixo por enquanto.
             // O usuário disse: Se CPL R$ 200 é fracasso.
             return "neutral";
           })()}
+          checkboxControl={
+            <div className="flex items-center gap-1.5">
+              <Checkbox
+                id="exclude-branding"
+                checked={excludeBranding}
+                onCheckedChange={(checked) => setExcludeBranding(checked === true)}
+              />
+              <label
+                htmlFor="exclude-branding"
+                className="text-xs text-muted-foreground cursor-pointer select-none"
+              >
+                Excluir Branding
+              </label>
+            </div>
+          }
         />
       </section>
 

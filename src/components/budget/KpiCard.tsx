@@ -16,6 +16,7 @@ interface KpiCardProps {
   status?: KpiStatus;
   trend?: KpiTrend;
   trendLabel?: string;
+  checkboxControl?: React.ReactNode; // NOVO: permite adicionar checkbox ou outro controle
 }
 
 const statusColors: Record<KpiStatus, string> = {
@@ -79,7 +80,8 @@ export function KpiCard({
   tooltip,
   status = "neutral",
   trend,
-  trendLabel
+  trendLabel,
+  checkboxControl // NOVO
 }: KpiCardProps) {
   const TrendIcon = trend ? trendIcons[trend] : null;
 
@@ -88,6 +90,9 @@ export function KpiCard({
       <CardHeader className="pb-2">
         <div className="flex items-center gap-1.5">
           <CardTitle className="text-sm font-medium">{title}</CardTitle>
+          {checkboxControl && (
+            <div className="ml-auto">{checkboxControl}</div>
+          )}
           {tooltip && (
             <TooltipProvider delayDuration={0}>
               <Tooltip>
