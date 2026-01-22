@@ -23,6 +23,7 @@ import { KpiCard, getPacingStatus, type KpiStatus } from "@/components/budget/Kp
 import { WeeklyDrawer, type WeeklyData } from "@/components/budget/WeeklyDrawer";
 import { WeeklyComparisonChart } from "@/components/budget/WeeklyComparisonChart";
 import { FunnelStrategyChart } from "@/components/budget/FunnelStrategyChart";
+import { PlatformDonutChart } from "@/components/budget/PlatformDonutChart";
 import { ChartTooltip } from "@/components/budget/ChartTooltip";
 import { useFilters } from "@/contexts/filters-context";
 import { getSupabaseClient } from "@/integrations/supabase/client";
@@ -715,8 +716,9 @@ export default function BudgetPage() {
         <div className="lg:col-span-2">
           <WeeklyComparisonChart data={budgetDataQuery.data?.weeklyRows ?? []} />
         </div>
-        <div>
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-1">
           <FunnelStrategyChart data={budgetDataQuery.data?.investmentMatrix ?? []} />
+          <PlatformDonutChart data={budgetDataQuery.data?.investmentMatrix ?? []} />
         </div>
       </section>
 
