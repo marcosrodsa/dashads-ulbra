@@ -712,12 +712,14 @@ export default function BudgetPage() {
 
       </section>
 
-      <section aria-label="Visão Estratégica" className="grid gap-4 lg:grid-cols-3">
+      <section aria-label="Visão Estratégica" className="grid gap-4 grid-cols-1 lg:grid-cols-4">
         <div className="lg:col-span-2">
           <WeeklyComparisonChart data={budgetDataQuery.data?.weeklyRows ?? []} />
         </div>
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-1">
+        <div>
           <FunnelStrategyChart data={budgetDataQuery.data?.investmentMatrix ?? []} />
+        </div>
+        <div>
           <PlatformDonutChart data={budgetDataQuery.data?.investmentMatrix ?? []} />
         </div>
       </section>

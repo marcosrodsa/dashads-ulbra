@@ -65,19 +65,19 @@ export function FunnelStrategyChart({ data }: FunnelStrategyChartProps) {
     return (
         <Card className="flex flex-col">
             <CardHeader className="items-center pb-0">
-                <CardTitle>Investimento por Estratégia</CardTitle>
-                <CardDescription>Share of Wallet (Realizado)</CardDescription>
+                <CardTitle className="text-base">Investimento por Estratégia</CardTitle>
+                <CardDescription className="text-xs">Share of Wallet (Realizado)</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 pb-0">
-                <div className="h-[350px] w-full relative">
+                <div className="h-[300px] w-full relative">
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                             <Pie
                                 data={aggregated}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={100}
-                                outerRadius={130}
+                                innerRadius={70}
+                                outerRadius={100}
                                 paddingAngle={5}
                                 dataKey="value"
                             >

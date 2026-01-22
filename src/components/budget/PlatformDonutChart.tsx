@@ -68,7 +68,7 @@ export function PlatformDonutChart({ data }: PlatformDonutChartProps) {
                     <CardDescription>Distribuição META vs GOOGLE</CardDescription>
                 </CardHeader>
                 <CardContent className="flex-1 pb-0">
-                    <div className="h-[350px] w-full flex items-center justify-center text-muted-foreground">
+                    <div className="h-[300px] w-full flex items-center justify-center text-muted-foreground">
                         Sem dados disponíveis
                     </div>
                 </CardContent>
@@ -79,19 +79,19 @@ export function PlatformDonutChart({ data }: PlatformDonutChartProps) {
     return (
         <Card className="flex flex-col">
             <CardHeader className="items-center pb-0">
-                <CardTitle>Investimento por Plataforma</CardTitle>
-                <CardDescription>Distribuição META vs GOOGLE</CardDescription>
+                <CardTitle className="text-base">Investimento por Plataforma</CardTitle>
+                <CardDescription className="text-xs">Distribuição META vs GOOGLE</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 pb-0">
-                <div className="h-[350px] w-full relative">
+                <div className="h-[300px] w-full relative">
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                             <Pie
                                 data={aggregated}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={100}
-                                outerRadius={130}
+                                innerRadius={70}
+                                outerRadius={100}
                                 paddingAngle={5}
                                 dataKey="value"
                             >
@@ -106,6 +106,8 @@ export function PlatformDonutChart({ data }: PlatformDonutChartProps) {
                                 <Label
                                     content={({ viewBox }) => {
                                         if (viewBox && "cx" in viewBox && "cy" in viewBox) {
+                                            // Mostrar % da plataforma dominante
+                                            const dominantPlatform = aggregated[0]; // Já ordenado por valor
                                             return (
                                                 <text
                                                     x={viewBox.cx}
@@ -116,16 +118,16 @@ export function PlatformDonutChart({ data }: PlatformDonutChartProps) {
                                                     <tspan
                                                         x={viewBox.cx}
                                                         y={viewBox.cy}
-                                                        className="fill-foreground text-2xl font-bold"
+                                                        className="fill-foreground text-3xl font-bold"
                                                     >
-                                                        {brl(totalSpend)}
+                                                        {pct(dominantPlatform.percentage)}
                                                     </tspan>
                                                     <tspan
                                                         x={viewBox.cx}
-                                                        y={(viewBox.cy || 0) + 24}
-                                                        className="fill-muted-foreground text-xs"
+                                                        y={(viewBox.cy || 0) + 28}
+                                                        className="fill-muted-foreground text-sm font-medium"
                                                     >
-                                                        Total
+                                                        {dominantPlatform.name}
                                                     </tspan>
                                                 </text>
                                             );

@@ -53,12 +53,12 @@ export function WeeklyComparisonChart({ data }: WeeklyComparisonChartProps) {
     if (!data || data.length === 0) return null;
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Evolução Semanal (Global)</CardTitle>
-                <CardDescription>Comparativo de Budget vs Realizado por semana</CardDescription>
+        <Card className="flex flex-col">
+            <CardHeader className="pb-0">
+                <CardTitle className="text-base">Evolução Semanal (Global)</CardTitle>
+                <CardDescription className="text-xs">Comparativo de Budget vs Realizado por semana</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex-1 pb-0">
                 <div className="h-[300px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart
