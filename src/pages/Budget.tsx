@@ -17,7 +17,6 @@ import {
 } from "recharts";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { type InvestmentMatrixUnitGroup } from "@/components/budget/InvestmentMatrix";
 import { InvestmentTreeTable } from "@/components/budget/InvestmentTreeTable";
 import { KpiCard, getPacingStatus, type KpiStatus } from "@/components/budget/KpiCard";
@@ -49,11 +48,12 @@ type BudgetKpis = {
   plannedMonth: number | null;
   spendMonth: number | null;
   spendSemEad: number | null;
-  spendBranding: number | null;  // NOVO
+  spendBranding: number | null;
   forecast: number | null;
   netVariance: number | null;
   pacing: number | null;
   totalLeads: number | null;
+  performanceLeads: number | null;  // NOVO: leads sem Branding
   cpl: number | null;
 };
 
@@ -88,9 +88,6 @@ export default function BudgetPage() {
 
   // Estado para drill-down semanal
   const [selectedUnit, setSelectedUnit] = React.useState<SelectedUnitState>(null);
-
-  // Estado para controlar se CPL exclui Branding
-  const [excludeBranding, setExcludeBranding] = React.useState(false);
 
   const monthStart = startOfMonth(filters.month);
   const monthEnd = endOfMonth(filters.month);
@@ -441,17 +438,34 @@ export default function BudgetPage() {
       const netVariance = plannedMonth > 0 ? plannedMonth - forecast : null;
 
       const totalLeads = (weeklyRows ?? []).reduce((acc: number, r: WeeklyViewRow) => acc + safeNumber(r?.leads), 0);
+
+      // Calcular leads de Branding para excluir do total
+      const brandingLeads = (weeklyRows ?? [])
+        .filter((r: WeeklyViewRow) => {
+          // Usar funnel_stage se disponível, senão usar nome da unidade
+          if (r.funnel_stage) {
+            return r.funnel_stage.toLowerCase() === "branding";
+          }
+          const unit = (r.unidade ?? "").toLowerCase();
+          return unit.includes("branding") || unit.includes("institucional");
+        })
+        .reduce((acc: number, r: WeeklyViewRow) => acc + safeNumber(r?.leads), 0);
+
+      // Leads de performance (sem Branding)
+      const performanceLeads = totalLeads - brandingLeads;
+
       const cpl = totalLeads > 0 ? spendMonth / totalLeads : null;
 
       const kpis: BudgetKpis = {
         plannedMonth,
         spendMonth,
         spendSemEad,
-        spendBranding,  // NOVO
+        spendBranding,
         forecast: plannedMonth > 0 ? forecast : null,
         netVariance,
         pacing,
         totalLeads,
+        performanceLeads,  // NOVO
         cpl,
       };
 
@@ -557,9 +571,9 @@ export default function BudgetPage() {
         />
         <KpiCard
           title="Leads Totais"
-          value={isLoading ? "…" : kpis?.totalLeads != null ? kpis.totalLeads.toLocaleString('pt-BR') : "-"}
-          hint="Volume de inscritos"
-          tooltip="Total de leads gerados no período selecionado."
+          value={isLoading ? "…" : kpis?.performanceLeads != null ? kpis.performanceLeads.toLocaleString('pt-BR') : "-"}
+          hint="Volume de inscritos (Performance)"
+          tooltip="Total de leads gerados por campanhas de performance (excluindo Branding)."
           status="neutral"
         />
         <KpiCard
@@ -568,8 +582,8 @@ export default function BudgetPage() {
             if (isLoading) return "…";
             if (!kpis?.cpl) return "-";
 
-            // Se checkbox marcado, calcular CPL sem Branding
-            if (excludeBranding && budgetDataQuery.data?.investmentMatrix) {
+            // Sempre calcular CPL sem Branding (apenas campanhas de performance)
+            if (budgetDataQuery.data?.investmentMatrix) {
               const investmentMatrix = budgetDataQuery.data.investmentMatrix;
 
               // Calcular gasto de Branding baseado na categorização do FunnelStrategyChart
@@ -581,46 +595,27 @@ export default function BudgetPage() {
                 }
               });
 
-              // CPL sem Branding = (Gasto Total - Gasto Branding) / Total Leads
+              // CPL sem Branding = (Gasto sem Branding) / (Leads sem Branding)
               const totalSpend = kpis.spendMonth || 0;
-              const totalLeads = kpis.totalLeads || 0;
+              const performanceLeads = kpis.performanceLeads || 0;
               const spendWithoutBranding = totalSpend - brandingSpend;
 
-              if (totalLeads > 0 && spendWithoutBranding > 0) {
-                const cplWithoutBranding = spendWithoutBranding / totalLeads;
+              if (performanceLeads > 0 && spendWithoutBranding > 0) {
+                const cplWithoutBranding = spendWithoutBranding / performanceLeads;
                 return brl(cplWithoutBranding);
               }
             }
 
             return brl(kpis.cpl);
           })()}
-          hint={excludeBranding ? "Custo por Lead (sem Branding)" : "Custo por Lead"}
-          tooltip={
-            excludeBranding
-              ? "CPL calculado excluindo investimento de Branding, que não gera leads diretos."
-              : "Eficiência: Quanto custou cada lead em média (Gasto / Leads)."
-          }
+          hint="Custo por Lead (Performance)"
+          tooltip="CPL calculado excluindo investimento de Branding. Mostra apenas eficiência de campanhas de performance (Conversão + EAD)."
           status={(() => {
             // Regra de exemplo: Abaixo de 50 é bom, acima de 100 é ruim? 
             // Como não temos meta definida no banco, deixamos neutro ou fixo por enquanto.
             // O usuário disse: Se CPL R$ 200 é fracasso.
             return "neutral";
           })()}
-          checkboxControl={
-            <div className="flex items-center gap-1.5">
-              <Checkbox
-                id="exclude-branding"
-                checked={excludeBranding}
-                onCheckedChange={(checked) => setExcludeBranding(checked === true)}
-              />
-              <label
-                htmlFor="exclude-branding"
-                className="text-xs text-muted-foreground cursor-pointer select-none"
-              >
-                Excluir Branding
-              </label>
-            </div>
-          }
         />
       </section>
 
