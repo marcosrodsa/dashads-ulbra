@@ -2,8 +2,6 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/s
 import { FiltersProvider } from "@/contexts/filters-context";
 import { Outlet } from "react-router-dom";
 import { AppSidebar } from "./AppSidebar";
-import { AppFilters } from "./AppFilters";
-import { AppConfiguration } from "./AppConfiguration";
 
 export function AppLayout() {
   return (
@@ -13,13 +11,9 @@ export function AppLayout() {
           <AppSidebar />
 
           <SidebarInset>
-            <header className="sticky top-0 z-10 flex h-12 items-center gap-2 border-b bg-background px-3">
-              <SidebarTrigger />
-              <AppFilters />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">Painel de Mídia</p>
-              </div>
-              <AppConfiguration />
+            <header className="flex h-14 items-center gap-4 border-b bg-sidebar px-6 md:hidden shrink-0">
+              <SidebarTrigger className="text-sidebar-foreground" />
+              <div className="font-semibold text-sidebar-foreground">Controle de Budget</div>
             </header>
 
             <main className="flex-1 min-w-0 bg-background">

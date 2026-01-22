@@ -18,6 +18,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { getSupabaseClient } from "@/integrations/supabase/client";
+import { AppConfiguration } from "./AppConfiguration";
 
 const navItems = [
   { title: "Controle de Budget", url: "/budget", icon: Gauge },
@@ -77,6 +78,12 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
+        <SidebarMenuItem>
+          <SidebarMenuButton asChild tooltip="Configurações">
+            <AppConfiguration />
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+
         {!client && !collapsed && (
           <div className="mb-2 rounded border border-destructive/50 bg-destructive/10 p-2 text-[10px] text-destructive flex items-center gap-2">
             <div className="size-2 rounded-full bg-destructive animate-pulse" />
