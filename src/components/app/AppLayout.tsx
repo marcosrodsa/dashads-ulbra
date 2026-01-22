@@ -11,7 +11,7 @@ export function AppLayout() {
           <AppSidebar />
 
           <SidebarInset>
-            <header className="flex h-14 items-center gap-4 border-b bg-sidebar px-6 md:hidden shrink-0">
+            <header className="flex h-14 items-center gap-4 border-b bg-sidebar px-6 lg:hidden shrink-0">
               <SidebarTrigger className="text-sidebar-foreground" />
               <div className="font-semibold text-sidebar-foreground">Controle de Budget</div>
             </header>
