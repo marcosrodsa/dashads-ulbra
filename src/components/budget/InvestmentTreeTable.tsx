@@ -8,7 +8,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, ChevronDown, Calendar, Info } from "lucide-react";
+import { ChevronRight, ChevronDown, Calendar, Info, Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getDynamicPacingStatus, getPacingStatusLabel, getDynamicThresholds, formatExpectedRange, type PacingStatus } from "@/lib/pacing-utils";
@@ -28,6 +28,7 @@ export type TreeDataRow = {
 interface InvestmentTreeTableProps {
     data: TreeDataRow[];
     onViewWeekly: (node: TreeNode) => void;
+    onDownload: (node: TreeNode) => void;
     monthDate: Date; // Month being analyzed for dynamic pacing
 }
 
@@ -42,6 +43,14 @@ interface TreeNode {
     leads: number;
     children: TreeNode[];
     isLeaf: boolean;
+    filters?: {
+        platform?: string;
+        unit?: string;
+        course?: string;
+        funnel?: string;
+        isEad?: boolean;
+        isBranding?: boolean;
+    };
     // Expanded state is controlled by component
 }
 
@@ -59,7 +68,7 @@ function pct(v: number) {
     return new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(v);
 }
 
-export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: InvestmentTreeTableProps) {
+export function InvestmentTreeTable({ data, onViewWeekly, onDownload, monthDate }: InvestmentTreeTableProps) {
     const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
 
     const toggle = (id: string) => {
@@ -108,9 +117,20 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
                 eadGroup.budget += budget;
                 eadGroup.spend += spend;
                 eadGroup.leads += leads;
+                eadGroup.filters = { isEad: true };
 
                 if (!eadPlatforms.has(platform)) {
-                    eadPlatforms.set(platform, { id: `ead-${platform}`, label: platform, level: 1, budget: 0, spend: 0, leads: 0, children: [], isLeaf: true });
+                    eadPlatforms.set(platform, {
+                        id: `ead-${platform}`,
+                        label: platform,
+                        level: 1,
+                        budget: 0,
+                        spend: 0,
+                        leads: 0,
+                        children: [],
+                        isLeaf: true,
+                        filters: { isEad: true, platform }
+                    });
                 }
                 const pNode = eadPlatforms.get(platform)!;
                 pNode.budget += budget;
@@ -122,9 +142,20 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
                 brandingGroup.budget += budget;
                 brandingGroup.spend += spend;
                 brandingGroup.leads += leads;
+                brandingGroup.filters = { isBranding: true, funnel: "branding" };
 
                 if (!brandingPlatforms.has(platform)) {
-                    brandingPlatforms.set(platform, { id: `brand-${platform}`, label: platform, level: 1, budget: 0, spend: 0, leads: 0, children: [], isLeaf: true });
+                    brandingPlatforms.set(platform, {
+                        id: `brand-${platform}`,
+                        label: platform,
+                        level: 1,
+                        budget: 0,
+                        spend: 0,
+                        leads: 0,
+                        children: [],
+                        isLeaf: true,
+                        filters: { isBranding: true, funnel: "branding", platform }
+                    });
                 }
                 const pNode = brandingPlatforms.get(platform)!;
                 pNode.budget += budget;
@@ -136,6 +167,7 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
                 conversionGroup.budget += budget;
                 conversionGroup.spend += spend;
                 conversionGroup.leads += leads;
+                conversionGroup.filters = { funnel: "conversion" }; // Generic conversion filter
 
                 // Check if it's specifically "Medicina" (not Biomedicina)
                 const isMedicinaOnly = course.toLowerCase() === "medicina" ||
@@ -146,9 +178,20 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
                     medSubGroup.budget += budget;
                     medSubGroup.spend += spend;
                     medSubGroup.leads += leads;
+                    medSubGroup.filters = { course: "medicina" };
 
                     if (!medPlatforms.has(platform)) {
-                        medPlatforms.set(platform, { id: `med-${platform}`, label: platform, level: 2, budget: 0, spend: 0, leads: 0, children: [], isLeaf: true });
+                        medPlatforms.set(platform, {
+                            id: `med-${platform}`,
+                            label: platform,
+                            level: 2,
+                            budget: 0,
+                            spend: 0,
+                            leads: 0,
+                            children: [],
+                            isLeaf: true,
+                            filters: { course: "medicina", platform }
+                        });
                     }
                     const pNode = medPlatforms.get(platform)!;
                     pNode.budget += budget;
@@ -160,10 +203,21 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
                     coursesSubGroup.budget += budget;
                     coursesSubGroup.spend += spend;
                     coursesSubGroup.leads += leads;
+                    coursesSubGroup.filters = { funnel: "conversion", isEad: false };
 
                     const unitLabel = row.unidade || "Sem Unidade";
                     if (!unitMap.has(unitLabel)) {
-                        unitMap.set(unitLabel, { id: `unit-${unitLabel}`, label: unitLabel, level: 2, budget: 0, spend: 0, leads: 0, children: [], isLeaf: false });
+                        unitMap.set(unitLabel, {
+                            id: `unit-${unitLabel}`,
+                            label: unitLabel,
+                            level: 2,
+                            budget: 0,
+                            spend: 0,
+                            leads: 0,
+                            children: [],
+                            isLeaf: false,
+                            filters: { unit: unitLabel }
+                        });
                     }
                     const uNode = unitMap.get(unitLabel)!;
                     uNode.budget += budget;
@@ -176,7 +230,17 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
 
                     let courseNode = uNode.children.find(c => c.label.toLowerCase() === courseLabel.toLowerCase());
                     if (!courseNode) {
-                        courseNode = { id: `unit-${unitLabel}-${courseLabel}`, label: courseLabel, level: 3, budget: 0, spend: 0, leads: 0, children: [], isLeaf: false };
+                        courseNode = {
+                            id: `unit-${unitLabel}-${courseLabel}`,
+                            label: courseLabel,
+                            level: 3,
+                            budget: 0,
+                            spend: 0,
+                            leads: 0,
+                            children: [],
+                            isLeaf: false,
+                            filters: { unit: unitLabel, course: courseLabel }
+                        };
                         uNode.children.push(courseNode);
                     }
                     courseNode.budget += budget;
@@ -186,7 +250,17 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
                     // Nível Plataforma dentro do Curso
                     let platNode = courseNode.children.find(p => p.label === platform);
                     if (!platNode) {
-                        platNode = { id: `unit-${unitLabel}-${courseLabel}-${platform}`, label: platform, level: 4, budget: 0, spend: 0, leads: 0, children: [], isLeaf: true };
+                        platNode = {
+                            id: `unit-${unitLabel}-${courseLabel}-${platform}`,
+                            label: platform,
+                            level: 4,
+                            budget: 0,
+                            spend: 0,
+                            leads: 0,
+                            children: [],
+                            isLeaf: true,
+                            filters: { unit: unitLabel, course: courseLabel, platform }
+                        };
                         courseNode.children.push(platNode);
                     }
                     platNode.budget += budget;
@@ -333,17 +407,47 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
                         </div>
                     </TableCell>
                     <TableCell className="text-center py-2">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-primary"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onViewWeekly(node);
-                            }}
-                        >
-                            <Calendar className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-center gap-1">
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onViewWeekly(node);
+                                            }}
+                                        >
+                                            <Calendar className="h-4 w-4" />
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>Ver detalhamento semanal</p>
+                                    </TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onDownload(node);
+                                            }}
+                                        >
+                                            <Download className="h-4 w-4" />
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        <p>Baixar dados detalhados (CSV)</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
+                        </div>
                     </TableCell>
                 </TableRow>
                 {isOpen && !node.isLeaf && node.children.map(child => {

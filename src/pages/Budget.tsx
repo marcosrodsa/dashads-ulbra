@@ -487,6 +487,352 @@ export default function BudgetPage() {
 
   const kpis = budgetDataQuery.data?.kpis;
 
+  const handleDownload = React.useCallback(async (node: any) => {
+    try {
+      if (!client) return;
+
+      // Build valid courses set from WeeklyRows (which mirrors SQL View logic)
+      // If a course is NOT in this set (and not an exception), it should be "Geral"
+      const weeklyRows = budgetDataQuery.data?.weeklyRows || [];
+      const validCourses = new Set<string>();
+      weeklyRows.forEach((r: any) => {
+        if (r.unidade && r.curso && r.curso !== "Geral") {
+          validCourses.add(`${r.unidade}|${r.curso}`);
+        }
+      });
+
+      // Resolver colunas dinamicamente
+      const {
+        dateCol,
+        businessUnitCol: campaignCol,
+      } = await import("@/integrations/supabase/performanceSchema").then(m => m.resolvePerformanceDailyColumns(client));
+
+      const {
+        spendCol,
+        platformCol,
+        impressionsCol,
+        clicksCol,
+        conversionsCol,
+      } = await import("@/integrations/supabase/performanceMetricsSchema").then(m => m.resolvePerformanceMetricColumns(client));
+
+      const fromDate = format(monthStart, "yyyy-MM-dd");
+      const toDate = format(monthEnd, "yyyy-MM-dd");
+
+      const cols = [
+        dateCol,
+        platformCol,
+        "account_name",
+        campaignCol,
+        spendCol,
+        impressionsCol,
+        clicksCol,
+        "cpc",
+        "ctr",
+        conversionsCol,
+        "conversion_value"
+      ].filter(Boolean).join(",");
+
+      // Buscar dados BRUTOS de campanhas (não agregados)
+      // CRITICAL: Supabase limita a 1000 linhas por default - aumentamos para pegar tudo
+      let q = client
+        .from("fact_ads_performance_daily")
+        .select(cols)
+        .gte(dateCol, fromDate)
+        .lte(dateCol, toDate)
+        .limit(50000);
+
+      const f = { ...node.filters } || {};
+
+      // Fallback: Recuperar filtros do ID se não estiverem explícitos
+      // Ex: unit-Ulbra Canoas-Geral
+      if (node.id && String(node.id).startsWith("unit-")) {
+        const parts = String(node.id).split("-");
+
+        // parts[0] = "unit"
+        // parts[1] = Unit Name (Assume no dashes in unit name)
+        // parts[2+] = Course Name (can have dashes)
+
+        if (!f.unit && parts.length >= 2) {
+          f.unit = parts[1];
+        }
+        if (!f.course && parts.length >= 3) {
+          f.course = parts.slice(2).join("-");
+        }
+      }
+
+      // DEBUG: Log dos filtros recebidos (mantendo para verificação final)
+      console.log("📥 Download - Filtros (com fallback):", {
+        id: node.id,
+        filtersInit: node.filters,
+        filtersFinal: f,
+        unit: f.unit,
+        course: f.course
+      });
+
+      // Aplicar filtro de plataforma via SQL (ilike para case-insensitive)
+      if (f.platform && platformCol) {
+        q = q.ilike(platformCol, f.platform);
+      }
+
+      const { data, error } = await q;
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        alert("Nenhum dado encontrado para este período/filtro.");
+        return;
+      }
+
+      // Função de classificação - REPLICA EXATAMENTE a lógica da VIEW SQL
+      const classifyRow = (r: any) => {
+        const camp = (r[campaignCol] || "").toLowerCase();
+        const acc = (r["account_name"] || "").toLowerCase();
+
+        // 0. Filtro Global: Ultec (WHERE !~~* '%Ultec%')
+        if (camp.includes("ultec")) {
+          return { unidade: "EXCLUDE", curso: "EXCLUDE" };
+        }
+
+        // 1. Classificação de Unidade (unidade_temp) - ORDEM IMPORTA
+        let unidade = "Outros / Não Identificado";
+
+        // REGRA EAD ATUALIZADA: Inclui "Ulbra Pop" e valida Leads
+        const isEadLogic = (camp.includes("ead") && !camp.includes("lead")) || acc.includes("ead") || camp.includes("google pix") || camp.includes("ulbra pop");
+
+        if (isEadLogic) unidade = "EAD";
+        else if (camp.includes("medicina")) unidade = "Ulbra Medicina";
+        else if (camp.includes("visitas") || camp.includes("branding") || camp.includes("institucional")) unidade = "Branding";
+        else if (camp.includes("canoas") || camp.includes("| rs |")) unidade = "Ulbra Canoas";
+        else if (camp.includes("torres")) unidade = "Ulbra Torres";
+        else if (camp.includes("itumbiara")) unidade = "Ulbra Itumbiara";
+        else if (camp.includes("manaus")) unidade = "Ulbra Manaus";
+        else if (camp.includes("palmas")) unidade = "Ulbra Palmas";
+        else if (camp.includes("santarém") || camp.includes("santarem")) unidade = "Ulbra Santarém";
+        else if (camp.includes("gravataí") || camp.includes("gravatai")) unidade = "Ulbra Gravataí";
+        else if (camp.includes("são jerônimo") || camp.includes("jeronimo")) unidade = "Ulbra São Jerônimo";
+        else if (camp.includes("cachoeira") || camp.includes("cach do sul")) unidade = "Ulbra Cachoeira do Sul";
+        else if (camp.includes("santa maria")) unidade = "Ulbra Santa Maria";
+        else if (camp.includes("guaíba") || camp.includes("guaiba")) unidade = "Ulbra Guaíba";
+        else if (camp.includes("carazinho")) unidade = "Ulbra Carazinho";
+
+        // 2. Classificação de Curso (curso_tentativa) - ORDEM IMPORTA
+        let curso = "Geral";
+
+        // Checks específicos que devem ser avaliados ANTES de "medicina"
+        if (camp.includes("biomedicina") || camp.includes("biomed")) curso = "Biomedicina";
+        else if (camp.includes("medvet") || camp.includes("veterinaria") || camp.includes("veterinária")) curso = "MedVet";
+
+        else if (isEadLogic) curso = "EAD";
+
+        // Mudei para cá: Medicina antes de Branding (pois pode ter 'Medicina' e 'Branding' no nome)
+        // SQL View prioriza Medicina, então nós devemos também.
+        else if (camp.includes("medicina")) curso = "Medicina";
+
+        else if (camp.includes("branding") || camp.includes("institucional") || camp.includes("visitas")) curso = "Branding";
+        else if (camp.includes("direito")) curso = "Direito";
+        else if (camp.includes("odonto") || camp.includes("odontologia")) curso = "Odonto";
+        else if (camp.includes("psicologia") || camp.includes("psico")) curso = "Psicologia";
+        else if (camp.includes("enfermagem")) curso = "Enfermagem";
+        else if (camp.includes("fisioterapia") || camp.includes("fisio")) curso = "Fisioterapia";
+        else if (camp.includes("estética") || camp.includes("estetica")) curso = "Estética";
+        else if (camp.includes("agronomia") || camp.includes("agro")) curso = "Agronomia";
+        else if (camp.includes("terapia ocupacional") || camp.includes("t.o")) curso = "Terapia Ocupacional";
+        else if (camp.includes("engenharia") || camp.includes("eng ")) curso = "Engenharias";
+
+        // Lógica de Fallback para Geral (Replicando SQL: LEFT JOIN lista_cursos_validos)
+        if (unidade !== "EAD" && unidade !== "Ulbra Medicina" && unidade !== "Branding" && curso !== "Geral") {
+          const key = `${unidade}|${curso}`;
+          if (!validCourses.has(key)) {
+            curso = "Geral";
+          }
+        }
+
+        if (unidade === "Outros / Não Identificado") {
+          curso = "Geral";
+        }
+
+        return { unidade, curso };
+      };
+
+      // Filtrar dados aplicando a mesma lógica da árvore/matriz
+      const filteredData = data.filter((r: any) => {
+        const { unidade, curso } = classifyRow(r);
+
+        // Excluir Ultec globalmente
+        if (unidade === "EXCLUDE") return false;
+
+        // Aplicar filtros da hierarquia
+        if (f.isEad) return unidade === "EAD";
+        if (f.isBranding) return unidade === "Branding";
+
+        // ---- Checks Cumulativos (AND) ----
+
+        // 1. Regra de Curso
+        if (f.course && f.course.toLowerCase() !== "cursos") {
+          const cFilter = f.course.toLowerCase();
+          const cRow = curso.toLowerCase();
+
+          let matchesCourse = false;
+          if (cFilter === "medicina") {
+            matchesCourse = cRow === "medicina";
+          } else {
+            matchesCourse = cRow.includes(cFilter);
+          }
+
+          if (!matchesCourse) return false;
+          // NÃO RETORNA TRUE AQUI! Continua para checar Unidade...
+        }
+
+        // 2. Regra de Unidade
+        if (f.unit) {
+          const uFilter = f.unit.toLowerCase();
+          const uRow = unidade.toLowerCase();
+          if (!uRow.includes(uFilter)) return false;
+        }
+
+        // Funil de Conversão (catch-all OU explícito)
+        // Se passamos pelos checks acima e temos funnel=conversion, ou se a label diz "Cursos"
+        const isConversionContext = f.funnel === "conversion" || (node.label && node.label.toLowerCase().includes("cursos"));
+
+        if (isConversionContext) {
+          // Excluir EAD e Branding
+          if (unidade === "EAD" || unidade === "Branding") return false;
+
+          // Se estamos no nó "Cursos" (mas não Medicina, que já teria sido pego no check de course acima)
+          if (node.label && node.label.toLowerCase().includes("cursos")) {
+            // Excluir Medicina
+            if (curso === "Medicina") return false;
+          }
+
+          return true;
+        }
+
+        // Default para fallback (se não bateu nada específico)
+        // Se é node raiz "Mkt de Conversão", exclui EAD/Branding
+        if (node.label && node.label.toLowerCase().includes("mkt de conversão")) {
+          if (unidade === "EAD" || unidade === "Branding") return false;
+          return true;
+        }
+
+        // Se chegou aqui e não tem filtro nenhum, retorna true (cuidado!)
+        return true;
+      });
+
+      // DEBUG: Resumo dos dados filtrados
+      const totalSpend = filteredData.reduce((sum: number, r: any) => sum + safeNumber(r[spendCol]), 0);
+      console.log("📊 Download - Resultado:", {
+        totalRowsFromDB: data.length,
+        filteredRows: filteredData.length,
+        totalSpend: totalSpend.toFixed(2),
+        spendCol
+      });
+
+      // Gerar CSV com campanhas individuais + classificações
+      const csvRows = [
+        ["Data", "Plataforma", "Conta", "Campanha", "Unidade (Calc)", "Curso (Calc)", "Spend", "Impressions", "Clicks", "CPC", "CTR", "Conversions", "Conv. Value"]
+      ];
+
+      filteredData.forEach((r: any) => {
+        const { unidade, curso } = classifyRow(r);
+        csvRows.push([
+          r[dateCol] || "",
+          r[platformCol] || "",
+          r["account_name"] || "",
+          r[campaignCol] || "",
+          unidade,
+          curso,
+          safeNumber(r[spendCol]).toFixed(2).replace(".", ","),
+          safeNumber(r[impressionsCol]).toString(),
+          safeNumber(r[clicksCol]).toString(),
+          safeNumber(r["cpc"]).toFixed(2).replace(".", ","),
+          (safeNumber(r["ctr"]) * 100).toFixed(2).replace(".", ",") + "%",
+          safeNumber(r[conversionsCol]).toString(),
+          safeNumber(r["conversion_value"]).toFixed(2).replace(".", ",")
+        ]);
+      });
+
+      const csvContent = "\uFEFF" + csvRows.map(e => e.join(";")).join("\n");
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.style.display = "none";
+      link.href = url;
+
+      const filters = node.filters || {};
+      const parts = [];
+
+      // Adicionar partes da hierarquia ao nome
+      if (filters.isEad) {
+        parts.push("ead");
+      } else if (filters.isBranding) {
+        parts.push("branding");
+      } else {
+        parts.push("conversao");
+
+        const labelLower = (node.label || "").toLowerCase();
+        // Verifica se é Medicina (filtro ou label)
+        const hasMedicina = String(filters.course || "").toLowerCase().includes("medicina") || labelLower.includes("medicina");
+
+        // Se NÃO é medicina, e (tem unidade OU label diz 'cursos')
+        if (!hasMedicina) {
+          if (filters.unit || labelLower.includes("cursos")) {
+            parts.push("cursos");
+          }
+        }
+      }
+
+      if (filters.unit) parts.push(filters.unit);
+      if (filters.course) parts.push(filters.course);
+      if (filters.platform) parts.push(filters.platform);
+
+      // Fallback
+      if (parts.length === 0 && node.label) parts.push(node.label);
+
+      // Data final
+      parts.push(format(new Date(), "yyyyMMdd"));
+
+      const safeLabel = (s: any) => {
+        if (!s) return "";
+        let str = String(s).toLowerCase();
+
+        // Mapa manual de substituição para garantir compatibilidade
+        const map: Record<string, string> = {
+          "á": "a", "à": "a", "ã": "a", "â": "a", "ä": "a",
+          "é": "e", "è": "e", "ê": "e", "ë": "e",
+          "í": "i", "ì": "i", "î": "i", "ï": "i",
+          "ó": "o", "ò": "o", "õ": "o", "ô": "o", "ö": "o",
+          "ú": "u", "ù": "u", "û": "u", "ü": "u",
+          "ç": "c", "ñ": "n"
+        };
+
+        str = str.replace(/[áàãâäéèêëíìîïóòõôöúùûüçñ]/g, (match) => map[match] || match);
+        // Fallback NFD se sobrar algo e replace final
+        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/gi, '_');
+      };
+
+      const filename = parts
+        .map(p => safeLabel(p))
+        .join("_") + ".csv";
+
+      link.setAttribute("download", filename);
+      link.download = filename;
+
+      document.body.appendChild(link);
+      link.click();
+      // alert("Arquivo gerado: " + filename); // Debug removido, vamos confiar no timeout.
+
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 60000);
+
+
+    } catch (e: any) {
+      console.error(e);
+      alert("Erro ao baixar dados: " + e.message);
+    }
+  }, [client, monthStart, monthEnd]);
+
   return (
     <div className="mx-auto w-full min-w-0 max-w-7xl space-y-6 p-6">
       <header className="space-y-1">
@@ -981,6 +1327,8 @@ export default function BudgetPage() {
                     rows: filtered
                   });
                 }}
+                onDownload={handleDownload}
+                monthDate={monthStart}
               />
             )}
           </CardContent>
