@@ -23,7 +23,7 @@ import { AppConfiguration } from "./AppConfiguration";
 
 const navItems = [
   { title: "Controle de Budget", url: "/budget", icon: Gauge },
-  // { title: "Inteligência Tática", url: "/performance", icon: BarChart3 }, // Hidden per user request
+  { title: "Performance de Captação", url: "/performance", icon: BarChart3 },
 ];
 
 export function AppSidebar() {

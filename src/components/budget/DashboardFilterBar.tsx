@@ -11,6 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ModernDateFilter } from "@/components/common/ModernDateFilter";
+
 
 import { useFilters } from "@/contexts/filters-context";
 import { getSupabaseClient } from "@/integrations/supabase/client";
@@ -281,21 +283,10 @@ export function DashboardFilterBar() {
                                 <CalendarDays className="h-3.5 w-3.5" />
                                 Mês
                             </label>
-                            <Select
-                                value={asMonthKey(filters.month)}
-                                onValueChange={(v) => setMonth(new Date(v))}
-                            >
-                                <SelectTrigger className="h-9 w-full bg-background/50">
-                                    <SelectValue placeholder="Selecione" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {months.map((m) => (
-                                        <SelectItem key={m.value} value={m.value}>
-                                            {m.label}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <ModernDateFilter
+                                date={filters.month}
+                                onSelect={(d) => setMonth(d)}
+                            />
                         </div>
 
                         {/* Semana */}

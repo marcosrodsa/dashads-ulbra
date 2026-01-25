@@ -10,6 +10,7 @@ export type FiltersState = {
   platform: AdsPlatform | null;
   week: string | null; // ISO date of week start
   excludeEad: boolean;
+  hideBranding: boolean;
 };
 
 type FiltersContextValue = {
@@ -20,6 +21,7 @@ type FiltersContextValue = {
   setPlatform: (platform: AdsPlatform | null) => void;
   setWeek: (week: string | null) => void;
   setExcludeEad: (exclude: boolean) => void;
+  setHideBranding: (hide: boolean) => void;
   clear: () => void;
   isFiltersOpen: boolean;
   setIsFiltersOpen: (isOpen: boolean) => void;
@@ -35,6 +37,7 @@ const defaultFilters = (): FiltersState => ({
   platform: null,
   week: null,
   excludeEad: false,
+  hideBranding: true, // Default true as requested
 });
 
 export function FiltersProvider({ children }: { children: React.ReactNode }) {
@@ -67,6 +70,10 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
     setFilters((prev) => ({ ...prev, excludeEad }));
   }, []);
 
+  const setHideBranding = React.useCallback((hideBranding: boolean) => {
+    setFilters((prev) => ({ ...prev, hideBranding }));
+  }, []);
+
   const clear = React.useCallback(() => {
     setFilters(defaultFilters());
   }, []);
@@ -80,6 +87,7 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
       setPlatform,
       setWeek,
       setExcludeEad,
+      setHideBranding,
       clear,
       isFiltersOpen,
       setIsFiltersOpen,
@@ -93,6 +101,7 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
       setPlatform,
       setWeek,
       setExcludeEad,
+      setHideBranding,
       clear,
       isFiltersOpen,
       setIsFiltersOpen,
