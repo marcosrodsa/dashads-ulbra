@@ -59,8 +59,20 @@ export default function PerformancePage() {
     };
 
     const activeRows = rows.filter((r: any) => {
+      // 1. If filter is OFF, show everything
       if (!filters.hideBranding) return true;
-      const isBranding = r.unidade === "Branding" || r.curso === "Branding" || r.unidade === "Institucional" || r.curso === "Institucional";
+
+      const u = (r.unidade || "").toLowerCase();
+      const c = (r.curso || "").toLowerCase();
+      const f = (r.funnel_stage || "").toLowerCase();
+
+      const isEad = u.includes("ead") || c.includes("ead") || u === "1. ead" || u.startsWith("ead ");
+      const isBranding = f === "branding" || f === "brand" || u.includes("branding") || u.includes("institucional") || c.includes("branding");
+
+      // Matrix Logic: EAD takes precedence over Branding.
+      // So we only hide logic that falls into "Group 2: Branding" (which is !EAD && Branding).
+      if (isEad) return true; // Keep EAD even if it has branding name
+
       return !isBranding;
     });
 
