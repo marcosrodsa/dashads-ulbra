@@ -273,7 +273,7 @@ export function DashboardFilterBar() {
                     </div>
 
                     {/* Grid de Filtros - Oculto no mobile se fechado, sempre visível no desktop */}
-                    <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 ${!isMobileOpen ? 'hidden lg:grid' : ''}`}>
+                    <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 ${!isMobileOpen ? 'hidden lg:grid' : ''}`}>
 
                         {/* Mês */}
                         <div className="space-y-1.5">
