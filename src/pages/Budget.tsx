@@ -1006,10 +1006,10 @@ export default function BudgetPage() {
           })()}
         />
         <KpiCard
-          title="Net Variance"
+          title="Variância (R$)"
           value={isLoading ? "…" : kpis?.netVariance != null ? brl(kpis.netVariance) : "-"}
           hint="Budget - Forecast"
-          tooltip="Sobra ou falta projetada. Amarelo/Positivo = Sobra (Sub-investimento). Vermelho/Negativo = Estouro. Verde ~ 0."
+          tooltip="Diferença entre Budget e Forecast. Positivo (Verde/Amarelo) = Economia prevista. Negativo (Vermelho) = Possível estouro."
           status={(() => {
             if (isLoading || kpis?.netVariance == null || kpis?.plannedTotal == null) return "neutral";
             const variance = kpis.netVariance;

@@ -467,7 +467,21 @@ export function InvestmentTreeTable({ data, onViewWeekly, onDownload, monthDate 
                         <TableHead className="text-right">Budget Planejado</TableHead>
                         <TableHead className="text-right">Gasto Realizado</TableHead>
                         <TableHead className="text-right">Utilização</TableHead>
-                        <TableHead className="text-right">Variância (R$)</TableHead>
+                        <TableHead className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                                Variância (R$)
+                                <TooltipProvider delayDuration={0}>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="max-w-[200px] text-xs font-normal">
+                                            Diferença entre Budget Planejado e Gasto Realizado. Positivo = Saldo disponível. Negativo = Valor excedido.
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                            </div>
+                        </TableHead>
                         <TableHead className="text-right max-w-[80px]">Leads</TableHead>
                         <TableHead className="text-right max-w-[100px]">CPL</TableHead>
                         <TableHead className="text-center">Status</TableHead>
