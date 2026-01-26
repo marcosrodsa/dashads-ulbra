@@ -29,6 +29,8 @@ import { DashboardFilterBar } from "@/components/budget/DashboardFilterBar";
 import { useFilters } from "@/contexts/filters-context";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { resolveBudgetColumns } from "@/integrations/supabase/budgetSchema";
+import { resolvePerformanceDailyColumns } from "@/integrations/supabase/performanceSchema";
+import { resolvePerformanceMetricColumns } from "@/integrations/supabase/performanceMetricsSchema";
 
 type WeeklyViewRow = {
   data_inicio_semana: string; // date
@@ -183,13 +185,13 @@ export default function BudgetPage() {
         dateCol,
         businessUnitCol,
         courseCol,
-      } = await import("@/integrations/supabase/performanceSchema").then(m => m.resolvePerformanceDailyColumns(client));
+      } = await resolvePerformanceDailyColumns(client);
 
       const {
         spendCol,
         conversionsCol,
         platformCol,
-      } = await import("@/integrations/supabase/performanceMetricsSchema").then(m => m.resolvePerformanceMetricColumns(client));
+      } = await resolvePerformanceMetricColumns(client);
 
       const selectCols = [dateCol, spendCol, conversionsCol, businessUnitCol, courseCol];
       if (filters.platform) selectCols.push(platformCol);
