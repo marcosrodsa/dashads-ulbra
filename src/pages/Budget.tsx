@@ -38,25 +38,25 @@ type WeeklyViewRow = {
   unidade: string | null;
   plataforma: string | null;
   curso: string | null;
-  orcamento_semanal: number | string | null;
-  gasto_real: number | string | null;
-  diferenca: number | string | null;
-  leads: number | string | null;
-  percentual_consumido: number | string | null;
+  orcamento_semanal: number;
+  gasto_real: number;
+  diferenca: number;
+  leads: number;
+  percentual_consumido: number;
   funnel_stage?: string | null;
   location?: string | null;
 };
 
 type BudgetKpis = {
-  plannedMonth: number | null;
-  spendMonth: number | null;
+  plannedTotal: number | null;
+  spendTotal: number | null;
   spendSemEad: number | null;
   spendBranding: number | null;
   forecast: number | null;
   netVariance: number | null;
   pacing: number | null;
   totalLeads: number | null;
-  performanceLeads: number | null;  // NOVO: leads sem Branding
+  performanceLeads: number | null;
   cpl: number | null;
 };
 
@@ -97,12 +97,25 @@ export default function BudgetPage() {
   // Fix: If 'to' is missing (single day selection), use 'from' instead of end of month.
   const rangeEnd = filters.dateRange?.to ?? filters.dateRange?.from ?? endOfMonth(rangeStart);
 
+  // Calculate Effective Range (Week takes precedence)
+  let effectiveStart = rangeStart;
+  let effectiveEnd = rangeEnd;
+
+  if (filters.week) {
+    const datePart = String(filters.week).slice(0, 10);
+    const wDate = new Date(`${datePart}T00:00:00`);
+    effectiveStart = startOfWeek(wDate, { weekStartsOn: 1 });
+    effectiveEnd = endOfWeek(wDate, { weekStartsOn: 1 });
+  } else {
+    effectiveStart = startOfWeek(rangeStart, { weekStartsOn: 1 });
+    effectiveEnd = endOfWeek(rangeEnd, { weekStartsOn: 1 });
+  }
+
   console.log("Budget Debug:", {
     filterRange: filters.dateRange,
-    calcStart: format(rangeStart, "yyyy-MM-dd"),
-    calcEnd: format(rangeEnd, "yyyy-MM-dd"),
-    rawStart: rangeStart,
-    rawEnd: rangeEnd
+    effectiveStart: format(effectiveStart, "yyyy-MM-dd"),
+    effectiveEnd: format(effectiveEnd, "yyyy-MM-dd"),
+    hasWeekFilter: !!filters.week
   });
 
   const budgetColsQuery = useQuery({
@@ -116,8 +129,8 @@ export default function BudgetPage() {
     queryKey: [
       "budget",
       "data",
-      format(rangeStart, "yyyy-MM-dd"),
-      format(rangeEnd, "yyyy-MM-dd"), // Use range in key
+      format(effectiveStart, "yyyy-MM-dd"),
+      format(effectiveEnd, "yyyy-MM-dd"),
       filters.platform ?? "__all__",
       filters.businessUnit ?? "__all__",
       filters.businessUnit ?? "__all__", // Duplicate in original? Keeping structure.
@@ -128,31 +141,29 @@ export default function BudgetPage() {
     queryFn: async () => {
       const budgetCols = budgetColsQuery.data!;
 
+      const effectiveStartStr = format(effectiveStart, "yyyy-MM-dd");
+      const effectiveEndStr = format(effectiveEnd, "yyyy-MM-dd");
+
       let budgetFromDate: string;
       let budgetToDate: string;
       let weeklyFromDate: string;
       let weeklyToDate: string;
 
       if (filters.week) {
-        const wDate = new Date(filters.week);
-        // For specific week filter, we align everything to that week
-        const startW = startOfWeek(wDate, { weekStartsOn: 1 });
-        const endW = endOfWeek(wDate, { weekStartsOn: 1 });
-
         // For budget, we still need the Month of that week to get the "Planned" value for the month
-        budgetFromDate = format(startOfMonth(startW), "yyyy-MM-dd");
-        budgetToDate = format(endOfMonth(endW), "yyyy-MM-dd");
+        budgetFromDate = format(startOfMonth(effectiveStart), "yyyy-MM-dd");
+        budgetToDate = format(endOfMonth(effectiveEnd), "yyyy-MM-dd");
 
-        weeklyFromDate = format(startW, "yyyy-MM-dd");
-        weeklyToDate = format(endW, "yyyy-MM-dd");
+        weeklyFromDate = effectiveStartStr;
+        weeklyToDate = effectiveEndStr;
       } else {
         // For range, Budget needs to cover the months involved
-        budgetFromDate = format(startOfMonth(rangeStart), "yyyy-MM-dd");
-        budgetToDate = format(endOfMonth(rangeEnd), "yyyy-MM-dd");
+        budgetFromDate = format(startOfMonth(effectiveStart), "yyyy-MM-dd");
+        budgetToDate = format(endOfMonth(effectiveEnd), "yyyy-MM-dd");
 
         // Weekly needs to cover the weeks involved
-        weeklyFromDate = format(startOfWeek(rangeStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
-        weeklyToDate = format(endOfWeek(rangeEnd, { weekStartsOn: 1 }), "yyyy-MM-dd");
+        weeklyFromDate = format(startOfWeek(effectiveStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
+        weeklyToDate = format(endOfWeek(effectiveEnd, { weekStartsOn: 1 }), "yyyy-MM-dd");
       }
 
       // --- Budget (planejado)
@@ -180,61 +191,59 @@ export default function BudgetPage() {
       if (budgetErr) throw budgetErr;
 
       // --- Exact Daily Data for KPI Cards (Realized Spend & Leads) ---
-      // Using fact_ads_performance_daily (same as Performance dashboard) for accuracy
-      const {
-        dateCol,
-        businessUnitCol,
-        courseCol,
-      } = await resolvePerformanceDailyColumns(client);
 
-      const {
-        spendCol,
-        conversionsCol,
-        platformCol,
-      } = await resolvePerformanceMetricColumns(client);
+      // Select Columns from View instead of raw TABLE
+      const viewDateCol = "data_referencia";
+      const viewSpendCol = "investimento";
+      const viewLeadsCol = "leads";
+      const viewUnitCol = "unidade";
+      const viewCourseCol = "curso";
+      const viewPlatformCol = "platform";
+      const viewFunnelCol = "funnel_stage"; // Needed for branding check? "funnel_stage" might not be in view, checking Performance.tsx logic...
+      // Performance.tsx uses: r.unidade === "Branding" || r.curso === "Branding" ...
 
-      const selectCols = [dateCol, spendCol, conversionsCol, businessUnitCol, courseCol];
-      if (filters.platform) selectCols.push(platformCol);
+      const selectCols = [viewDateCol, viewSpendCol, viewLeadsCol, viewUnitCol, viewCourseCol, viewPlatformCol];
 
       let dailyQ = (client as SupabaseClient)
-        .from("fact_ads_performance_daily")
+        .from("vw_performance_diaria")
         .select(selectCols.join(", "))
-        .gte(dateCol, format(rangeStart, "yyyy-MM-dd"))
-        .lte(dateCol, format(rangeEnd, "yyyy-MM-dd"));
+        .gte(viewDateCol, effectiveStartStr)
+        .lte(viewDateCol, effectiveEndStr);
+      // Note: View already excludes Ultec, no need for manual exclusion unless paranoid. Let's trust the view.
 
-      if (filters.platform) dailyQ = dailyQ.eq(platformCol, filters.platform);
-      if (filters.businessUnit) dailyQ = dailyQ.eq(businessUnitCol, filters.businessUnit);
-      if (filters.course) dailyQ = dailyQ.eq(courseCol, filters.course);
+      if (filters.platform) dailyQ = dailyQ.eq(viewPlatformCol, filters.platform);
+      if (filters.businessUnit) dailyQ = dailyQ.eq(viewUnitCol, filters.businessUnit);
+      if (filters.course) dailyQ = dailyQ.eq(viewCourseCol, filters.course);
 
       console.log("🔍 SQL Query Being Executed:", {
         table: "fact_ads_performance_daily",
         select: selectCols.join(", "),
         where: {
-          [`${dateCol} >=`]: format(rangeStart, "yyyy-MM-dd"),
-          [`${dateCol} <=`]: format(rangeEnd, "yyyy-MM-dd"),
-          ...(filters.platform && { [`${platformCol} =`]: filters.platform }),
-          ...(filters.businessUnit && { [`${businessUnitCol} =`]: filters.businessUnit }),
-          ...(filters.course && { [`${courseCol} =`]: filters.course }),
+          [`${viewDateCol} >=`]: effectiveStartStr,
+          [`${viewDateCol} <=`]: effectiveEndStr,
+          ...(filters.platform && { [`${viewPlatformCol} =`]: filters.platform }),
+          ...(filters.businessUnit && { [`${viewUnitCol} =`]: filters.businessUnit }),
+          ...(filters.course && { [`${viewCourseCol} =`]: filters.course }),
         },
-        sqlLike: `SELECT ${selectCols.join(", ")} FROM fact_ads_performance_daily WHERE ${dateCol} >= '${format(rangeStart, "yyyy-MM-dd")}' AND ${dateCol} <= '${format(rangeEnd, "yyyy-MM-dd")}'${filters.platform ? ` AND ${platformCol} = '${filters.platform}'` : ''}${filters.businessUnit ? ` AND ${businessUnitCol} = '${filters.businessUnit}'` : ''}${filters.course ? ` AND ${courseCol} = '${filters.course}'` : ''}`
+        sqlLike: `SELECT ${selectCols.join(", ")} FROM vw_performance_diaria WHERE ...`
       });
 
       const { data: dailyRows, error: dailyErr } = await dailyQ;
       if (dailyErr) throw dailyErr;
 
       console.log("📊 Daily Query Debug:", {
-        table: "fact_ads_performance_daily",
-        dateColumn: dateCol,
-        spendColumn: spendCol,
-        fromDate: format(rangeStart, "yyyy-MM-dd"),
-        toDate: format(rangeEnd, "yyyy-MM-dd"),
+        table: "vw_performance_diaria",
+        dateColumn: viewDateCol,
+        spendColumn: viewSpendCol,
+        fromDate: effectiveStartStr,
+        toDate: effectiveEndStr,
         rowCount: dailyRows?.length ?? 0,
         sampleRows: (dailyRows ?? []).slice(0, 3),
         filters: { platform: filters.platform, unit: filters.businessUnit, course: filters.course }
       });
 
-      const exactSpend = (dailyRows ?? []).reduce((acc, r) => acc + (Number(r[spendCol]) || 0), 0);
-      const exactLeads = (dailyRows ?? []).reduce((acc, r) => acc + (Number(r[conversionsCol]) || 0), 0);
+      const exactSpend = (dailyRows ?? []).reduce((acc, r) => acc + (Number(r[viewSpendCol]) || 0), 0);
+      const exactLeads = (dailyRows ?? []).reduce((acc, r) => acc + (Number(r[viewLeadsCol]) || 0), 0);
 
       console.log("💰 Aggregated Results:", {
         exactSpend,
@@ -243,13 +252,13 @@ export default function BudgetPage() {
       });
 
       const brandingRows = (dailyRows ?? []).filter((r) => {
-        const u = (r[businessUnitCol] ?? "").toString().toLowerCase();
-        const c = (r[courseCol] ?? "").toString().toLowerCase();
+        const u = (r[viewUnitCol] ?? "").toString().toLowerCase();
+        const c = (r[viewCourseCol] ?? "").toString().toLowerCase();
         return u.includes("branding") || u.includes("institucional") || c.includes("branding");
       });
 
-      const exactBrandingLeads = brandingRows.reduce((acc, r) => acc + (Number(r[conversionsCol]) || 0), 0);
-      const exactBrandingSpend = brandingRows.reduce((acc, r) => acc + (Number(r[spendCol]) || 0), 0);
+      const exactBrandingSpend = brandingRows.reduce((acc, r) => acc + (Number(r[viewSpendCol]) || 0), 0);
+      const exactBrandingLeads = brandingRows.reduce((acc, r) => acc + (Number(r[viewLeadsCol]) || 0), 0);
 
       // --- Realizado (view semanal: vw_dashboard_semanal_detalhado) - Mantido para os Gráficos de Pacing
       let weeklyQ = (client as SupabaseClient)
@@ -316,7 +325,11 @@ export default function BudgetPage() {
 
         return {
           ...r,
+          orcamento_semanal: safeNumber(r.orcamento_semanal),
+          gasto_real: safeNumber(r.gasto_real),
+          diferenca: safeNumber(r.diferenca),
           leads: Number(leadsVal),
+          percentual_consumido: safeNumber(r.percentual_consumido),
           funnel_stage: meta.funnel ?? null,
           location: meta.location ?? null,
         };
@@ -328,27 +341,12 @@ export default function BudgetPage() {
         totalLeads: weeklyRows.reduce((a, b) => a + Number(b.leads || 0), 0)
       });
 
-      // Debug: Cursos da Ulbra Canoas
-      const ulbraCanoasRows = weeklyRows.filter(r => r.unidade?.toLowerCase().includes("canoas"));
-      const uniqueCourses = new Set(ulbraCanoasRows.map(r => r.curso || "Geral"));
-      const biomedicinaRows = ulbraCanoasRows.filter(r => r.curso?.toLowerCase().includes("biomedicina"));
-      console.log("🎓 Ulbra Canoas Debug:", {
-        totalRows: ulbraCanoasRows.length,
-        uniqueCourses: Array.from(uniqueCourses).sort(),
-        coursesWithBudget: ulbraCanoasRows.filter(r => r.orcamento_semanal > 0).map(r => r.curso).filter((v, i, a) => a.indexOf(v) === i),
-        coursesWithSpend: ulbraCanoasRows.filter(r => r.gasto_real > 0).map(r => r.curso).filter((v, i, a) => a.indexOf(v) === i),
-        biomedicina: {
-          rows: biomedicinaRows.length,
-          totalBudget: biomedicinaRows.reduce((a, b) => a + (b.orcamento_semanal || 0), 0),
-          totalSpend: biomedicinaRows.reduce((a, b) => a + (b.gasto_real || 0), 0),
-          sample: biomedicinaRows[0]
-        }
-      });
 
-      const plannedMonth = (budgetRows ?? []).reduce((acc: number, r: any) => acc + safeNumber(r?.[budgetCols.plannedCol]), 0);
+
+      const plannedTotal = (weeklyRows ?? []).reduce((acc: number, r: any) => acc + safeNumber(r?.orcamento_semanal), 0);
 
       // Use exact spend from daily data (already calculated above)
-      const spendMonth = exactSpend;
+      const spendTotal = exactSpend;
 
       // Legacy block removed: branding spend is now calculated from daily rows.
       // let spendBranding = 0; 
@@ -387,20 +385,57 @@ export default function BudgetPage() {
         .map(([weekStart, v]) => ({ weekStart, spend: v.spend, label: v.label }));
 
       // Filter weeks based on week filter (if set)
-      const filteredWeeks = filters.week
-        ? weeksSorted.filter(w => w.weekStart >= filters.week!)
-        : weeksSorted;
+      const filteredWeeks = weeksSorted;
 
-      let running = 0;
-      const dailySeries = filteredWeeks.map((w) => {
-        running += w.spend;
-        const d = new Date(w.weekStart);
-        const dayOfMonth = Number(format(d, "dd"));
-        const totalDays = rangeEnd.getDate();
-        const weekEndDay = Math.min(dayOfMonth + 6, totalDays);
-        const ideal = plannedMonth > 0 ? (plannedMonth * weekEndDay) / totalDays : 0;
-        return { day: w.weekStart, label: w.label, spendCum: running, idealCum: ideal };
-      });
+      let dailySeries: { day: string; label: string; spendCum: number; idealCum: number }[] = [];
+      const showDailyGranularity = !!filters.week;
+
+      if (showDailyGranularity) {
+        const byDay = new Map<string, number>();
+        for (const r of (dailyRows ?? [])) {
+          const d = String(r[viewDateCol]).slice(0, 10);
+          if (!d) continue;
+          byDay.set(d, (byDay.get(d) ?? 0) + (Number(r[viewSpendCol]) || 0));
+        }
+        const startD = effectiveStart;
+        const endD = effectiveEnd;
+        const totalDays = Math.max(1, (endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24) + 1);
+        let running = 0;
+        let currentD = new Date(startD);
+        while (currentD <= endD) {
+          const dayStr = format(currentD, "yyyy-MM-dd");
+          const spend = byDay.get(dayStr) ?? 0;
+          running += spend;
+          const daysElapsed = (currentD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24) + 1;
+          const ideal = plannedTotal > 0 ? (plannedTotal * daysElapsed) / totalDays : 0;
+          dailySeries.push({
+            day: dayStr,
+            label: format(currentD, "dd/MM"),
+            spendCum: running,
+            idealCum: ideal
+          });
+          currentD.setDate(currentD.getDate() + 1);
+        }
+      } else {
+        let running = 0;
+        dailySeries = filteredWeeks.map((w) => {
+          running += w.spend;
+
+          // Calculate ideal based on Effective Period
+          const startD = effectiveStart;
+          const endD = effectiveEnd;
+          const totalDays = Math.max(1, (endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24) + 1);
+
+          // Week End relative to Period Start
+          const weekEnd = endOfWeek(new Date(w.weekStart), { weekStartsOn: 1 });
+          const cappedWeekEnd = weekEnd > endD ? endD : weekEnd;
+
+          const daysElapsed = Math.max(0, (cappedWeekEnd.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24) + 1);
+
+          const ideal = plannedTotal > 0 ? (plannedTotal * daysElapsed) / totalDays : 0;
+          return { day: w.weekStart, label: w.label, spendCum: running, idealCum: ideal };
+        });
+      }
 
       // Matriz por unidade (detalhe Unidade > Curso > Plataforma) usando a view semanal
       const labelOr = (v: string | null | undefined, fallback: string) => {
@@ -473,10 +508,10 @@ export default function BudgetPage() {
       // Matriz simples por unidade (para gráficos existentes)
       const plannedByUnit = new Map<string, number>();
       if (budgetCols.unitCol) {
-        for (const r of budgetRows ?? []) {
-          const unit = String(r?.[budgetCols.unitCol] ?? "").trim();
+        for (const r of (weeklyRows ?? []) as WeeklyViewRow[]) {
+          const unit = String(r?.unidade ?? "").trim();
           if (!unit) continue;
-          plannedByUnit.set(unit, (plannedByUnit.get(unit) ?? 0) + safeNumber(r?.[budgetCols.plannedCol]));
+          plannedByUnit.set(unit, (plannedByUnit.get(unit) ?? 0) + safeNumber(r?.orcamento_semanal));
         }
       }
 
@@ -493,16 +528,30 @@ export default function BudgetPage() {
         .sort((a, b) => (b.planned || b.spend) - (a.planned || a.spend));
 
       // KPIs (forecast simples)
-      const now = new Date();
-      const isCurrent = isSameMonth(rangeStart, now);
-      const totalDays = rangeEnd.getDate();
-      const dayOfMonth = Math.min(now.getDate(), totalDays);
+      // KPI Forecast Logic
+      const startD = effectiveStart;
+      const endD = effectiveEnd;
+      const today = new Date();
+      // Ensure time part doesn't mess up differenceInDays
+      today.setHours(0, 0, 0, 0);
 
-      const spendToDate = spendMonth; /* Simplified to just use exact spend of selected range as "ToDate" for forecast base if partial month selected */
+      const totalDaysInPeriod = Math.max(1, (endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24) + 1);
 
-      const forecast = isCurrent && dayOfMonth > 0 ? (spendToDate / dayOfMonth) * totalDays : spendMonth;
-      const pacing = plannedMonth > 0 ? spendMonth / plannedMonth : null;
-      const netVariance = plannedMonth > 0 ? plannedMonth - forecast : null;
+      let daysElapsed = 0;
+      if (today > endD) {
+        daysElapsed = totalDaysInPeriod; // Period passed
+      } else if (today < startD) {
+        daysElapsed = 0; // Period in future
+      } else {
+        // Period currently active
+        daysElapsed = Math.max(1, (today.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24) + 1);
+      }
+
+      const spendToDate = spendTotal;
+
+      const forecast = daysElapsed > 0 ? (spendToDate / daysElapsed) * totalDaysInPeriod : spendTotal;
+      const pacing = plannedTotal > 0 ? spendTotal / plannedTotal : null;
+      const netVariance = plannedTotal > 0 ? plannedTotal - forecast : null;
 
       // Use Exact Metrics from Daily Query
       // const totalLeads = exactLeads; // Provided by query logic via `data` prop now? No, we need to lift it from data.
@@ -515,15 +564,15 @@ export default function BudgetPage() {
       const brandingLeads = exactBrandingLeads;
       const performanceLeads = totalLeads - brandingLeads;
 
-      const cpl = totalLeads > 0 ? spendMonth / totalLeads : null;
+      const cpl = totalLeads > 0 ? spendTotal / totalLeads : null;
       const spendBranding = exactBrandingSpend;
 
       const kpis: BudgetKpis = {
-        plannedMonth,
-        spendMonth,
+        plannedTotal,
+        spendTotal,
         spendSemEad,
         spendBranding,
-        forecast: plannedMonth > 0 ? forecast : null,
+        forecast: plannedTotal > 0 ? forecast : null,
         netVariance,
         pacing,
         totalLeads,
@@ -566,7 +615,7 @@ export default function BudgetPage() {
       const {
         dateCol,
         businessUnitCol: campaignCol,
-      } = await import("@/integrations/supabase/performanceSchema").then(m => m.resolvePerformanceDailyColumns(client));
+      } = await resolvePerformanceDailyColumns(client);
 
       const {
         spendCol,
@@ -574,7 +623,7 @@ export default function BudgetPage() {
         impressionsCol,
         clicksCol,
         conversionsCol,
-      } = await import("@/integrations/supabase/performanceMetricsSchema").then(m => m.resolvePerformanceMetricColumns(client));
+      } = await resolvePerformanceMetricColumns(client);
 
       const fromDate = format(rangeStart, "yyyy-MM-dd");
       const toDate = format(rangeEnd, "yyyy-MM-dd");
@@ -923,14 +972,14 @@ export default function BudgetPage() {
       <section className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" aria-label="KPIs Financeiros">
         <KpiCard
           title="Budget Total"
-          value={isLoading ? "…" : kpis?.plannedMonth != null ? brl(kpis.plannedMonth) : "-"}
+          value={isLoading ? "…" : kpis?.plannedTotal != null ? brl(kpis.plannedTotal) : "-"}
           hint="Soma do budget planejado"
-          tooltip="Valor total planejado para investimento em mídia no mês selecionado."
+          tooltip="Valor total planejado para investimento em mídia no período selecionado."
           status="neutral"
         />
         <KpiCard
           title="Gasto Realizado"
-          value={isLoading ? "…" : kpis?.spendMonth != null ? brl(kpis.spendMonth) : "-"}
+          value={isLoading ? "…" : kpis?.spendTotal != null ? brl(kpis.spendTotal) : "-"}
           hint="Valor executado até hoje"
           tooltip="Total já investido nas campanhas até o momento (Realizado)."
           status="neutral"
@@ -942,11 +991,17 @@ export default function BudgetPage() {
           tooltip="Velocidade consumo do budget. Verde = Dentro do planejado."
           status={(() => {
             if (isLoading || kpis?.pacing == null) return "neutral";
-            const now = new Date();
-            const isCurrent = isSameMonth(rangeStart, now);
-            const totalDays = rangeEnd.getDate();
-            const dayOfMonth = isCurrent ? Math.min(now.getDate(), totalDays) : totalDays;
-            const expectedPacing = dayOfMonth / totalDays;
+
+            // Re-calc pacing expectation based on Period
+            const startD = effectiveStart;
+            const endD = effectiveEnd;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const totalDays = Math.max(1, (endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24) + 1);
+            const daysElapsed = today > endD ? totalDays : (today < startD ? 0 : (today.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24) + 1);
+
+            const expectedPacing = daysElapsed / totalDays;
             return getPacingStatus(kpis.pacing, expectedPacing);
           })()}
         />
@@ -956,9 +1011,9 @@ export default function BudgetPage() {
           hint="Budget - Forecast"
           tooltip="Sobra ou falta projetada. Amarelo/Positivo = Sobra (Sub-investimento). Vermelho/Negativo = Estouro. Verde ~ 0."
           status={(() => {
-            if (isLoading || kpis?.netVariance == null || kpis?.plannedMonth == null) return "neutral";
+            if (isLoading || kpis?.netVariance == null || kpis?.plannedTotal == null) return "neutral";
             const variance = kpis.netVariance;
-            const threshold = kpis.plannedMonth * 0.05; // 5% de tolerância
+            const threshold = kpis.plannedTotal * 0.05; // 5% de tolerância
 
             // Se sobrar muito dinheiro (Positivo > 5%), é ruim (Amarelo - Atenção Sub-investimento)
             if (variance > threshold) return "warning";
@@ -1007,7 +1062,7 @@ export default function BudgetPage() {
               });
 
               // CPL sem Branding = (Gasto sem Branding) / (Leads sem Branding)
-              const totalSpend = kpis.spendMonth || 0;
+              const totalSpend = kpis.spendTotal || 0;
               const performanceLeads = kpis.performanceLeads || 0;
               const spendWithoutBranding = totalSpend - brandingSpend;
 
@@ -1383,8 +1438,6 @@ export default function BudgetPage() {
 
                   setSelectedUnit({
                     unit: node.label,
-                    planned: node.budget,
-                    real: node.spend,
                     rows: filtered
                   });
                 }}

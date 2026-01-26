@@ -1,5 +1,5 @@
 import * as React from "react";
-import { startOfMonth, endOfMonth } from "date-fns";
+import { startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns";
 import { DateRange } from "react-day-picker";
 
 export type AdsPlatform = string;
@@ -85,7 +85,29 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setWeek = React.useCallback((week: string | null) => {
-    setFilters((prev) => ({ ...prev, week }));
+    if (week) {
+      // Append T00:00:00 to ensure local time parsing.
+      // "2026-01-12" -> UTC (prev day in -03:00) vs "2026-01-12T00:00:00" -> Local
+      // Ensure we only take the YYYY-MM-DD part if 'week' is an ISO string
+      const datePart = String(week).slice(0, 10);
+      const wDate = new Date(`${datePart}T00:00:00`);
+      const s = startOfWeek(wDate, { weekStartsOn: 1 });
+      const e = endOfWeek(wDate, { weekStartsOn: 1 });
+
+      setFilters((prev) => ({
+        ...prev,
+        week,
+        dateRange: { from: s, to: e },
+        month: startOfMonth(s)
+      }));
+    } else {
+      setFilters((prev) => ({
+        ...prev,
+        week: null,
+        // Reset range to full month when week is cleared
+        dateRange: { from: startOfMonth(prev.month), to: endOfMonth(prev.month) }
+      }));
+    }
   }, []);
 
   const setExcludeEad = React.useCallback((excludeEad: boolean) => {
