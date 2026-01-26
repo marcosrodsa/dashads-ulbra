@@ -1,10 +1,12 @@
 import * as React from "react";
-import { startOfMonth } from "date-fns";
+import { startOfMonth, endOfMonth } from "date-fns";
+import { DateRange } from "react-day-picker";
 
 export type AdsPlatform = string;
 
 export type FiltersState = {
-  month: Date; // first day of the selected month
+  month: Date; // Keep as Date acting as "current view month" or fallback
+  dateRange: DateRange | undefined; // The actual selected range
   businessUnit: string | null;
   course: string | null;
   platform: AdsPlatform | null;
@@ -16,6 +18,7 @@ export type FiltersState = {
 type FiltersContextValue = {
   filters: FiltersState;
   setMonth: (month: Date) => void;
+  setDateRange: (range: DateRange | undefined) => void;
   setBusinessUnit: (businessUnit: string | null) => void;
   setCourse: (course: string | null) => void;
   setPlatform: (platform: AdsPlatform | null) => void;
@@ -32,12 +35,13 @@ const FiltersContext = React.createContext<FiltersContextValue | null>(null);
 
 const defaultFilters = (): FiltersState => ({
   month: startOfMonth(new Date()),
+  dateRange: { from: startOfMonth(new Date()), to: endOfMonth(new Date()) },
   businessUnit: null,
   course: null,
   platform: null,
   week: null,
   excludeEad: false,
-  hideBranding: true, // Default true as requested
+  hideBranding: true,
 });
 
 export function FiltersProvider({ children }: { children: React.ReactNode }) {
@@ -46,8 +50,26 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
 
   const toggleFilters = React.useCallback(() => setIsFiltersOpen((p) => !p), []);
 
+  const setDateRange = React.useCallback((range: DateRange | undefined) => {
+    setFilters((prev) => ({
+      ...prev,
+      dateRange: range,
+      // If range has a 'from', sync 'month' to it so calendars open in the right place.
+      month: range?.from ? startOfMonth(range.from) : prev.month,
+      week: null
+    }));
+  }, []);
+
   const setMonth = React.useCallback((month: Date) => {
-    setFilters((prev) => ({ ...prev, month: startOfMonth(month), week: null }));
+    // When selecting a month solely, we set the range to the whole month
+    const s = startOfMonth(month);
+    const e = endOfMonth(month);
+    setFilters((prev) => ({
+      ...prev,
+      month: s,
+      dateRange: { from: s, to: e },
+      week: null
+    }));
   }, []);
 
   const setBusinessUnit = React.useCallback((businessUnit: string | null) => {
@@ -82,6 +104,8 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
     () => ({
       filters,
       setMonth,
+      dateRange: filters.dateRange,
+      setDateRange,
       setBusinessUnit,
       setCourse,
       setPlatform,
@@ -96,6 +120,8 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
     [
       filters,
       setMonth,
+      filters.dateRange,
+      setDateRange,
       setBusinessUnit,
       setCourse,
       setPlatform,

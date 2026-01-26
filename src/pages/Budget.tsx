@@ -90,8 +90,18 @@ export default function BudgetPage() {
   // Estado para drill-down semanal
   const [selectedUnit, setSelectedUnit] = React.useState<SelectedUnitState>(null);
 
-  const monthStart = startOfMonth(filters.month);
-  const monthEnd = endOfMonth(filters.month);
+  // Use selected range or fallback to current month
+  const rangeStart = filters.dateRange?.from ?? startOfMonth(new Date());
+  // Fix: If 'to' is missing (single day selection), use 'from' instead of end of month.
+  const rangeEnd = filters.dateRange?.to ?? filters.dateRange?.from ?? endOfMonth(rangeStart);
+
+  console.log("Budget Debug:", {
+    filterRange: filters.dateRange,
+    calcStart: format(rangeStart, "yyyy-MM-dd"),
+    calcEnd: format(rangeEnd, "yyyy-MM-dd"),
+    rawStart: rangeStart,
+    rawEnd: rangeEnd
+  });
 
   const budgetColsQuery = useQuery({
     queryKey: ["budget", "cols"],
@@ -104,10 +114,11 @@ export default function BudgetPage() {
     queryKey: [
       "budget",
       "data",
-      format(monthStart, "yyyy-MM"),
+      format(rangeStart, "yyyy-MM-dd"),
+      format(rangeEnd, "yyyy-MM-dd"), // Use range in key
       filters.platform ?? "__all__",
       filters.businessUnit ?? "__all__",
-      filters.businessUnit ?? "__all__",
+      filters.businessUnit ?? "__all__", // Duplicate in original? Keeping structure.
       filters.course ?? "__all__",
       filters.week ?? "__all__",
     ],
@@ -115,18 +126,31 @@ export default function BudgetPage() {
     queryFn: async () => {
       const budgetCols = budgetColsQuery.data!;
 
-      let fromDate: string;
-      let toDate: string;
+      let budgetFromDate: string;
+      let budgetToDate: string;
+      let weeklyFromDate: string;
+      let weeklyToDate: string;
 
       if (filters.week) {
-        // If week filter is active, restrict range to that week
         const wDate = new Date(filters.week);
-        fromDate = format(startOfWeek(wDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
-        toDate = format(endOfWeek(wDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+        // For specific week filter, we align everything to that week
+        const startW = startOfWeek(wDate, { weekStartsOn: 1 });
+        const endW = endOfWeek(wDate, { weekStartsOn: 1 });
+
+        // For budget, we still need the Month of that week to get the "Planned" value for the month
+        budgetFromDate = format(startOfMonth(startW), "yyyy-MM-dd");
+        budgetToDate = format(endOfMonth(endW), "yyyy-MM-dd");
+
+        weeklyFromDate = format(startW, "yyyy-MM-dd");
+        weeklyToDate = format(endW, "yyyy-MM-dd");
       } else {
-        // Otherwise use the full month view
-        fromDate = format(startOfWeek(monthStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
-        toDate = format(endOfWeek(monthEnd, { weekStartsOn: 1 }), "yyyy-MM-dd");
+        // For range, Budget needs to cover the months involved
+        budgetFromDate = format(startOfMonth(rangeStart), "yyyy-MM-dd");
+        budgetToDate = format(endOfMonth(rangeEnd), "yyyy-MM-dd");
+
+        // Weekly needs to cover the weeks involved
+        weeklyFromDate = format(startOfWeek(rangeStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
+        weeklyToDate = format(endOfWeek(rangeEnd, { weekStartsOn: 1 }), "yyyy-MM-dd");
       }
 
       // --- Budget (planejado)
@@ -139,8 +163,8 @@ export default function BudgetPage() {
       let budgetQ = (client as SupabaseClient)
         .from("fact_ads_budget")
         .select(budgetSelectCols)
-        .gte(budgetCols.monthCol, fromDate)
-        .lte(budgetCols.monthCol, toDate);
+        .gte(budgetCols.monthCol, budgetFromDate)
+        .lte(budgetCols.monthCol, budgetToDate);
 
       if (budgetCols.platformCol && filters.platform) {
         budgetQ = budgetQ.eq(budgetCols.platformCol, filters.platform);
@@ -153,12 +177,86 @@ export default function BudgetPage() {
       const { data: budgetRows, error: budgetErr } = await budgetQ;
       if (budgetErr) throw budgetErr;
 
-      // --- Realizado (view semanal: vw_dashboard_semanal_detalhado)
+      // --- Exact Daily Data for KPI Cards (Realized Spend & Leads) ---
+      // Using fact_ads_performance_daily (same as Performance dashboard) for accuracy
+      const {
+        dateCol,
+        businessUnitCol,
+        courseCol,
+      } = await import("@/integrations/supabase/performanceSchema").then(m => m.resolvePerformanceDailyColumns(client));
+
+      const {
+        spendCol,
+        conversionsCol,
+        platformCol,
+      } = await import("@/integrations/supabase/performanceMetricsSchema").then(m => m.resolvePerformanceMetricColumns(client));
+
+      const selectCols = [dateCol, spendCol, conversionsCol, businessUnitCol, courseCol];
+      if (filters.platform) selectCols.push(platformCol);
+
+      let dailyQ = (client as SupabaseClient)
+        .from("fact_ads_performance_daily")
+        .select(selectCols.join(", "))
+        .gte(dateCol, format(rangeStart, "yyyy-MM-dd"))
+        .lte(dateCol, format(rangeEnd, "yyyy-MM-dd"));
+
+      if (filters.platform) dailyQ = dailyQ.eq(platformCol, filters.platform);
+      if (filters.businessUnit) dailyQ = dailyQ.eq(businessUnitCol, filters.businessUnit);
+      if (filters.course) dailyQ = dailyQ.eq(courseCol, filters.course);
+
+      console.log("🔍 SQL Query Being Executed:", {
+        table: "fact_ads_performance_daily",
+        select: selectCols.join(", "),
+        where: {
+          [`${dateCol} >=`]: format(rangeStart, "yyyy-MM-dd"),
+          [`${dateCol} <=`]: format(rangeEnd, "yyyy-MM-dd"),
+          ...(filters.platform && { [`${platformCol} =`]: filters.platform }),
+          ...(filters.businessUnit && { [`${businessUnitCol} =`]: filters.businessUnit }),
+          ...(filters.course && { [`${courseCol} =`]: filters.course }),
+        },
+        sqlLike: `SELECT ${selectCols.join(", ")} FROM fact_ads_performance_daily WHERE ${dateCol} >= '${format(rangeStart, "yyyy-MM-dd")}' AND ${dateCol} <= '${format(rangeEnd, "yyyy-MM-dd")}'${filters.platform ? ` AND ${platformCol} = '${filters.platform}'` : ''}${filters.businessUnit ? ` AND ${businessUnitCol} = '${filters.businessUnit}'` : ''}${filters.course ? ` AND ${courseCol} = '${filters.course}'` : ''}`
+      });
+
+      const { data: dailyRows, error: dailyErr } = await dailyQ;
+      if (dailyErr) throw dailyErr;
+
+      console.log("📊 Daily Query Debug:", {
+        table: "fact_ads_performance_daily",
+        dateColumn: dateCol,
+        spendColumn: spendCol,
+        fromDate: format(rangeStart, "yyyy-MM-dd"),
+        toDate: format(rangeEnd, "yyyy-MM-dd"),
+        rowCount: dailyRows?.length ?? 0,
+        sampleRows: (dailyRows ?? []).slice(0, 3),
+        filters: { platform: filters.platform, unit: filters.businessUnit, course: filters.course }
+      });
+
+      const exactSpend = (dailyRows ?? []).reduce((acc, r) => acc + (Number(r[spendCol]) || 0), 0);
+      const exactLeads = (dailyRows ?? []).reduce((acc, r) => acc + (Number(r[conversionsCol]) || 0), 0);
+
+      console.log("💰 Aggregated Results:", {
+        exactSpend,
+        exactLeads,
+        rowsProcessed: dailyRows?.length
+      });
+
+      const brandingRows = (dailyRows ?? []).filter((r) => {
+        const u = (r[businessUnitCol] ?? "").toString().toLowerCase();
+        const c = (r[courseCol] ?? "").toString().toLowerCase();
+        return u.includes("branding") || u.includes("institucional") || c.includes("branding");
+      });
+
+      const exactBrandingLeads = brandingRows.reduce((acc, r) => acc + (Number(r[conversionsCol]) || 0), 0);
+      const exactBrandingSpend = brandingRows.reduce((acc, r) => acc + (Number(r[spendCol]) || 0), 0);
+
+      // --- Realizado (view semanal: vw_dashboard_semanal_detalhado) - Mantido para os Gráficos de Pacing
       let weeklyQ = (client as SupabaseClient)
         .from("vw_dashboard_semanal_detalhado")
         .select("*")
-        .gte("data_inicio_semana", fromDate)
-        .lte("data_inicio_semana", toDate);
+        .gte("data_inicio_semana", weeklyFromDate)
+        .lte("data_inicio_semana", weeklyToDate);
+
+
 
       if (filters.platform) weeklyQ = weeklyQ.eq("plataforma", filters.platform);
       if (filters.businessUnit) weeklyQ = weeklyQ.eq("unidade", filters.businessUnit);
@@ -186,8 +284,8 @@ export default function BudgetPage() {
         let metaQ = (client as SupabaseClient)
           .from("fact_ads_budget")
           .select(metaCols.join(","))
-          .gte(budgetCols.monthCol, fromDate)
-          .lte(budgetCols.monthCol, toDate);
+          .gte(budgetCols.monthCol, budgetFromDate)
+          .lte(budgetCols.monthCol, budgetToDate);
 
         if (filters.businessUnit && budgetCols.unitCol) {
           metaQ = metaQ.eq(budgetCols.unitCol, filters.businessUnit);
@@ -247,39 +345,13 @@ export default function BudgetPage() {
 
       const plannedMonth = (budgetRows ?? []).reduce((acc: number, r: any) => acc + safeNumber(r?.[budgetCols.plannedCol]), 0);
 
-      const spendMonth = (weeklyRows ?? []).reduce(
-        (acc: number, r: WeeklyViewRow) => acc + safeNumber(r?.gasto_real),
-        0
-      );
+      // Use exact spend from daily data (already calculated above)
+      const spendMonth = exactSpend;
 
-      // Buscar dados de funnel_stage para calcular gasto de Branding
-      let spendBranding = 0;
-      if (budgetCols.funnelCol) {
-        let strategyQ = (client as SupabaseClient)
-          .from("fact_ads_budget")
-          .select(`${budgetCols.funnelCol}, ${budgetCols.spendCol}`)
-          .gte(budgetCols.monthCol, fromDate)
-          .lte(budgetCols.monthCol, toDate);
+      // Legacy block removed: branding spend is now calculated from daily rows.
+      // let spendBranding = 0; 
 
-        // Aplicar mesmos filtros
-        if (filters.platform && budgetCols.platformCol) {
-          strategyQ = strategyQ.eq(budgetCols.platformCol, filters.platform);
-        }
-        if (filters.businessUnit && budgetCols.unitCol) {
-          strategyQ = strategyQ.eq(budgetCols.unitCol, filters.businessUnit);
-        }
-        if (filters.course && budgetCols.courseCol) {
-          strategyQ = strategyQ.eq(budgetCols.courseCol, filters.course);
-        }
-
-        const { data: strategyData } = await strategyQ;
-
-        if (strategyData) {
-          spendBranding = strategyData
-            .filter((r: any) => r[budgetCols.funnelCol!]?.toLowerCase() === "branding")
-            .reduce((acc: number, r: any) => acc + safeNumber(r[budgetCols.spendCol]), 0);
-        }
-      }
+      /* Legacy strategyQ block removed. spendBranding is already calculated via dailyRows. */
 
       // Função helper para verificar se é EAD
       const isEadUnit = (unit: string) => {
@@ -322,7 +394,7 @@ export default function BudgetPage() {
         running += w.spend;
         const d = new Date(w.weekStart);
         const dayOfMonth = Number(format(d, "dd"));
-        const totalDays = monthEnd.getDate();
+        const totalDays = rangeEnd.getDate();
         const weekEndDay = Math.min(dayOfMonth + 6, totalDays);
         const ideal = plannedMonth > 0 ? (plannedMonth * weekEndDay) / totalDays : 0;
         return { day: w.weekStart, label: w.label, spendCum: running, idealCum: ideal };
@@ -420,42 +492,29 @@ export default function BudgetPage() {
 
       // KPIs (forecast simples)
       const now = new Date();
-      const isCurrent = isSameMonth(monthStart, now);
-      const totalDays = monthEnd.getDate();
+      const isCurrent = isSameMonth(rangeStart, now);
+      const totalDays = rangeEnd.getDate();
       const dayOfMonth = Math.min(now.getDate(), totalDays);
 
-      const spendToDate = isCurrent
-        ? (weeklyRows ?? []).reduce((acc: number, r: WeeklyViewRow) => {
-          const iso = String(r?.data_inicio_semana ?? "");
-          const d = iso ? new Date(iso) : null;
-          if (!d) return acc;
-          if (d <= now) return acc + safeNumber(r?.gasto_real);
-          return acc;
-        }, 0)
-        : spendMonth;
+      const spendToDate = spendMonth; /* Simplified to just use exact spend of selected range as "ToDate" for forecast base if partial month selected */
 
       const forecast = isCurrent && dayOfMonth > 0 ? (spendToDate / dayOfMonth) * totalDays : spendMonth;
       const pacing = plannedMonth > 0 ? spendMonth / plannedMonth : null;
       const netVariance = plannedMonth > 0 ? plannedMonth - forecast : null;
 
-      const totalLeads = (weeklyRows ?? []).reduce((acc: number, r: WeeklyViewRow) => acc + safeNumber(r?.leads), 0);
+      // Use Exact Metrics from Daily Query
+      // const totalLeads = exactLeads; // Provided by query logic via `data` prop now? No, we need to lift it from data.
+      // Wait, we are inside `useMemo` or `queryFn`? 
+      // We are inside `useMemo`? No, this code block is inside the transformation logic, likely inside `useMemo` in the original file, BUT here we are looking at lines 350-500 which is seemingly inside `useQuery`'s `queryFn`?
+      // actually the previous Tool view showed this logic inside `budgetDataQuery.queryFn`.
+      // SO we return these values calculated in `queryFn`.
 
-      // Calcular leads de Branding para excluir do total
-      const brandingLeads = (weeklyRows ?? [])
-        .filter((r: WeeklyViewRow) => {
-          // Usar funnel_stage se disponível, senão usar nome da unidade
-          if (r.funnel_stage) {
-            return r.funnel_stage.toLowerCase() === "branding";
-          }
-          const unit = (r.unidade ?? "").toLowerCase();
-          return unit.includes("branding") || unit.includes("institucional");
-        })
-        .reduce((acc: number, r: WeeklyViewRow) => acc + safeNumber(r?.leads), 0);
-
-      // Leads de performance (sem Branding)
+      const totalLeads = exactLeads;
+      const brandingLeads = exactBrandingLeads;
       const performanceLeads = totalLeads - brandingLeads;
 
       const cpl = totalLeads > 0 ? spendMonth / totalLeads : null;
+      const spendBranding = exactBrandingSpend;
 
       const kpis: BudgetKpis = {
         plannedMonth,
@@ -515,8 +574,8 @@ export default function BudgetPage() {
         conversionsCol,
       } = await import("@/integrations/supabase/performanceMetricsSchema").then(m => m.resolvePerformanceMetricColumns(client));
 
-      const fromDate = format(monthStart, "yyyy-MM-dd");
-      const toDate = format(monthEnd, "yyyy-MM-dd");
+      const fromDate = format(rangeStart, "yyyy-MM-dd");
+      const toDate = format(rangeEnd, "yyyy-MM-dd");
 
       const cols = [
         dateCol,
@@ -831,7 +890,7 @@ export default function BudgetPage() {
       console.error(e);
       alert("Erro ao baixar dados: " + e.message);
     }
-  }, [client, monthStart, monthEnd]);
+  }, [client, rangeStart, rangeEnd]);
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-7xl space-y-6 p-6">
@@ -882,8 +941,8 @@ export default function BudgetPage() {
           status={(() => {
             if (isLoading || kpis?.pacing == null) return "neutral";
             const now = new Date();
-            const isCurrent = isSameMonth(monthStart, now);
-            const totalDays = monthEnd.getDate();
+            const isCurrent = isSameMonth(rangeStart, now);
+            const totalDays = rangeEnd.getDate();
             const dayOfMonth = isCurrent ? Math.min(now.getDate(), totalDays) : totalDays;
             const expectedPacing = dayOfMonth / totalDays;
             return getPacingStatus(kpis.pacing, expectedPacing);
@@ -1328,7 +1387,7 @@ export default function BudgetPage() {
                   });
                 }}
                 onDownload={handleDownload}
-                monthDate={monthStart}
+                monthDate={rangeStart}
               />
             )}
           </CardContent>

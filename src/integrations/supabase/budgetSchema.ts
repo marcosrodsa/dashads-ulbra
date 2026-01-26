@@ -109,6 +109,8 @@ export async function resolveBudgetColumns(client: SupabaseClient): Promise<Budg
     "regiao",
   ]);
 
+  console.log("Budget Columns Resolved:", { monthCol, plannedCol, platformCol, unitCol, funnelCol, locationCol });
+
   _cached = { monthCol, plannedCol, platformCol, unitCol, funnelCol, locationCol };
   return _cached;
 }

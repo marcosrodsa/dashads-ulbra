@@ -1,5 +1,5 @@
 import * as React from "react";
-import { format, subMonths, startOfMonth } from "date-fns";
+import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Filter, Building2, GraduationCap, Globe, CalendarDays, X, ChevronDown, ChevronUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -35,13 +35,35 @@ function asMonthKey(d: Date) {
 }
 
 // Queries using the new View
-async function fetchBusinessUnits(client: SupabaseClient, month: Date) {
-    const from = format(startOfMonth(month), "yyyy-MM-dd");
+async function fetchBusinessUnits(client: SupabaseClient, from: Date, to: Date) {
+    const f = format(from, "yyyy-MM-dd");
+    const t = format(to, "yyyy-MM-dd");
+
+    // Note: The view 'vw_performance_mensal' seems to be aggregated by 'mes_referencia' (start of month).
+    // If we want range support, we might need a daily view OR we filter the view by range if 'mes_referencia' allows.
+    // However, the view likely aggregates by MONTH. If the user selects partial dates, this view might not work well unless we switch to daily.
+    // BUT the user asked to "fix the calendar filter".
+    // If I change this to just filter by 'mes_referencia' >= from AND <= to, it selects months.
+    // If the view is monthly, we can't do daily filtering.
+    // CHECK: the view name is 'vw_performance_mensal'. Reference col is 'mes_referencia'.
+    // If I want *exact* daily filtering, I should probably check if there is a daily view.
+    // The DashboardFilterBar uses `fact_ads_performance_daily` which IS daily.
+    // PerformanceFilterBar uses `vw_performance_mensal`.
+    // If I want to support specific days in Performance Dashboard (which seems to be this file), I might need to switch to daily table OR accept that it is monthly.
+    // The user said: "não permite selecionar mais de um dia".
+    // I will assume for now we keep it monthly-granular but allow selecting multiple months? OR do we switch to daily?
+    // Given usage of 'vw_performance_mensal', it's safer to map the RANGE to MONTHS.
+    // So if user selects Jan 5 to Feb 20, we fetch months Jan and Feb.
+    // Let's implement that logic: 'mes_referencia' between startOfMonth(from) and startOfMonth(to).
+
+    const start = format(startOfMonth(from), "yyyy-MM-dd");
+    const end = format(startOfMonth(to), "yyyy-MM-dd");
 
     const { data, error } = await client
         .from("vw_performance_mensal")
         .select("unidade")
-        .eq("mes_referencia", from);
+        .gte("mes_referencia", start)
+        .lte("mes_referencia", end);
 
     if (error) {
         console.error("Error fetching units from view", error);
@@ -53,14 +75,16 @@ async function fetchBusinessUnits(client: SupabaseClient, month: Date) {
     return unique as string[];
 }
 
-async function fetchCourses(client: SupabaseClient, month: Date, businessUnit: string | null) {
+async function fetchCourses(client: SupabaseClient, from: Date, to: Date, businessUnit: string | null) {
     if (!businessUnit) return [] as string[];
-    const from = format(startOfMonth(month), "yyyy-MM-dd");
+    const start = format(startOfMonth(from), "yyyy-MM-dd");
+    const end = format(startOfMonth(to), "yyyy-MM-dd");
 
     const { data, error } = await client
         .from("vw_performance_mensal")
         .select("curso")
-        .eq("mes_referencia", from)
+        .gte("mes_referencia", start)
+        .lte("mes_referencia", end)
         .eq("unidade", businessUnit);
 
     if (error) throw error;
@@ -70,13 +94,15 @@ async function fetchCourses(client: SupabaseClient, month: Date, businessUnit: s
     return unique as string[];
 }
 
-async function fetchPlatforms(client: SupabaseClient, month: Date) {
-    const from = format(startOfMonth(month), "yyyy-MM-dd");
+async function fetchPlatforms(client: SupabaseClient, from: Date, to: Date) {
+    const start = format(startOfMonth(from), "yyyy-MM-dd");
+    const end = format(startOfMonth(to), "yyyy-MM-dd");
 
     const { data, error } = await client
         .from("vw_performance_mensal")
         .select("platform")
-        .eq("mes_referencia", from);
+        .gte("mes_referencia", start)
+        .lte("mes_referencia", end);
 
     if (error) throw error;
 
@@ -89,6 +115,7 @@ export function PerformanceFilterBar() {
     const {
         filters,
         setMonth,
+        setDateRange,
         setBusinessUnit,
         setCourse,
         setPlatform,
@@ -107,21 +134,24 @@ export function PerformanceFilterBar() {
     const client = getSupabaseClient();
     const months = React.useMemo(() => monthOptions(18), []);
 
+    const rangeStart = filters.dateRange?.from ?? startOfMonth(new Date());
+    const rangeEnd = filters.dateRange?.to ?? endOfMonth(rangeStart);
+
     const businessUnitsQuery = useQuery({
-        queryKey: ["perf-filters", "units", asMonthKey(filters.month)],
-        queryFn: () => fetchBusinessUnits(client as SupabaseClient, filters.month),
+        queryKey: ["perf-filters", "units", rangeStart.toISOString(), rangeEnd.toISOString()],
+        queryFn: () => fetchBusinessUnits(client as SupabaseClient, rangeStart, rangeEnd),
         enabled: !!client,
     });
 
     const coursesQuery = useQuery({
-        queryKey: ["perf-filters", "courses", asMonthKey(filters.month), filters.businessUnit],
-        queryFn: () => fetchCourses(client as SupabaseClient, filters.month, filters.businessUnit),
+        queryKey: ["perf-filters", "courses", rangeStart.toISOString(), rangeEnd.toISOString(), filters.businessUnit],
+        queryFn: () => fetchCourses(client as SupabaseClient, rangeStart, rangeEnd, filters.businessUnit),
         enabled: !!client && !!filters.businessUnit,
     });
 
     const platformsQuery = useQuery({
-        queryKey: ["perf-filters", "platforms", asMonthKey(filters.month)],
-        queryFn: () => fetchPlatforms(client as SupabaseClient, filters.month),
+        queryKey: ["perf-filters", "platforms", rangeStart.toISOString(), rangeEnd.toISOString()],
+        queryFn: () => fetchPlatforms(client as SupabaseClient, rangeStart, rangeEnd),
         enabled: !!client,
     });
 
@@ -166,10 +196,16 @@ export function PerformanceFilterBar() {
                     <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 ${!isMobileOpen ? 'hidden lg:grid' : ''}`}>
 
                         {/* Mês - Replaced DatePicker with Select */}
-                        <ModernDateFilter
-                            date={filters.month}
-                            onSelect={(d) => setMonth(d)}
-                        />
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                                <CalendarDays className="h-3.5 w-3.5" />
+                                Período
+                            </label>
+                            <ModernDateFilter
+                                dateRange={filters.dateRange}
+                                onSelect={(range) => setDateRange(range)}
+                            />
+                        </div>
 
                         {/* Branding Toggle */}
                         <div className="space-y-1.5 flex flex-col justify-end h-full pb-1">

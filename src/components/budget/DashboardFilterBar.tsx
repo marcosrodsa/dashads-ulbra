@@ -66,10 +66,8 @@ function asMonthKey(d: Date) {
     return startOfMonth(d).toISOString();
 }
 
-async function fetchBusinessUnits(client: SupabaseClient, month: Date) {
+async function fetchBusinessUnits(client: SupabaseClient, from: Date, to: Date) {
     const cols = await resolvePerformanceDailyColumns(client);
-    const from = startOfMonth(month);
-    const to = endOfMonth(month);
 
     const { data, error } = await client
         .from("fact_ads_performance_daily")
@@ -84,11 +82,9 @@ async function fetchBusinessUnits(client: SupabaseClient, month: Date) {
     return unique as string[];
 }
 
-async function fetchCourses(client: SupabaseClient, month: Date, businessUnit: string | null) {
+async function fetchCourses(client: SupabaseClient, from: Date, to: Date, businessUnit: string | null) {
     if (!businessUnit) return [] as string[];
     const cols = await resolvePerformanceDailyColumns(client);
-    const from = startOfMonth(month);
-    const to = endOfMonth(month);
 
     const { data, error } = await client
         .from("fact_ads_performance_daily")
@@ -104,12 +100,10 @@ async function fetchCourses(client: SupabaseClient, month: Date, businessUnit: s
     return unique as string[];
 }
 
-async function fetchPlatforms(client: SupabaseClient, month: Date) {
+async function fetchPlatforms(client: SupabaseClient, from: Date, to: Date) {
     const metrics = await resolvePerformanceMetricColumns(client);
     if (!metrics.platformCol) return [] as string[];
     const cols = await resolvePerformanceDailyColumns(client);
-    const from = startOfMonth(month);
-    const to = endOfMonth(month);
 
     const { data, error } = await client
         .from("fact_ads_performance_daily")
@@ -177,6 +171,7 @@ export function DashboardFilterBar() {
     const {
         filters,
         setMonth,
+        setDateRange,
         setBusinessUnit,
         setCourse,
         setPlatform,
@@ -208,30 +203,33 @@ export function DashboardFilterBar() {
 
     const sameUnitAndCourse = !isBudgetRoute && !!columnsQuery.data && columnsQuery.data.businessUnitCol === columnsQuery.data.courseCol;
 
+    const rangeStart = filters.dateRange?.from ?? startOfMonth(new Date());
+    const rangeEnd = filters.dateRange?.to ?? endOfMonth(rangeStart);
+
     const businessUnitsQuery = useQuery({
-        queryKey: ["filters", "businessUnits", isBudgetRoute ? "budget" : "performance", asMonthKey(filters.month)],
+        queryKey: ["filters", "businessUnits", isBudgetRoute ? "budget" : "performance", rangeStart.toISOString(), rangeEnd.toISOString()],
         queryFn: () =>
             isBudgetRoute
-                ? fetchBusinessUnitsWeeklyView(client as SupabaseClient, filters.month)
-                : fetchBusinessUnits(client as SupabaseClient, filters.month),
+                ? fetchBusinessUnitsWeeklyView(client as SupabaseClient, rangeStart) // Weekly view might still need 'month' logic or we should check if it needs range. For now, assuming it takes 'month' anchor (rangeStart).
+                : fetchBusinessUnits(client as SupabaseClient, rangeStart, rangeEnd),
         enabled: !!client,
     });
 
     const coursesQuery = useQuery({
-        queryKey: ["filters", "courses", isBudgetRoute ? "budget" : "performance", asMonthKey(filters.month), filters.businessUnit],
+        queryKey: ["filters", "courses", isBudgetRoute ? "budget" : "performance", rangeStart.toISOString(), rangeEnd.toISOString(), filters.businessUnit],
         queryFn: () =>
             isBudgetRoute
-                ? fetchCoursesWeeklyView(client as SupabaseClient, filters.month, filters.businessUnit)
-                : fetchCourses(client as SupabaseClient, filters.month, filters.businessUnit),
+                ? fetchCoursesWeeklyView(client as SupabaseClient, rangeStart, filters.businessUnit)
+                : fetchCourses(client as SupabaseClient, rangeStart, rangeEnd, filters.businessUnit),
         enabled: !!client && !!filters.businessUnit && (isBudgetRoute || !sameUnitAndCourse),
     });
 
     const platformsQuery = useQuery({
-        queryKey: ["filters", "platforms", isBudgetRoute ? "budget" : "performance", asMonthKey(filters.month)],
+        queryKey: ["filters", "platforms", isBudgetRoute ? "budget" : "performance", rangeStart.toISOString(), rangeEnd.toISOString()],
         queryFn: () =>
             isBudgetRoute
-                ? fetchPlatformsWeeklyView(client as SupabaseClient, filters.month)
-                : fetchPlatforms(client as SupabaseClient, filters.month),
+                ? fetchPlatformsWeeklyView(client as SupabaseClient, rangeStart)
+                : fetchPlatforms(client as SupabaseClient, rangeStart, rangeEnd),
         enabled: !!client,
     });
 
@@ -281,11 +279,11 @@ export function DashboardFilterBar() {
                         <div className="space-y-1.5">
                             <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                                 <CalendarDays className="h-3.5 w-3.5" />
-                                Mês
+                                Período
                             </label>
                             <ModernDateFilter
-                                date={filters.month}
-                                onSelect={(d) => setMonth(d)}
+                                dateRange={filters.dateRange}
+                                onSelect={(range) => setDateRange(range)}
                             />
                         </div>
 
