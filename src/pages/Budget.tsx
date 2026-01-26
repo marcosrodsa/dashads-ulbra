@@ -1387,7 +1387,6 @@ export default function BudgetPage() {
                   });
                 }}
                 onDownload={handleDownload}
-                monthDate={rangeStart}
               />
             )}
           </CardContent>
