@@ -149,6 +149,9 @@ export default function BudgetPage() {
       let weeklyFromDate: string;
       let weeklyToDate: string;
 
+      budgetFromDate = format(startOfMonth(effectiveStart), "yyyy-MM-dd");
+      budgetToDate = format(endOfMonth(effectiveEnd), "yyyy-MM-dd");
+
       // Weekly needs to cover the weeks involved accurately
       weeklyFromDate = format(startOfWeek(effectiveStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
       weeklyToDate = format(endOfWeek(effectiveEnd, { weekStartsOn: 1 }), "yyyy-MM-dd");
@@ -180,7 +183,10 @@ export default function BudgetPage() {
         if (u.includes("ead") || u.includes("ulbra pop")) {
           return ["1. EAD", "Ulbra EAD", "EAD", "Ulbra Pop", "Ulbra Ead"];
         }
-        return [unitFilter];
+
+        // For other units, include both raw and "Ulbra " prefixed versions
+        const clean = unitFilter.replace(/^ulbra\s+/i, "").trim();
+        return [clean, `Ulbra ${clean}`, `ulbra ${clean.toLowerCase()}`, clean.toLowerCase()];
       };
 
       if (budgetCols.unitCol && filters.businessUnit) {
@@ -1000,7 +1006,7 @@ export default function BudgetPage() {
       if (lower.includes("guaiba") || lower.includes("guaíba")) return "ulbra guaíba";
       if (lower.includes("são jerônimo")) return "ulbra são jerônimo";
       if (lower.includes("carazinho")) return "ulbra carazinho";
-      if (lower.includes("ead")) return "ulbra ead";
+      if (lower.includes("ead") || lower.includes("ulbra pop") || lower.includes("pop")) return "ulbra ead";
       if (lower.includes("branding") || lower.includes("institucional")) return "branding";
       return lower;
     };
@@ -1431,7 +1437,7 @@ export default function BudgetPage() {
 
                     // 1. Group level
                     if (filters.isEad) {
-                      match = match && (u.includes("ead") || c.includes("ead"));
+                      match = match && (u.includes("ead") || c.includes("ead") || u.includes("pop"));
                     } else if (filters.isBranding) {
                       match = match && (f.includes("brand") || u.includes("branding") || u.includes("institucional"));
                     } else if (filters.funnel === "conversion") {
