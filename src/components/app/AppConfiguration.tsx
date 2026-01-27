@@ -1,4 +1,4 @@
-
+import * as React from "react";
 import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,14 +11,16 @@ import {
 } from "@/components/ui/dialog";
 import { SupabaseDebugBanner } from "@/components/debug/SupabaseDebugBanner";
 
-export function AppConfiguration() {
+export const AppConfiguration = React.forwardRef<HTMLDivElement>((props, ref) => {
     return (
         <Dialog>
             <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="ml-auto text-muted-foreground hover:text-foreground">
-                    <Settings className="size-4" />
-                    <span className="sr-only">Configurações</span>
-                </Button>
+                <div ref={ref}>
+                    <Button variant="ghost" size="icon" className="ml-auto text-muted-foreground hover:text-foreground">
+                        <Settings className="size-4" />
+                        <span className="sr-only">Configurações</span>
+                    </Button>
+                </div>
             </DialogTrigger>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>

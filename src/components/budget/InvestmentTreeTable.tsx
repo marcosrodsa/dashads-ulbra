@@ -285,20 +285,6 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
         });
         coursesSubGroup.children = sortedUnits;
 
-        // Debug: Ulbra Canoas courses in tree
-        const ulbraCanoasNode = sortedUnits.find(u => u.label.toLowerCase().includes("canoas"));
-        if (ulbraCanoasNode) {
-            console.log("🌳 Ulbra Canoas Tree:", {
-                unit: ulbraCanoasNode.label,
-                totalCourses: ulbraCanoasNode.children.length,
-                courses: ulbraCanoasNode.children.map(c => ({
-                    name: c.label,
-                    budget: c.budget,
-                    spend: c.spend,
-                    platforms: c.children.length
-                }))
-            });
-        }
 
         conversionGroup.children = [medSubGroup, coursesSubGroup];
 

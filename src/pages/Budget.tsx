@@ -111,12 +111,6 @@ export default function BudgetPage() {
     effectiveEnd = rangeEnd;
   }
 
-  console.log("Budget Debug:", {
-    filterRange: filters.dateRange,
-    effectiveStart: format(effectiveStart, "yyyy-MM-dd"),
-    effectiveEnd: format(effectiveEnd, "yyyy-MM-dd"),
-    hasWeekFilter: !!filters.week
-  });
 
   const budgetColsQuery = useQuery({
     queryKey: ["budget", "cols"],
@@ -225,41 +219,11 @@ export default function BudgetPage() {
 
       if (filters.course) dailyQ = dailyQ.eq(viewCourseCol, filters.course);
 
-      console.log("🔍 SQL Query Being Executed:", {
-        table: "fact_ads_performance_daily",
-        select: selectCols.join(", "),
-        where: {
-          [`${viewDateCol} >=`]: effectiveStartStr,
-          [`${viewDateCol} <=`]: effectiveEndStr,
-          ...(filters.platform && { [`${viewPlatformCol} =`]: filters.platform }),
-          ...(filters.businessUnit && { [`${viewUnitCol} =`]: filters.businessUnit }),
-          ...(filters.course && { [`${viewCourseCol} =`]: filters.course }),
-        },
-        sqlLike: `SELECT ${selectCols.join(", ")} FROM vw_performance_diaria2 WHERE ...`
-      });
-
       const { data: dailyRows, error: dailyErr } = await dailyQ;
       if (dailyErr) throw dailyErr;
 
-      console.log("📊 Daily Query Debug:", {
-        table: "vw_performance_diaria2",
-        dateColumn: viewDateCol,
-        spendColumn: viewSpendCol,
-        fromDate: effectiveStartStr,
-        toDate: effectiveEndStr,
-        rowCount: dailyRows?.length ?? 0,
-        sampleRows: (dailyRows ?? []).slice(0, 3),
-        filters: { platform: filters.platform, unit: filters.businessUnit, course: filters.course }
-      });
-
       const exactSpend = (dailyRows ?? []).reduce((acc, r) => acc + (Number(r[viewSpendCol]) || 0), 0);
       const exactLeads = (dailyRows ?? []).reduce((acc, r) => acc + (Number(r[viewLeadsCol]) || 0), 0);
-
-      console.log("💰 Aggregated Results:", {
-        exactSpend,
-        exactLeads,
-        rowsProcessed: dailyRows?.length
-      });
 
       const brandingRows = (dailyRows ?? []).filter((r) => {
         const u = (r[viewUnitCol] ?? "").toString().toLowerCase();
@@ -350,13 +314,6 @@ export default function BudgetPage() {
           location: meta.location ?? null,
         };
       });
-
-      console.log("WeeklyRows Debug:", {
-        count: weeklyRows.length,
-        sample: weeklyRows.slice(0, 3),
-        totalLeads: weeklyRows.reduce((a, b) => a + Number(b.leads || 0), 0)
-      });
-
 
 
       const plannedTotal = (weeklyRows ?? []).reduce((acc: number, r: any) => acc + safeNumber(r?.orcamento_semanal), 0);
@@ -713,15 +670,6 @@ export default function BudgetPage() {
         }
       }
 
-      // DEBUG: Log dos filtros recebidos (mantendo para verificação final)
-      console.log("📥 Download - Filtros (com fallback):", {
-        id: node.id,
-        filtersInit: node.filters,
-        filtersFinal: f,
-        unit: f.unit,
-        course: f.course
-      });
-
       // Aplicar filtro de plataforma via SQL (ilike para case-insensitive)
       if (f.platform && platformCol) {
         q = q.ilike(platformCol, f.platform);
@@ -850,7 +798,7 @@ export default function BudgetPage() {
           // Excluir EAD e Branding
           if (unidade === "EAD" || unidade === "Branding") return false;
 
-          // Se estamos no nó "Cursos" (mas não Medicina, que já teria sido pego no check de course acima)
+          // Se estamos no nó "Cursos" (but not Medicina, which would have been caught in the course check above)
           if (node.label && node.label.toLowerCase().includes("cursos")) {
             // Excluir Medicina
             if (curso === "Medicina") return false;
@@ -868,15 +816,6 @@ export default function BudgetPage() {
 
         // Se chegou aqui e não tem filtro nenhum, retorna true (cuidado!)
         return true;
-      });
-
-      // DEBUG: Resumo dos dados filtrados
-      const totalSpend = filteredData.reduce((sum: number, r: any) => sum + safeNumber(r[spendCol]), 0);
-      console.log("📊 Download - Resultado:", {
-        totalRowsFromDB: data.length,
-        filteredRows: filteredData.length,
-        totalSpend: totalSpend.toFixed(2),
-        spendCol
       });
 
       // Gerar CSV com campanhas individuais + classificações
