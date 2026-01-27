@@ -211,7 +211,24 @@ export default function CampaignClassifierPage() {
 
     // Derive counts and filtered list for current view
     const { displayedCampaigns, counts } = React.useMemo(() => {
-        const all = campaignsQuery.data || [];
+        let all = campaignsQuery.data || [];
+
+        // Apply Unit and Course filters
+        if (unitFilter !== "all") {
+            if (unitFilter === "none") {
+                all = all.filter(c => !c.unit_id);
+            } else {
+                all = all.filter(c => c.unit_id === unitFilter);
+            }
+        }
+
+        if (courseFilter !== "all") {
+            if (courseFilter === "none") {
+                all = all.filter(c => !c.course_id);
+            } else {
+                all = all.filter(c => c.course_id === courseFilter);
+            }
+        }
 
         const pending = all.filter(c => !c.mapping_id);
         const mapped = all.filter(c => !!c.mapping_id);
@@ -221,23 +238,6 @@ export default function CampaignClassifierPage() {
         if (status === "pending") toShow = pending;
         else if (status === "mapped") toShow = mapped;
         else toShow = all;
-
-        // Apply Unit and Course filters
-        if (unitFilter !== "all") {
-            if (unitFilter === "none") {
-                toShow = toShow.filter(c => !c.unit_id);
-            } else {
-                toShow = toShow.filter(c => c.unit_id === unitFilter);
-            }
-        }
-
-        if (courseFilter !== "all") {
-            if (courseFilter === "none") {
-                toShow = toShow.filter(c => !c.course_id);
-            } else {
-                toShow = toShow.filter(c => c.course_id === courseFilter);
-            }
-        }
 
         // Apply sorting
         toShow.sort((a, b) => {
@@ -287,7 +287,7 @@ export default function CampaignClassifierPage() {
                 mapped: mapped.length
             }
         };
-    }, [campaignsQuery.data, status, sortConfig]);
+    }, [campaignsQuery.data, status, sortConfig, unitFilter, courseFilter]);
 
     // Single campaign edit
     const handleEdit = (campaign: AggregatedCampaign) => {
