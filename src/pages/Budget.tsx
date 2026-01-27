@@ -1396,7 +1396,7 @@ export default function BudgetPage() {
                       if (target === "medicina") {
                         match = match && (c.includes("medicina") && !c.includes("bio"));
                       } else if (target === "geral" || target === "mkt de conversão") {
-                        match = match && (c === "" || !r.curso);
+                        match = match && (c === "" || c === "geral" || !r.course || !r.curso);
                       } else {
                         match = match && c === target;
                       }
