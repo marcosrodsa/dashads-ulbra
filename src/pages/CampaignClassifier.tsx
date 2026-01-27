@@ -35,6 +35,7 @@ import {
     TableHead,
     TableHeader,
     TableRow,
+    TableFooter,
 } from "@/components/ui/table";
 import {
     Tooltip,
@@ -48,6 +49,8 @@ export default function CampaignClassifierPage() {
     // Filters
     const [status, setStatus] = React.useState<MappingStatus>("pending");
     const [platform, setPlatform] = React.useState<PlatformFilter>("all");
+    const [unitFilter, setUnitFilter] = React.useState<string>("all");
+    const [courseFilter, setCourseFilter] = React.useState<string>("all");
     const [search, setSearch] = React.useState("");
     const [sortConfig, setSortConfig] = React.useState<{
         key: keyof AggregatedCampaign | "classification";
@@ -219,6 +222,23 @@ export default function CampaignClassifierPage() {
         else if (status === "mapped") toShow = mapped;
         else toShow = all;
 
+        // Apply Unit and Course filters
+        if (unitFilter !== "all") {
+            if (unitFilter === "none") {
+                toShow = toShow.filter(c => !c.unit_id);
+            } else {
+                toShow = toShow.filter(c => c.unit_id === unitFilter);
+            }
+        }
+
+        if (courseFilter !== "all") {
+            if (courseFilter === "none") {
+                toShow = toShow.filter(c => !c.course_id);
+            } else {
+                toShow = toShow.filter(c => c.course_id === courseFilter);
+            }
+        }
+
         // Apply sorting
         toShow.sort((a, b) => {
             const direction = sortConfig.direction === "asc" ? 1 : -1;
@@ -376,13 +396,43 @@ export default function CampaignClassifierPage() {
 
                 <div className="flex gap-2">
                     <Select value={platform} onValueChange={(v) => setPlatform(v as PlatformFilter)}>
-                        <SelectTrigger className="w-[140px]">
+                        <SelectTrigger className="w-[120px]">
                             <SelectValue placeholder="Plataforma" />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Todas</SelectItem>
                             <SelectItem value="META">Meta</SelectItem>
                             <SelectItem value="GOOGLE">Google</SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    <Select value={unitFilter} onValueChange={setUnitFilter}>
+                        <SelectTrigger className="w-[160px]">
+                            <SelectValue placeholder="Unidade" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Todas Unidades</SelectItem>
+                            <SelectItem value="none">Não definidas</SelectItem>
+                            {(unitsQuery.data || []).map((u) => (
+                                <SelectItem key={u.id} value={u.id}>
+                                    {u.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    <Select value={courseFilter} onValueChange={setCourseFilter}>
+                        <SelectTrigger className="w-[160px]">
+                            <SelectValue placeholder="Curso" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Todos Cursos</SelectItem>
+                            <SelectItem value="none">Não definidos</SelectItem>
+                            {(coursesQuery.data || []).map((c) => (
+                                <SelectItem key={c.id} value={c.id}>
+                                    {c.name}
+                                </SelectItem>
+                            ))}
                         </SelectContent>
                     </Select>
 
@@ -561,6 +611,15 @@ export default function CampaignClassifierPage() {
                                 ))
                             )}
                         </TableBody>
+                        <TableFooter>
+                            <TableRow>
+                                <TableCell colSpan={3} className="text-right font-bold">Total Geral:</TableCell>
+                                <TableCell className="text-right font-bold text-primary">
+                                    {formatCurrency(displayedCampaigns.reduce((acc, c) => acc + c.total_spend, 0))}
+                                </TableCell>
+                                <TableCell colSpan={2} />
+                            </TableRow>
+                        </TableFooter>
                     </Table>
                 </div>
             )}

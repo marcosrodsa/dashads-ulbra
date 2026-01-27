@@ -107,8 +107,8 @@ export default function BudgetPage() {
     effectiveStart = startOfWeek(wDate, { weekStartsOn: 1 });
     effectiveEnd = endOfWeek(wDate, { weekStartsOn: 1 });
   } else {
-    effectiveStart = startOfWeek(rangeStart, { weekStartsOn: 1 });
-    effectiveEnd = endOfWeek(rangeEnd, { weekStartsOn: 1 });
+    effectiveStart = rangeStart;
+    effectiveEnd = rangeEnd;
   }
 
   console.log("Budget Debug:", {
@@ -183,8 +183,22 @@ export default function BudgetPage() {
         budgetQ = budgetQ.eq(budgetCols.platformCol, filters.platform);
       }
 
+      // Helper to match Filter Unit -> Budget Unit Aliases
+      // This ensures that when user filters by "Ulbra Institucional", we still fetch the budget for "2. Branding"
+      const expandUnitFilter = (unitFilter: string) => {
+        const u = unitFilter.toLowerCase();
+        if (u.includes("institucional") || u.includes("branding")) {
+          return ["Ulbra Institucional", "Institucional", "Branding", "2. Branding", "Ulbra Branding"];
+        }
+        if (u.includes("ead") || u.includes("ulbra pop")) {
+          return ["1. EAD", "Ulbra EAD", "EAD", "Ulbra Pop", "Ulbra Ead"];
+        }
+        return [unitFilter];
+      };
+
       if (budgetCols.unitCol && filters.businessUnit) {
-        budgetQ = budgetQ.eq(budgetCols.unitCol, filters.businessUnit);
+        const units = expandUnitFilter(filters.businessUnit);
+        budgetQ = budgetQ.in(budgetCols.unitCol, units);
       }
 
       const { data: budgetRows, error: budgetErr } = await budgetQ;
@@ -205,14 +219,17 @@ export default function BudgetPage() {
       const selectCols = [viewDateCol, viewSpendCol, viewLeadsCol, viewUnitCol, viewCourseCol, viewPlatformCol];
 
       let dailyQ = (client as SupabaseClient)
-        .from("vw_performance_diaria")
+        .from("vw_performance_diaria2")
         .select(selectCols.join(", "))
         .gte(viewDateCol, effectiveStartStr)
         .lte(viewDateCol, effectiveEndStr);
       // Note: View already excludes Ultec, no need for manual exclusion unless paranoid. Let's trust the view.
 
       if (filters.platform) dailyQ = dailyQ.eq(viewPlatformCol, filters.platform);
+
+      // Keep Daily Query STRICT (Show spend only for selected unit)
       if (filters.businessUnit) dailyQ = dailyQ.eq(viewUnitCol, filters.businessUnit);
+
       if (filters.course) dailyQ = dailyQ.eq(viewCourseCol, filters.course);
 
       console.log("🔍 SQL Query Being Executed:", {
@@ -225,14 +242,14 @@ export default function BudgetPage() {
           ...(filters.businessUnit && { [`${viewUnitCol} =`]: filters.businessUnit }),
           ...(filters.course && { [`${viewCourseCol} =`]: filters.course }),
         },
-        sqlLike: `SELECT ${selectCols.join(", ")} FROM vw_performance_diaria WHERE ...`
+        sqlLike: `SELECT ${selectCols.join(", ")} FROM vw_performance_diaria2 WHERE ...`
       });
 
       const { data: dailyRows, error: dailyErr } = await dailyQ;
       if (dailyErr) throw dailyErr;
 
       console.log("📊 Daily Query Debug:", {
-        table: "vw_performance_diaria",
+        table: "vw_performance_diaria2",
         dateColumn: viewDateCol,
         spendColumn: viewSpendCol,
         fromDate: effectiveStartStr,
@@ -260,9 +277,9 @@ export default function BudgetPage() {
       const exactBrandingSpend = brandingRows.reduce((acc, r) => acc + (Number(r[viewSpendCol]) || 0), 0);
       const exactBrandingLeads = brandingRows.reduce((acc, r) => acc + (Number(r[viewLeadsCol]) || 0), 0);
 
-      // --- Realizado (view semanal: vw_dashboard_semanal_detalhado) - Mantido para os Gráficos de Pacing
+      // --- Realizado (view semanal: vw_dashboard_semanal_detalhado2) - Mantido para os Gráficos de Pacing
       let weeklyQ = (client as SupabaseClient)
-        .from("vw_dashboard_semanal_detalhado")
+        .from("vw_dashboard_semanal_detalhado2")
         .select("*")
         .gte("data_inicio_semana", weeklyFromDate)
         .lte("data_inicio_semana", weeklyToDate);
@@ -270,7 +287,13 @@ export default function BudgetPage() {
 
 
       if (filters.platform) weeklyQ = weeklyQ.eq("plataforma", filters.platform);
-      if (filters.businessUnit) weeklyQ = weeklyQ.eq("unidade", filters.businessUnit);
+
+      // Expand Weekly Query Filters (Bring Budget for synonyms)
+      if (filters.businessUnit) {
+        const units = expandUnitFilter(filters.businessUnit);
+        weeklyQ = weeklyQ.in("unidade", units);
+      }
+
       if (filters.course) weeklyQ = weeklyQ.eq("curso", filters.course);
 
       const { data: weeklyRowsRaw, error: weeklyErr } = await weeklyQ;
@@ -505,26 +528,52 @@ export default function BudgetPage() {
         .filter((u) => u.unit !== "(Sem unidade)")
         .sort((a, b) => (b.budget || b.spend) - (a.budget || a.spend));
 
-      // Matriz simples por unidade (para gráficos existentes)
-      const plannedByUnit = new Map<string, number>();
-      if (budgetCols.unitCol) {
-        for (const r of (weeklyRows ?? []) as WeeklyViewRow[]) {
-          const unit = String(r?.unidade ?? "").trim();
-          if (!unit) continue;
-          plannedByUnit.set(unit, (plannedByUnit.get(unit) ?? 0) + safeNumber(r?.orcamento_semanal));
-        }
-      }
+      // Chart Aggregation aligned with InvestmentTreeTable logic
+      // Hybrid Source: Budget from Weekly (Context), Spend from Daily (Precision)
+      const chartAgg = new Map<string, { planned: number; spend: number }>();
 
-      const spendByUnit = new Map<string, number>();
+      const getClassifiedKey = (u?: string | null, c?: string | null, f?: string | null) => {
+        const unitRaw = (u || "").toLowerCase();
+        const courseRaw = (c || "").toLowerCase();
+        const funnelRaw = (f || "").toLowerCase();
+
+        const isEad = unitRaw.includes("ead") || courseRaw.includes("ead") || unitRaw === "1. ead" || unitRaw.startsWith("ead ") || unitRaw.includes("ulbra pop");
+        const isBranding = funnelRaw === "branding" || funnelRaw === "brand" || unitRaw.includes("branding") || unitRaw.includes("institucional");
+        const isMedicinaOnly = courseRaw === "medicina" || (courseRaw.includes("medicina") && !courseRaw.includes("bio"));
+
+        if (isEad) return "1. EAD";
+        if (isBranding) return "2. Branding";
+        if (isMedicinaOnly) return "3.1 Medicina";
+        return u || "(Sem unidade)";
+      };
+
+      // 1. Accumulate PLANNED from Weekly Data
       for (const r of (weeklyRows ?? []) as WeeklyViewRow[]) {
-        const unit = String(r?.unidade ?? "").trim();
-        if (!unit) continue;
-        spendByUnit.set(unit, (spendByUnit.get(unit) ?? 0) + safeNumber(r?.gasto_real));
+        const key = getClassifiedKey(r.unidade, r.curso, r.funnel_stage);
+        const curr = chartAgg.get(key) ?? { planned: 0, spend: 0 };
+        curr.planned += safeNumber(r.orcamento_semanal);
+        chartAgg.set(key, curr);
       }
 
-      const unitKeys = Array.from(new Set([...plannedByUnit.keys(), ...spendByUnit.keys()]));
-      const unitRows: UnitRow[] = unitKeys
-        .map((u) => ({ unit: u, planned: plannedByUnit.get(u) ?? 0, spend: spendByUnit.get(u) ?? 0 }))
+      // 2. Accumulate SPEND from Daily Data (Precision)
+      for (const r of (dailyRows ?? [])) {
+        const u = r[viewUnitCol] as string;
+        const c = r[viewCourseCol] as string;
+        // Look up funnel from metadata since daily view might lack it
+        const f = metadataMap.get(u)?.funnel;
+
+        const key = getClassifiedKey(u, c, f);
+        const curr = chartAgg.get(key) ?? { planned: 0, spend: 0 };
+        curr.spend += (Number(r[viewSpendCol]) || 0); // Exact Daily Spend
+        chartAgg.set(key, curr);
+      }
+
+      const unitRows: UnitRow[] = Array.from(chartAgg.entries())
+        .map(([unit, v]) => ({
+          unit,
+          planned: v.planned,
+          spend: v.spend
+        }))
         .sort((a, b) => (b.planned || b.spend) - (a.planned || a.spend));
 
       // KPIs (forecast simples)
@@ -586,6 +635,7 @@ export default function BudgetPage() {
         unitRows,
         investmentMatrix,
         weeklyRows,
+        dailyRows, // Returning raw daily rows for Hybrid Matrix
         budgetHasUnitGranularity: !!budgetCols.unitCol,
       };
     },
@@ -943,6 +993,77 @@ export default function BudgetPage() {
     }
   }, [client, rangeStart, rangeEnd]);
 
+  // --- Hybrid Data Construction for Matrix ---
+  // Merges Weekly Budget (from weeklyRows) + Daily Spend (from dailyRows)
+  // This ensures units with Spend but No Budget (e.g. Ulbra Institucional) appear in the Matrix.
+  const hybridRowsClean = React.useMemo(() => {
+    if (!budgetDataQuery.data) return [];
+    const rowMap = new Map<string, WeeklyViewRow>();
+
+    // Pass 1: Budget from WeeklyRows
+    (budgetDataQuery.data.weeklyRows ?? []).forEach(r => {
+      const week = r.data_inicio_semana ? String(r.data_inicio_semana).slice(0, 10) : "";
+      const u = (r.unidade || "").toLowerCase();
+      const c = (r.curso || "").toLowerCase();
+      const p = (r.plataforma || "").toLowerCase();
+      const key = `${week}|${u}|${c}|${p}`;
+
+      if (!rowMap.has(key)) {
+        rowMap.set(key, {
+          ...r,
+          gasto_real: 0,
+          leads: 0,
+          diferenca: 0, // Recalc later
+          percentual_consumido: 0
+        });
+      }
+      const row = rowMap.get(key)!;
+      row.orcamento_semanal = row.orcamento_semanal; // already set, just clarifying we rely on Pass 1 for budget
+    });
+
+    // Pass 2: Spend from DailyRows
+    (budgetDataQuery.data.dailyRows ?? []).forEach(r => {
+
+      // Safe Date Parsing (YYYY-MM-DD -> Noon to avoid timezone shifts)
+      const parts = String(r.data_referencia).split("-");
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+
+      // Force Monday start to match SQL View (vw_dashboard_semanal_detalhado2)
+      const weekStart = format(startOfWeek(d, { weekStartsOn: 1 }), "yyyy-MM-dd");
+
+      const u = (r.unidade || "").toLowerCase();
+      const c = (r.curso || "").toLowerCase();
+      const p = (r.platform || r.plataforma || "").toLowerCase();
+      const key = `${weekStart}|${u}|${c}|${p}`;
+
+      if (!rowMap.has(key)) {
+        // New row (Spend only, no budget)
+        rowMap.set(key, {
+          data_inicio_semana: weekStart,
+          semana_label: format(new Date(weekStart), "dd MMM"),
+          unidade: r.unidade,
+          plataforma: r.plataforma || r.platform, // Ensure mapping valid
+          curso: r.curso,
+          orcamento_semanal: 0,
+          gasto_real: 0,
+          diferenca: 0,
+          leads: 0,
+          percentual_consumido: 0,
+          funnel_stage: null,
+          location: null
+        });
+      }
+      const row = rowMap.get(key)!;
+      row.gasto_real += safeNumber(r.investimento || r.spend);
+      row.leads += safeNumber(r.leads);
+    });
+
+    return Array.from(rowMap.values()).map(r => ({
+      ...r,
+      diferenca: r.orcamento_semanal - r.gasto_real
+    }));
+  }, [budgetDataQuery.data]);
+
   return (
     <div className="mx-auto w-full min-w-0 max-w-7xl space-y-6 p-6">
       <header className="space-y-1">
@@ -1279,15 +1400,15 @@ export default function BudgetPage() {
           <CardContent>
             {isLoading ? (
               <div className="grid h-64 place-items-center rounded-md border border-dashed text-sm text-muted-foreground">
-                Carregando… (Verifique se vw_dashboard_semanal_detalhado existe)
+                Carregando… (Verifique se vw_dashboard_semanal_detalhado2 existe)
               </div>
             ) : (
               <InvestmentTreeTable
-                data={budgetDataQuery.data?.weeklyRows ?? []}
+                data={hybridRowsClean}
                 monthDate={filters.month}
                 onViewWeekly={(node) => {
                   // Create WeeklyData from Node
-                  const rows = budgetDataQuery.data?.weeklyRows ?? [];
+                  const rows = hybridRowsClean;
 
                   // Filter rows based on Node Context
                   let filtered = rows;
@@ -1441,7 +1562,7 @@ export default function BudgetPage() {
                     rows: filtered
                   });
                 }}
-                onDownload={handleDownload}
+
               />
             )}
           </CardContent>

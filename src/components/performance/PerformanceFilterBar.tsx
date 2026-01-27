@@ -35,35 +35,16 @@ function asMonthKey(d: Date) {
 }
 
 // Queries using the new View
+// Queries using the new View (Daily)
 async function fetchBusinessUnits(client: SupabaseClient, from: Date, to: Date) {
-    const f = format(from, "yyyy-MM-dd");
-    const t = format(to, "yyyy-MM-dd");
-
-    // Note: The view 'vw_performance_mensal' seems to be aggregated by 'mes_referencia' (start of month).
-    // If we want range support, we might need a daily view OR we filter the view by range if 'mes_referencia' allows.
-    // However, the view likely aggregates by MONTH. If the user selects partial dates, this view might not work well unless we switch to daily.
-    // BUT the user asked to "fix the calendar filter".
-    // If I change this to just filter by 'mes_referencia' >= from AND <= to, it selects months.
-    // If the view is monthly, we can't do daily filtering.
-    // CHECK: the view name is 'vw_performance_mensal'. Reference col is 'mes_referencia'.
-    // If I want *exact* daily filtering, I should probably check if there is a daily view.
-    // The DashboardFilterBar uses `fact_ads_performance_daily` which IS daily.
-    // PerformanceFilterBar uses `vw_performance_mensal`.
-    // If I want to support specific days in Performance Dashboard (which seems to be this file), I might need to switch to daily table OR accept that it is monthly.
-    // The user said: "não permite selecionar mais de um dia".
-    // I will assume for now we keep it monthly-granular but allow selecting multiple months? OR do we switch to daily?
-    // Given usage of 'vw_performance_mensal', it's safer to map the RANGE to MONTHS.
-    // So if user selects Jan 5 to Feb 20, we fetch months Jan and Feb.
-    // Let's implement that logic: 'mes_referencia' between startOfMonth(from) and startOfMonth(to).
-
-    const start = format(startOfMonth(from), "yyyy-MM-dd");
-    const end = format(startOfMonth(to), "yyyy-MM-dd");
+    const start = format(from, "yyyy-MM-dd");
+    const end = format(to, "yyyy-MM-dd");
 
     const { data, error } = await client
-        .from("vw_performance_mensal")
+        .from("vw_performance_diaria2")
         .select("unidade")
-        .gte("mes_referencia", start)
-        .lte("mes_referencia", end);
+        .gte("data_referencia", start)
+        .lte("data_referencia", end);
 
     if (error) {
         console.error("Error fetching units from view", error);
@@ -77,14 +58,14 @@ async function fetchBusinessUnits(client: SupabaseClient, from: Date, to: Date) 
 
 async function fetchCourses(client: SupabaseClient, from: Date, to: Date, businessUnit: string | null) {
     if (!businessUnit) return [] as string[];
-    const start = format(startOfMonth(from), "yyyy-MM-dd");
-    const end = format(startOfMonth(to), "yyyy-MM-dd");
+    const start = format(from, "yyyy-MM-dd");
+    const end = format(to, "yyyy-MM-dd");
 
     const { data, error } = await client
-        .from("vw_performance_mensal")
+        .from("vw_performance_diaria2")
         .select("curso")
-        .gte("mes_referencia", start)
-        .lte("mes_referencia", end)
+        .gte("data_referencia", start)
+        .lte("data_referencia", end)
         .eq("unidade", businessUnit);
 
     if (error) throw error;
@@ -95,14 +76,14 @@ async function fetchCourses(client: SupabaseClient, from: Date, to: Date, busine
 }
 
 async function fetchPlatforms(client: SupabaseClient, from: Date, to: Date) {
-    const start = format(startOfMonth(from), "yyyy-MM-dd");
-    const end = format(startOfMonth(to), "yyyy-MM-dd");
+    const start = format(from, "yyyy-MM-dd");
+    const end = format(to, "yyyy-MM-dd");
 
     const { data, error } = await client
-        .from("vw_performance_mensal")
+        .from("vw_performance_diaria2")
         .select("platform")
-        .gte("mes_referencia", start)
-        .lte("mes_referencia", end);
+        .gte("data_referencia", start)
+        .lte("data_referencia", end);
 
     if (error) throw error;
 

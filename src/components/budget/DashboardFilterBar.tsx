@@ -66,101 +66,56 @@ function asMonthKey(d: Date) {
     return startOfMonth(d).toISOString();
 }
 
+// Simplified Fetchers using vw_performance_diaria2 (consistent with PerformanceFilterBar)
 async function fetchBusinessUnits(client: SupabaseClient, from: Date, to: Date) {
-    const cols = await resolvePerformanceDailyColumns(client);
+    const start = format(from, "yyyy-MM-dd");
+    const end = format(to, "yyyy-MM-dd");
 
     const { data, error } = await client
-        .from("fact_ads_performance_daily")
-        .select(cols.businessUnitCol)
-        .gte(cols.dateCol, format(from, "yyyy-MM-dd"))
-        .lte(cols.dateCol, format(to, "yyyy-MM-dd"));
+        .from("vw_performance_diaria2")
+        .select("unidade")
+        .gte("data_referencia", start)
+        .lte("data_referencia", end);
 
     if (error) throw error;
 
-    const unique = Array.from(new Set((data ?? []).map((r: any) => r?.[cols.businessUnitCol]).filter(Boolean)));
+    const unique = Array.from(new Set((data ?? []).map((r: any) => r?.unidade).filter(Boolean)));
     unique.sort((a, b) => String(a).localeCompare(String(b)));
     return unique as string[];
 }
 
 async function fetchCourses(client: SupabaseClient, from: Date, to: Date, businessUnit: string | null) {
     if (!businessUnit) return [] as string[];
-    const cols = await resolvePerformanceDailyColumns(client);
+    const start = format(from, "yyyy-MM-dd");
+    const end = format(to, "yyyy-MM-dd");
 
     const { data, error } = await client
-        .from("fact_ads_performance_daily")
-        .select(cols.courseCol)
-        .eq(cols.businessUnitCol, businessUnit)
-        .gte(cols.dateCol, format(from, "yyyy-MM-dd"))
-        .lte(cols.dateCol, format(to, "yyyy-MM-dd"));
-
-    if (error) throw error;
-
-    const unique = Array.from(new Set((data ?? []).map((r: any) => r?.[cols.courseCol]).filter(Boolean)));
-    unique.sort((a, b) => String(a).localeCompare(String(b)));
-    return unique as string[];
-}
-
-async function fetchPlatforms(client: SupabaseClient, from: Date, to: Date) {
-    const metrics = await resolvePerformanceMetricColumns(client);
-    if (!metrics.platformCol) return [] as string[];
-    const cols = await resolvePerformanceDailyColumns(client);
-
-    const { data, error } = await client
-        .from("fact_ads_performance_daily")
-        .select(metrics.platformCol)
-        .gte(cols.dateCol, format(from, "yyyy-MM-dd"))
-        .lte(cols.dateCol, format(to, "yyyy-MM-dd"));
-
-    if (error) throw error;
-
-    const unique = Array.from(new Set((data ?? []).map((r: any) => r?.[metrics.platformCol!]).filter(Boolean)));
-    unique.sort((a, b) => String(a).localeCompare(String(b)));
-    return unique as string[];
-}
-
-async function fetchBusinessUnitsWeeklyView(client: SupabaseClient, month: Date) {
-    const from = startOfMonth(month);
-    const to = endOfMonth(month);
-    const { data, error } = await client
-        .from("vw_dashboard_semanal_detalhado")
-        .select("unidade")
-        .gte("data_inicio_semana", format(from, "yyyy-MM-dd"))
-        .lte("data_inicio_semana", format(to, "yyyy-MM-dd"));
-
-    if (error) throw error;
-    const unique = Array.from(new Set((data ?? []).map((r: any) => r?.unidade).filter(Boolean)));
-    unique.sort((a, b) => String(a).localeCompare(String(b)));
-    return unique as string[];
-}
-
-async function fetchCoursesWeeklyView(client: SupabaseClient, month: Date, businessUnit: string | null) {
-    if (!businessUnit) return [] as string[];
-    const from = startOfMonth(month);
-    const to = endOfMonth(month);
-    const { data, error } = await client
-        .from("vw_dashboard_semanal_detalhado")
+        .from("vw_performance_diaria2")
         .select("curso")
-        .eq("unidade", businessUnit)
-        .gte("data_inicio_semana", format(from, "yyyy-MM-dd"))
-        .lte("data_inicio_semana", format(to, "yyyy-MM-dd"));
+        .gte("data_referencia", start)
+        .lte("data_referencia", end)
+        .eq("unidade", businessUnit);
 
     if (error) throw error;
+
     const unique = Array.from(new Set((data ?? []).map((r: any) => r?.curso).filter(Boolean)));
     unique.sort((a, b) => String(a).localeCompare(String(b)));
     return unique as string[];
 }
 
-async function fetchPlatformsWeeklyView(client: SupabaseClient, month: Date) {
-    const from = startOfMonth(month);
-    const to = endOfMonth(month);
+async function fetchPlatforms(client: SupabaseClient, from: Date, to: Date) {
+    const start = format(from, "yyyy-MM-dd");
+    const end = format(to, "yyyy-MM-dd");
+
     const { data, error } = await client
-        .from("vw_dashboard_semanal_detalhado")
-        .select("plataforma")
-        .gte("data_inicio_semana", format(from, "yyyy-MM-dd"))
-        .lte("data_inicio_semana", format(to, "yyyy-MM-dd"));
+        .from("vw_performance_diaria2")
+        .select("platform")
+        .gte("data_referencia", start)
+        .lte("data_referencia", end);
 
     if (error) throw error;
-    const unique = Array.from(new Set((data ?? []).map((r: any) => r?.plataforma).filter(Boolean)));
+
+    const unique = Array.from(new Set((data ?? []).map((r: any) => r?.platform).filter(Boolean)));
     unique.sort((a, b) => String(a).localeCompare(String(b)));
     return unique as string[];
 }
@@ -208,28 +163,19 @@ export function DashboardFilterBar() {
 
     const businessUnitsQuery = useQuery({
         queryKey: ["filters", "businessUnits", isBudgetRoute ? "budget" : "performance", rangeStart.toISOString(), rangeEnd.toISOString()],
-        queryFn: () =>
-            isBudgetRoute
-                ? fetchBusinessUnitsWeeklyView(client as SupabaseClient, rangeStart) // Weekly view might still need 'month' logic or we should check if it needs range. For now, assuming it takes 'month' anchor (rangeStart).
-                : fetchBusinessUnits(client as SupabaseClient, rangeStart, rangeEnd),
+        queryFn: () => fetchBusinessUnits(client as SupabaseClient, rangeStart, rangeEnd),
         enabled: !!client,
     });
 
     const coursesQuery = useQuery({
         queryKey: ["filters", "courses", isBudgetRoute ? "budget" : "performance", rangeStart.toISOString(), rangeEnd.toISOString(), filters.businessUnit],
-        queryFn: () =>
-            isBudgetRoute
-                ? fetchCoursesWeeklyView(client as SupabaseClient, rangeStart, filters.businessUnit)
-                : fetchCourses(client as SupabaseClient, rangeStart, rangeEnd, filters.businessUnit),
-        enabled: !!client && !!filters.businessUnit && (isBudgetRoute || !sameUnitAndCourse),
+        queryFn: () => fetchCourses(client as SupabaseClient, rangeStart, rangeEnd, filters.businessUnit),
+        enabled: !!client && !!filters.businessUnit,
     });
 
     const platformsQuery = useQuery({
         queryKey: ["filters", "platforms", isBudgetRoute ? "budget" : "performance", rangeStart.toISOString(), rangeEnd.toISOString()],
-        queryFn: () =>
-            isBudgetRoute
-                ? fetchPlatformsWeeklyView(client as SupabaseClient, rangeStart)
-                : fetchPlatforms(client as SupabaseClient, rangeStart, rangeEnd),
+        queryFn: () => fetchPlatforms(client as SupabaseClient, rangeStart, rangeEnd),
         enabled: !!client,
     });
 

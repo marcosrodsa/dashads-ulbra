@@ -165,11 +165,11 @@ Tabela de orçamento planejado mensal.
 
 ### Views SQL
 
-#### `vw_performance_diaria`
+#### `vw_performance_diaria2`
 View que classifica automaticamente campanhas em Unidade e Curso baseado em regras de negócio.
 
 ```sql
-CREATE OR REPLACE VIEW vw_performance_diaria AS
+CREATE OR REPLACE VIEW vw_performance_diaria2 AS
 
 WITH raw_data AS (
     SELECT 
@@ -248,7 +248,7 @@ GROUP BY 1, 2, 3, 4
 ORDER BY data_referencia DESC;
 ```
 
-#### `vw_dashboard_semanal_detalhado`
+#### `vw_dashboard_semanal_detalhado2`
 View que agrega dados por semana para o dashboard de Budget.
 
 | Coluna | Tipo | Descrição |
@@ -593,15 +593,15 @@ As semanas são definidas de segunda a domingo:
 
 ### Adicionar Nova Unidade
 
-1. Editar View SQL `vw_performance_diaria`:
+1. Editar View SQL `vw_performance_diaria2`:
    ```sql
    WHEN campaign_name ILIKE '%NovaUnidade%' THEN 'Ulbra Nova Unidade'
    ```
 
 2. Recriar a View no Supabase:
    ```sql
-   DROP VIEW IF EXISTS vw_performance_diaria;
-   CREATE OR REPLACE VIEW vw_performance_diaria AS ...
+   DROP VIEW IF EXISTS vw_performance_diaria2;
+   CREATE OR REPLACE VIEW vw_performance_diaria2 AS ...
    ```
 
 ### Adicionar Novo Curso
@@ -626,7 +626,7 @@ As semanas são definidas de segunda a domingo:
 SELECT 
   sum(orcamento_semanal) as budget_planejado,
   sum(gasto_real) as gasto_realizado
-FROM vw_dashboard_semanal_detalhado
+FROM vw_dashboard_semanal_detalhado2
 WHERE data_inicio_semana = '2026-01-19';
 ```
 
@@ -637,7 +637,7 @@ SELECT
   unidade,
   sum(orcamento_semanal) as budget,
   sum(gasto_real) as gasto
-FROM vw_dashboard_semanal_detalhado
+FROM vw_dashboard_semanal_detalhado2
 WHERE data_inicio_semana >= '2026-01-01'
   AND data_inicio_semana <= '2026-01-31'
 GROUP BY unidade
@@ -652,7 +652,7 @@ SELECT
   sum(investimento) as gasto,
   sum(leads) as leads,
   ROUND(sum(investimento) / NULLIF(sum(leads), 0), 2) as cpl
-FROM vw_performance_diaria
+FROM vw_performance_diaria2
 WHERE data_referencia >= '2026-01-01'
   AND data_referencia <= '2026-01-31'
 GROUP BY platform;

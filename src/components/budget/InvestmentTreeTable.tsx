@@ -8,7 +8,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, ChevronDown, Calendar, Info, Download } from "lucide-react";
+import { ChevronRight, ChevronDown, Calendar, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getDynamicPacingStatus, getPacingStatusLabel, getDynamicThresholds, formatExpectedRange, type PacingStatus } from "@/lib/pacing-utils";
@@ -28,13 +28,12 @@ export type TreeDataRow = {
 interface InvestmentTreeTableProps {
     data: TreeDataRow[];
     onViewWeekly: (node: TreeNode) => void;
-    onDownload: (node: TreeNode) => void;
     monthDate: Date; // Month being analyzed for dynamic pacing
 }
 
 type NodeStatus = "success" | "warning" | "error";
 
-interface TreeNode {
+export interface TreeNode {
     id: string; // Unique key
     label: string;
     level: number;
@@ -68,7 +67,7 @@ function pct(v: number) {
     return new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(v);
 }
 
-export function InvestmentTreeTable({ data, onViewWeekly, onDownload, monthDate }: InvestmentTreeTableProps) {
+export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: InvestmentTreeTableProps) {
     const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
 
     const toggle = (id: string) => {
@@ -106,7 +105,7 @@ export function InvestmentTreeTable({ data, onViewWeekly, onDownload, monthDate 
             const location = row.location || "Sem localização";
 
             // Classification Logic
-            let isEad = unit.includes("ead") || course.includes("ead") || unit === "1. ead" || unit.startsWith("ead ");
+            let isEad = unit.includes("ead") || course.includes("ead") || unit === "1. ead" || unit.startsWith("ead ") || unit.includes("ulbra pop");
             let isBranding = funnel === "branding" || funnel === "brand" || unit.includes("branding") || unit.includes("institucional");
             // Se conflitar (ex: EAD Branding), prioridade EAD? Plano diz: 
             // - EAD: unit/course contains EAD.
@@ -425,25 +424,6 @@ export function InvestmentTreeTable({ data, onViewWeekly, onDownload, monthDate 
                                     </TooltipTrigger>
                                     <TooltipContent>
                                         <p>Ver detalhamento semanal</p>
-                                    </TooltipContent>
-                                </Tooltip>
-
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 text-muted-foreground hover:text-primary"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onDownload(node);
-                                            }}
-                                        >
-                                            <Download className="h-4 w-4" />
-                                        </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        <p>Baixar dados detalhados (CSV)</p>
                                     </TooltipContent>
                                 </Tooltip>
                             </TooltipProvider>

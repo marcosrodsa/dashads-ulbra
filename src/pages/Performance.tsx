@@ -18,7 +18,7 @@ export default function PerformancePage() {
 
   // Use selected range or fallback to current month
   const rangeStart = filters.dateRange?.from ?? startOfMonth(new Date());
-  const rangeEnd = filters.dateRange?.to ?? endOfMonth(rangeStart);
+  const rangeEnd = filters.dateRange?.to ?? filters.dateRange?.from ?? endOfMonth(rangeStart);
 
   // --- Daily Data Query for All Metrics (KPIs, Table, Charts) ---
   const dailyQuery = useQuery({
@@ -26,7 +26,7 @@ export default function PerformancePage() {
     enabled: !!client,
     queryFn: async () => {
       let q = (client as SupabaseClient)
-        .from("vw_performance_diaria")
+        .from("vw_performance_diaria2")
         .select("*")
         .gte("data_referencia", format(rangeStart, "yyyy-MM-dd"))
         .lte("data_referencia", format(rangeEnd, "yyyy-MM-dd"))
@@ -162,7 +162,7 @@ export default function PerformancePage() {
     return (
       <div className="p-8 text-center text-destructive">
         <h2 className="text-lg font-bold">Erro ao carregar dados</h2>
-        <p>Verifique se a View <code>vw_performance_diaria</code> existe no Supabase e está acessível.</p>
+        <p>Verifique se a View <code>vw_performance_diaria2</code> existe no Supabase e está acessível.</p>
         <pre className="mt-4 text-xs bg-muted p-4 rounded text-left inline-block">
           {String(dailyQuery.error)}
         </pre>
