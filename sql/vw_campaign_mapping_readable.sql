@@ -1,9 +1,11 @@
+DROP VIEW IF EXISTS vw_campaign_mapping_readable;
 CREATE OR REPLACE VIEW vw_campaign_mapping_readable AS
 SELECT 
     m.id,
     m.platform,
     m.campaign_id,
     m.campaign_name,
+    m.observation, -- Adding observation column
     m.updated_at,
     m.is_ignored, -- Adding is_ignored as it is needed for the frontend
     

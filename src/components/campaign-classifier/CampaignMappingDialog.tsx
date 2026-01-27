@@ -21,23 +21,12 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import {
-    Command,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
-} from "@/components/ui/command";
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from "@/components/ui/popover";
+
 import { toast } from "@/components/ui/use-toast";
+import { Textarea } from "@/components/ui/textarea";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import type { AggregatedCampaign, Unit, Course } from "@/integrations/supabase/campaignMappingSchema";
-import { Check, ChevronsUpDown } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 
 interface CampaignMappingDialogProps {
@@ -65,28 +54,28 @@ export function CampaignMappingDialog({
     const client = getSupabaseClient();
 
     // Form state
-    // '__keep__' is valid only in bulk mode to indicate partial update
-    const [unitId, setUnitId] = React.useState<string | null>(null);
-    const [courseId, setCourseId] = React.useState<string | null>(null);
+    // 'no-change' is valid only in bulk mode to indicate partial update
+    // 'null' is used to explicitly set a value to null (e.g., "Nenhuma / Geral")
+    const [selectedUnit, setSelectedUnit] = React.useState<string>("no-change");
+    const [selectedCourse, setSelectedCourse] = React.useState<string>("no-change");
     const [isIgnored, setIsIgnored] = React.useState(false);
-    const [courseOpen, setCourseOpen] = React.useState(false);
-
-    // Constants
-    const KEEP_VALUE = "__keep__";
+    const [observation, setObservation] = React.useState("");
 
     // Sync state when open changes
     React.useEffect(() => {
         if (open) {
             if (isBulkMode) {
-                // Bulk mode defaults: keep existing values
-                setUnitId(KEEP_VALUE);
-                setCourseId(KEEP_VALUE);
+                // Bulk mode defaults: indicate no change for unit/course, clear observation
+                setSelectedUnit("no-change");
+                setSelectedCourse("no-change");
                 setIsIgnored(false);
+                setObservation(""); // Bulk mode starts empty
             } else if (campaign) {
                 // Single mode: load campaign values
-                setUnitId(campaign.unit_id);
-                setCourseId(campaign.course_id);
+                setSelectedUnit(campaign.unit_id || "null"); // Use "null" for actual null values
+                setSelectedCourse(campaign.course_id || "null"); // Use "null" for actual null values
                 setIsIgnored(campaign.is_ignored ?? false);
+                setObservation(campaign.observation || ""); // Load existing observation
             }
         }
     }, [open, isBulkMode, campaign]);
@@ -100,13 +89,22 @@ export function CampaignMappingDialog({
 
             const updates = targets.map((target) => {
                 // Merge logic:
-                // If IS BULK and value is KEEP, use existing value from target.
+                // If IS BULK and value is 'no-change', use existing value from target.
+                // If value is 'null', explicitly set to null.
                 // Otherwise use the new form value.
-                const finalUnitId = (isBulkMode && unitId === KEEP_VALUE) ? target.unit_id : unitId;
-                const finalCourseId = (isBulkMode && courseId === KEEP_VALUE) ? target.course_id : courseId;
+                const finalUnitId = (isBulkMode && selectedUnit === "no-change")
+                    ? target.unit_id
+                    : (selectedUnit === "null" ? null : selectedUnit);
 
-                // Handling special case where unitId/courseId might be explicitly set to null (cleared) vs kept
-                // In our form: null means "None/General", KEEP_VALUE means "Keep existing".
+                const finalCourseId = (isBulkMode && selectedCourse === "no-change")
+                    ? target.course_id
+                    : (selectedCourse === "null" ? null : selectedCourse);
+
+                // For bulk mode, observation is applied to all if provided, otherwise it's kept as is.
+                // For single mode, observation is always updated.
+                const finalObservation = isBulkMode && observation === ""
+                    ? target.observation
+                    : observation;
 
                 return {
                     platform: target.platform,
@@ -115,6 +113,7 @@ export function CampaignMappingDialog({
                     unit_id: finalUnitId,
                     course_id: finalCourseId,
                     is_ignored: isIgnored, // For now, ignore flag is applied to all in bulk
+                    observation: finalObservation,
                     updated_at: new Date().toISOString(),
                 };
             });
@@ -145,8 +144,8 @@ export function CampaignMappingDialog({
         },
     });
 
-    const selectedUnit = units.find((u) => u.id === unitId);
-    const selectedCourse = courses.find((c) => c.id === courseId);
+    const currentSelectedUnit = units.find((u) => u.id === selectedUnit);
+    const currentSelectedCourse = courses.find((c) => c.id === selectedCourse);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -176,19 +175,19 @@ export function CampaignMappingDialog({
                     <div className="grid gap-2">
                         <Label htmlFor="unit">Unidade (Business Unit)</Label>
                         <Select
-                            value={unitId ?? "__none__"} // internally we use null for 'none', but Select needs string default
-                            onValueChange={(v) => setUnitId(v === "__none__" ? null : v)}
+                            value={selectedUnit}
+                            onValueChange={setSelectedUnit}
                         >
                             <SelectTrigger id="unit">
                                 <SelectValue placeholder="Selecione uma unidade" />
                             </SelectTrigger>
                             <SelectContent>
                                 {isBulkMode && (
-                                    <SelectItem value={KEEP_VALUE} className="font-semibold text-muted-foreground">
+                                    <SelectItem value="no-change" className="font-semibold text-muted-foreground">
                                         [ Manter inalterado ]
                                     </SelectItem>
                                 )}
-                                <SelectItem value="__none__">Nenhuma / Geral</SelectItem>
+                                <SelectItem value="null">Nenhuma / Geral</SelectItem>
                                 {units.map((unit) => (
                                     <SelectItem key={unit.id} value={unit.id}>
                                         {unit.name}
@@ -198,90 +197,45 @@ export function CampaignMappingDialog({
                         </Select>
                     </div>
 
-                    {/* Curso Combobox */}
+                    {/* Curso Select */}
                     <div className="grid gap-2">
-                        <Label>Curso</Label>
-                        <Popover open={courseOpen} onOpenChange={setCourseOpen}>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    variant="outline"
-                                    role="combobox"
-                                    aria-expanded={courseOpen}
-                                    className="w-full justify-between"
-                                >
-                                    {isBulkMode && courseId === KEEP_VALUE
-                                        ? "[ Manter inalterado ]"
-                                        : selectedCourse?.name ?? "Selecione um curso..."}
-                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[400px] p-0">
-                                <Command>
-                                    <CommandInput placeholder="Buscar curso..." />
-                                    <CommandList>
-                                        <CommandEmpty>Nenhum curso encontrado.</CommandEmpty>
-                                        <CommandGroup>
-                                            {isBulkMode && (
-                                                <CommandItem
-                                                    value={KEEP_VALUE}
-                                                    onSelect={() => {
-                                                        setCourseId(KEEP_VALUE);
-                                                        setCourseOpen(false);
-                                                    }}
-                                                    className="font-semibold text-muted-foreground"
-                                                >
-                                                    <Check
-                                                        className={cn(
-                                                            "mr-2 h-4 w-4",
-                                                            courseId === KEEP_VALUE ? "opacity-100" : "opacity-0"
-                                                        )}
-                                                    />
-                                                    [ Manter inalterado ]
-                                                </CommandItem>
-                                            )}
-
-                                            <CommandItem
-                                                value=""
-                                                onSelect={() => {
-                                                    setCourseId(null);
-                                                    setCourseOpen(false);
-                                                }}
-                                            >
-                                                <Check
-                                                    className={cn(
-                                                        "mr-2 h-4 w-4",
-                                                        (courseId === null && (!isBulkMode || courseId !== KEEP_VALUE)) ? "opacity-100" : "opacity-0"
-                                                    )}
-                                                />
-                                                Geral / Institucional
-                                            </CommandItem>
-
-                                            {courses.map((course) => (
-                                                <CommandItem
-                                                    key={course.id}
-                                                    value={course.name}
-                                                    onSelect={() => {
-                                                        setCourseId(course.id);
-                                                        setCourseOpen(false);
-                                                    }}
-                                                >
-                                                    <Check
-                                                        className={cn(
-                                                            "mr-2 h-4 w-4",
-                                                            courseId === course.id ? "opacity-100" : "opacity-0"
-                                                        )}
-                                                    />
-                                                    {course.name}
-                                                </CommandItem>
-                                            ))}
-                                        </CommandGroup>
-                                    </CommandList>
-                                </Command>
-                            </PopoverContent>
-                        </Popover>
+                        <Label htmlFor="course">Curso</Label>
+                        <Select
+                            value={selectedCourse}
+                            onValueChange={setSelectedCourse}
+                        >
+                            <SelectTrigger id="course">
+                                <SelectValue placeholder="Selecione um curso" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {isBulkMode && (
+                                    <SelectItem value="no-change" className="font-semibold text-muted-foreground">
+                                        [ Manter inalterado ]
+                                    </SelectItem>
+                                )}
+                                <SelectItem value="null">Geral / Institucional</SelectItem>
+                                {courses.map((course) => (
+                                    <SelectItem key={course.id} value={course.id}>
+                                        {course.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
 
-                    {/* Ignorar Switch - Only show in single mode or assume override in bulk */}
+                    {/* Observação Input */}
+                    <div className="grid gap-2">
+                        <Label htmlFor="observation">Observação</Label>
+                        <Textarea
+                            id="observation"
+                            placeholder="Adicione detalhes sobre essa classificação..."
+                            value={observation}
+                            onChange={(e) => setObservation(e.target.value)}
+                            className="resize-none"
+                        />
+                    </div>
+
+                    {/* Ignorar Switch */}
                     <div className="flex items-center justify-between rounded-lg border p-4">
                         <div className="space-y-0.5">
                             <Label htmlFor="ignored">Ignorar Campanha nos Relatórios</Label>
@@ -307,6 +261,6 @@ export function CampaignMappingDialog({
                     </Button>
                 </DialogFooter>
             </DialogContent>
-        </Dialog>
+        </Dialog >
     );
 }

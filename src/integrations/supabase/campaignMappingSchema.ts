@@ -10,6 +10,7 @@ export interface CampaignMapping {
     campaign_name: string | null;
     unit_id: string | null;
     course_id: string | null;
+    observation: string | null;
     is_ignored: boolean;
     updated_at: string;
     updated_by: string | null;
@@ -30,6 +31,7 @@ export interface AggregatedCampaign {
     unit_name: string | null;
     course_id: string | null;
     course_name: string | null;
+    observation: string | null;
     is_ignored: boolean;
 }
 

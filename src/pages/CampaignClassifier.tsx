@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FaFacebook } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
-import { Pencil, Search, Tag, X } from "lucide-react";
+import { Pencil, Search, Tag, X, ArrowUpDown, MessageSquareText } from "lucide-react";
 
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import type {
@@ -49,6 +49,10 @@ export default function CampaignClassifierPage() {
     const [status, setStatus] = React.useState<MappingStatus>("pending");
     const [platform, setPlatform] = React.useState<PlatformFilter>("all");
     const [search, setSearch] = React.useState("");
+    const [sortConfig, setSortConfig] = React.useState<{
+        key: keyof AggregatedCampaign | "classification";
+        direction: "asc" | "desc";
+    }>({ key: "total_spend", direction: "desc" });
 
     // Modal state
     const [dialogOpen, setDialogOpen] = React.useState(false);
@@ -104,7 +108,8 @@ export default function CampaignClassifierPage() {
 
     // Query: Aggregated Campaigns
     const campaignsQuery = useQuery({
-        queryKey: ["campaigns-aggregated", status, platform, search],
+        // Removed status from key so we don't refetch on tab change
+        queryKey: ["campaigns-aggregated", platform, search],
         enabled: !!client,
         queryFn: async () => {
             // Step 1: Get all mappings from readable view
@@ -116,8 +121,9 @@ export default function CampaignClassifierPage() {
                 console.warn("Mappings query error (table may not exist yet):", mappingsError);
             }
 
+            // Using strict types would satisfy lint, but referencing the view's return type is safer
             const mappingsMap = new Map(
-                (mappings || []).map((m: any) => [`${m.platform}|${m.campaign_id}`, m])
+                (mappings || []).map((m) => [`${m.platform}|${m.campaign_id}`, m])
             );
 
             // Step 2: Get aggregated campaigns from fact_ads_performance_daily
@@ -140,7 +146,7 @@ export default function CampaignClassifierPage() {
             // Aggregate by platform + campaign_id
             const aggregated = new Map<string, AggregatedCampaign>();
 
-            (rawData || []).forEach((row: any) => {
+            (rawData || []).forEach((row) => {
                 const key = `${row.platform}|${row.campaign_id}`;
                 const mapping = mappingsMap.get(key);
 
@@ -155,6 +161,7 @@ export default function CampaignClassifierPage() {
                         unit_name: mapping?.unidade_nome || null, // directly from view!
                         course_id: mapping?.course_id || null, // from view
                         course_name: mapping?.curso_nome || null, // directly from view!
+                        observation: mapping?.observation || null,
                         is_ignored: mapping?.is_ignored || false, // from view
                     });
                 }
@@ -169,14 +176,11 @@ export default function CampaignClassifierPage() {
 
             const result = Array.from(aggregated.values());
 
-            // Apply filters
+            // Apply filters (only platform and search, NOT status)
             let filtered = result;
 
-            if (status === "pending") {
-                filtered = filtered.filter((c) => !c.mapping_id);
-            } else if (status === "mapped") {
-                filtered = filtered.filter((c) => !!c.mapping_id);
-            }
+            // PREVIOUSLY filtering by status here - NO LONGER doing this in query
+            // so we can count them all.
 
             if (search) {
                 const searchLower = search.toLowerCase();
@@ -186,12 +190,84 @@ export default function CampaignClassifierPage() {
                 );
             }
 
-            // Sort by highest spend (Pareto)
+            // Sort by highest spend (Pareto) - initial sort
             filtered.sort((a, b) => b.total_spend - a.total_spend);
 
-            return filtered.slice(0, 100);
+            return filtered;
         },
     });
+
+    // Handle sort click
+    const handleSort = (key: keyof AggregatedCampaign | "classification") => {
+        setSortConfig((current) => ({
+            key,
+            direction:
+                current.key === key && current.direction === "asc" ? "desc" : "asc",
+        }));
+    };
+
+    // Derive counts and filtered list for current view
+    const { displayedCampaigns, counts } = React.useMemo(() => {
+        const all = campaignsQuery.data || [];
+
+        const pending = all.filter(c => !c.mapping_id);
+        const mapped = all.filter(c => !!c.mapping_id);
+
+        // Decide what to show based on current tab
+        let toShow: AggregatedCampaign[] = [];
+        if (status === "pending") toShow = pending;
+        else if (status === "mapped") toShow = mapped;
+        else toShow = all;
+
+        // Apply sorting
+        toShow.sort((a, b) => {
+            const direction = sortConfig.direction === "asc" ? 1 : -1;
+
+            if (sortConfig.key === "total_spend") {
+                return (a.total_spend - b.total_spend) * direction;
+            }
+
+            if (sortConfig.key === "campaign_name") {
+                return (a.campaign_name || "").localeCompare(b.campaign_name || "") * direction;
+            }
+
+            if (sortConfig.key === "classification") {
+                // Priority 1: Unmapped Unit (should be first)
+                const hasUnitA = !!a.unit_name;
+                const hasUnitB = !!b.unit_name;
+                if (hasUnitA !== hasUnitB) {
+                    return (hasUnitA ? 1 : -1) * direction;
+                }
+
+                // Priority 2: Unmapped Course
+                const hasCourseA = !!a.course_name;
+                const hasCourseB = !!b.course_name;
+                if (hasCourseA !== hasCourseB) {
+                    return (hasCourseA ? 1 : -1) * direction;
+                }
+
+                // Priority 3: Alphabetical Unit
+                const unitDiff = (a.unit_name || "").localeCompare(b.unit_name || "");
+                if (unitDiff !== 0) return unitDiff * direction;
+
+                // Priority 4: Alphabetical Course
+                const nameA = a.course_name || "";
+                const nameB = b.course_name || "";
+                return nameA.localeCompare(nameB) * direction;
+            }
+
+            return 0;
+        });
+
+        return {
+            displayedCampaigns: toShow.slice(0, 100), // Apply limit here for rendering
+            counts: {
+                all: all.length,
+                pending: pending.length,
+                mapped: mapped.length
+            }
+        };
+    }, [campaignsQuery.data, status, sortConfig]);
 
     // Single campaign edit
     const handleEdit = (campaign: AggregatedCampaign) => {
@@ -221,11 +297,11 @@ export default function CampaignClassifierPage() {
 
     // Select all visible campaigns
     const toggleSelectAll = () => {
-        if (selectedCampaigns.size === (campaignsQuery.data?.length || 0)) {
+        if (selectedCampaigns.size === displayedCampaigns.length) {
             setSelectedCampaigns(new Set());
         } else {
             const allKeys = new Set(
-                (campaignsQuery.data || []).map(c => `${c.platform}|${c.campaign_id}`)
+                displayedCampaigns.map(c => `${c.platform}|${c.campaign_id}`)
             );
             setSelectedCampaigns(allKeys);
         }
@@ -262,7 +338,7 @@ export default function CampaignClassifierPage() {
     }
 
     return (
-        <div className="mx-auto w-full max-w-7xl space-y-6 p-6">
+        <div className="mx-auto w-full max-w-7xl space-y-6 p-6 pb-32">
             {/* Header */}
             <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
@@ -277,9 +353,24 @@ export default function CampaignClassifierPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <Tabs value={status} onValueChange={(v) => setStatus(v as MappingStatus)}>
                     <TabsList>
-                        <TabsTrigger value="pending">Pendentes</TabsTrigger>
-                        <TabsTrigger value="mapped">Classificadas</TabsTrigger>
-                        <TabsTrigger value="all">Todas</TabsTrigger>
+                        <TabsTrigger value="pending">
+                            Pendentes
+                            <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
+                                {counts.pending}
+                            </span>
+                        </TabsTrigger>
+                        <TabsTrigger value="mapped">
+                            Classificadas
+                            <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
+                                {counts.mapped}
+                            </span>
+                        </TabsTrigger>
+                        <TabsTrigger value="all">
+                            Todas
+                            <span className="ml-2 text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
+                                {counts.all}
+                            </span>
+                        </TabsTrigger>
                     </TabsList>
                 </Tabs>
 
@@ -327,27 +418,55 @@ export default function CampaignClassifierPage() {
                             <TableRow>
                                 <TableHead className="w-[50px]">
                                     <Checkbox
-                                        checked={campaignsQuery.data?.length > 0 && selectedCampaigns.size === campaignsQuery.data?.length}
+                                        checked={displayedCampaigns.length > 0 && selectedCampaigns.size === displayedCampaigns.length}
                                         onCheckedChange={toggleSelectAll}
                                         aria-label="Selecionar todas"
                                     />
                                 </TableHead>
-                                <TableHead className="w-[80px]">Plataforma</TableHead>
-                                <TableHead>Campanha</TableHead>
-                                <TableHead className="text-right w-[140px]">Investimento</TableHead>
-                                <TableHead className="w-[200px]">Classificação</TableHead>
+                                <TableHead className="w-[60px]">Plataforma</TableHead>
+                                <TableHead>
+                                    <Button
+                                        variant="ghost"
+                                        className="-ml-4 h-8 data-[state=open]:bg-accent"
+                                        onClick={() => handleSort("campaign_name")}
+                                    >
+                                        Campanha
+                                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                                    </Button>
+                                </TableHead>
+                                <TableHead className="text-right w-[120px]">
+                                    <Button
+                                        variant="ghost"
+                                        className="-mr-4 h-8 data-[state=open]:bg-accent"
+                                        onClick={() => handleSort("total_spend")}
+                                    >
+                                        Investimento
+                                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                                    </Button>
+                                </TableHead>
+                                <TableHead className="w-[180px]">
+                                    <Button
+                                        variant="ghost"
+                                        className="-ml-4 h-8 data-[state=open]:bg-accent"
+                                        onClick={() => handleSort("classification")}
+                                    >
+                                        Classificação
+                                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                                    </Button>
+                                </TableHead>
+                                <TableHead className="w-[60px]">Obs.</TableHead>
                                 <TableHead className="w-[80px] text-center">Ação</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {campaignsQuery.data?.length === 0 ? (
+                            {displayedCampaigns.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                                         Nenhuma campanha encontrada com os filtros atuais.
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                campaignsQuery.data?.map((campaign) => (
+                                displayedCampaigns.map((campaign) => (
                                     <TableRow key={`${campaign.platform}|${campaign.campaign_id}`}>
                                         <TableCell>
                                             <Checkbox
@@ -364,7 +483,7 @@ export default function CampaignClassifierPage() {
                                         <TableCell>
                                             <Tooltip>
                                                 <TooltipTrigger asChild>
-                                                    <span className="block max-w-[600px] truncate cursor-help">
+                                                    <span className="block max-w-[450px] truncate cursor-help">
                                                         {campaign.campaign_name || campaign.campaign_id}
                                                     </span>
                                                 </TooltipTrigger>
@@ -385,21 +504,47 @@ export default function CampaignClassifierPage() {
                                             ) : campaign.mapping_id ? (
                                                 <div className="flex flex-col gap-0.5">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                                                            {campaign.unit_name || "Unidade não def."}
-                                                        </span>
+                                                        {campaign.unit_name ? (
+                                                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                                                                {campaign.unit_name}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] uppercase tracking-wider text-destructive font-bold">
+                                                                Unidade não def.
+                                                            </span>
+                                                        )}
                                                         <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 text-[10px] px-1 py-0 h-4 rounded-sm">
                                                             Manual
                                                         </Badge>
                                                     </div>
-                                                    <span className="text-sm font-bold text-primary">
-                                                        {campaign.course_name || "Geral / Institucional"}
-                                                    </span>
+                                                    {campaign.course_name ? (
+                                                        <span className="text-sm font-bold text-primary">
+                                                            {campaign.course_name}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-sm font-bold text-destructive">
+                                                            Sem Vínculo
+                                                        </span>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
                                                     Pendente
                                                 </Badge>
+                                            )}
+                                        </TableCell>
+                                        <TableCell>
+                                            {campaign.observation && (
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <div className="flex justify-center items-center cursor-help w-full">
+                                                            <MessageSquareText className="h-4 w-4 text-muted-foreground" />
+                                                        </div>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                        <p className="max-w-[300px] text-sm">{campaign.observation}</p>
+                                                    </TooltipContent>
+                                                </Tooltip>
                                             )}
                                         </TableCell>
                                         <TableCell className="text-center">
