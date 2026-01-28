@@ -198,11 +198,11 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData, monthDa
                                                     <TooltipProvider delayDuration={0}>
                                                         <Tooltip>
                                                             <TooltipTrigger asChild>
-                                                                <div className="flex items-center justify-end gap-1 cursor-help group">
-                                                                    <Badge variant={status.variant} className="text-xs decoration-dotted underline-offset-2 group-hover:underline">
+                                                                <div className="flex items-center justify-end gap-1.5 cursor-help group">
+                                                                    <Badge variant={status.variant} className="text-xs decoration-dotted underline-offset-2 group-hover:underline whitespace-nowrap">
                                                                         {status.label}
                                                                     </Badge>
-                                                                    <Info className="h-3 w-3 text-muted-foreground group-hover:text-primary transition-colors" />
+                                                                    <Info className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
                                                                 </div>
                                                             </TooltipTrigger>
                                                             <TooltipContent className="max-w-sm whitespace-normal p-3">

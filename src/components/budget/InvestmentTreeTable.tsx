@@ -372,11 +372,11 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate, dateRange }
                         <TooltipProvider>
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <div className="flex items-center justify-center gap-1 cursor-help group">
-                                        <span className={`text-xs font-semibold underline decoration-dotted underline-offset-4 ${statusColor}`}>
+                                    <div className="flex items-center justify-center gap-1.5 cursor-help group mx-auto w-fit">
+                                        <span className={`text-xs font-semibold underline decoration-dotted underline-offset-4 ${statusColor} leading-tight`}>
                                             {statusLabel}
                                         </span>
-                                        <Info className="h-3 w-3 text-muted-foreground group-hover:text-primary transition-colors" />
+                                        <Info className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
                                     </div>
                                 </TooltipTrigger>
                                 <TooltipContent className="max-w-xs p-3">
