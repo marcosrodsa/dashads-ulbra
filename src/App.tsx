@@ -7,6 +7,7 @@ import NotFound from "./pages/NotFound";
 import BudgetPage from "./pages/Budget";
 import PerformancePage from "./pages/Performance";
 import CampaignClassifierPage from "./pages/CampaignClassifier";
+import RegistriesPage from "./pages/Registries";
 import { AppLayout } from "./components/app/AppLayout";
 
 const queryClient = new QueryClient();
@@ -23,6 +24,7 @@ const App = () => (
             <Route path="/budget" element={<BudgetPage />} />
             <Route path="/performance" element={<PerformancePage />} />
             <Route path="/classificador" element={<CampaignClassifierPage />} />
+            <Route path="/cadastros" element={<RegistriesPage />} />
           </Route>
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

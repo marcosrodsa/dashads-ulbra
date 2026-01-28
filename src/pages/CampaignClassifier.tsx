@@ -12,6 +12,7 @@ import type {
     Course,
     MappingStatus,
     PlatformFilter,
+    CourseLine,
 } from "@/integrations/supabase/campaignMappingSchema";
 
 import { CampaignMappingDialog } from "@/components/campaign-classifier/CampaignMappingDialog";
@@ -106,6 +107,21 @@ export default function CampaignClassifierPage() {
                 console.warn("Courses table may not exist:", e);
                 return [];
             }
+        },
+    });
+
+    // Query: Course Lines
+    const courseLinesQuery = useQuery({
+        queryKey: ["course-lines"],
+        enabled: !!client,
+        queryFn: async () => {
+            const { data, error } = await (client as SupabaseClient)
+                .from("course_lines")
+                .select("id, name")
+                .eq("status", "active")
+                .order("name");
+            if (error) return [];
+            return (data as CourseLine[]) || [];
         },
     });
 
@@ -631,6 +647,7 @@ export default function CampaignClassifierPage() {
                 isBulkMode={isBulkMode}
                 units={unitsQuery.data || []}
                 courses={coursesQuery.data || []}
+                courseLines={courseLinesQuery.data || []}
                 open={dialogOpen}
                 onOpenChange={setDialogOpen}
                 onSuccess={() => {

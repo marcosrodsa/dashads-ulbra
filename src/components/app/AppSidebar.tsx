@@ -1,5 +1,5 @@
 import * as React from "react";
-import { BarChart3, Gauge, Filter, Tag } from "lucide-react";
+import { BarChart3, Gauge, Filter, Tag, Database } from "lucide-react";
 import { useLocation } from "react-router-dom";
 
 import { useFilters } from "@/contexts/filters-context";
@@ -25,6 +25,7 @@ const navItems = [
   { title: "Controle de Budget", url: "/budget", icon: Gauge },
   { title: "Performance de Captação", url: "/performance", icon: BarChart3 },
   { title: "Classificação de Campanhas", url: "/classificador", icon: Tag },
+  { title: "Cadastros", url: "/cadastros", icon: Database },
 ];
 
 export function AppSidebar() {

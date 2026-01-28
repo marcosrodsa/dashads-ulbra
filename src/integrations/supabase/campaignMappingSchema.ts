@@ -44,6 +44,13 @@ export interface Unit {
 export interface Course {
     id: string;
     name: string;
+    course_line_id?: string; // Optional but recommended for consistency
+}
+
+export interface CourseLine {
+    id: string;
+    name: string;
+    status: string;
 }
 
 // --- Filtros da Página ---
