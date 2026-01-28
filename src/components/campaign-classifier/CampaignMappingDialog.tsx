@@ -24,19 +24,7 @@ import {
 
 import { toast } from "@/components/ui/use-toast";
 import { Textarea } from "@/components/ui/textarea";
-import {
-    Command,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
-} from "@/components/ui/command";
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import type { AggregatedCampaign, Unit, Course, CourseLine } from "@/integrations/supabase/campaignMappingSchema";
 
@@ -77,8 +65,7 @@ export function CampaignMappingDialog({
     const [observation, setObservation] = React.useState("");
 
     // Quick Add Course state
-    const [courseSearch, setCourseSearch] = React.useState("");
-    const [isCoursePopoverOpen, setIsCoursePopoverOpen] = React.useState(false);
+    const [quickAddName, setQuickAddName] = React.useState("");
     const [isQuickAddOpen, setIsQuickAddOpen] = React.useState(false);
     const [quickAddModality, setQuickAddModality] = React.useState("presencial");
     const [quickAddLineId, setQuickAddLineId] = React.useState("");
@@ -187,9 +174,8 @@ export function CampaignMappingDialog({
             toast({ title: "Curso criado!", description: `O curso ${newCourse.name} foi cadastrado.` });
             queryClient.invalidateQueries({ queryKey: ["courses"] }); // For global list
             setSelectedCourse(newCourse.id);
-            setCourseSearch("");
+            setQuickAddName("");
             setIsQuickAddOpen(false);
-            setIsCoursePopoverOpen(false);
         },
         onError: (err: Error) => {
             toast({ title: "Erro ao criar curso", description: err.message, variant: "destructive" });
@@ -249,93 +235,46 @@ export function CampaignMappingDialog({
                         </Select>
                     </div>
 
-                    {/* Curso Select -> Combobox */}
+                    {/* Curso Select */}
                     <div className="grid gap-2">
-                        <Label htmlFor="course">Curso</Label>
-                        <Popover open={isCoursePopoverOpen} onOpenChange={setIsCoursePopoverOpen}>
-                            <PopoverTrigger asChild>
+                        <div className="flex items-center justify-between">
+                            <Label htmlFor="course">Curso</Label>
+                            {!isBulkMode && (
                                 <Button
-                                    variant="outline"
-                                    role="combobox"
-                                    aria-expanded={isCoursePopoverOpen}
-                                    className="justify-between font-normal"
+                                    variant="link"
+                                    size="sm"
+                                    className="h-auto p-0 text-xs gap-1 font-normal opacity-70 hover:opacity-100"
+                                    onClick={() => {
+                                        setQuickAddName("");
+                                        setIsQuickAddOpen(true);
+                                    }}
                                 >
-                                    {selectedCourse === "no-change"
-                                        ? "[ Manter inalterado ]"
-                                        : selectedCourse === "null"
-                                            ? "Geral / Institucional"
-                                            : courses.find((c) => c.id === selectedCourse)?.name || "Selecionar curso..."}
-                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    <PlusCircle className="h-3 w-3" />
+                                    Novo Curso
                                 </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[450px] p-0" align="start">
-                                <Command shouldFilter={false}>
-                                    <CommandInput
-                                        placeholder="Buscar curso..."
-                                        value={courseSearch}
-                                        onValueChange={setCourseSearch}
-                                    />
-                                    <CommandList>
-                                        <CommandEmpty className="p-2">
-                                            <div className="flex flex-col gap-2">
-                                                <p className="text-sm text-muted-foreground text-center">Nenhum curso encontrado.</p>
-                                                {!isBulkMode && courseSearch && (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="secondary"
-                                                        className="flex items-center gap-2"
-                                                        onClick={() => setIsQuickAddOpen(true)}
-                                                    >
-                                                        <PlusCircle className="h-4 w-4" />
-                                                        Cadastrar "{courseSearch}"
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        </CommandEmpty>
-                                        <CommandGroup>
-                                            {isBulkMode && (
-                                                <CommandItem
-                                                    value="no-change"
-                                                    onSelect={() => {
-                                                        setSelectedCourse("no-change");
-                                                        setIsCoursePopoverOpen(false);
-                                                    }}
-                                                >
-                                                    <Check className={cn("mr-2 h-4 w-4", selectedCourse === "no-change" ? "opacity-100" : "opacity-0")} />
-                                                    [ Manter inalterado ]
-                                                </CommandItem>
-                                            )}
-                                            <CommandItem
-                                                value="null"
-                                                onSelect={() => {
-                                                    setSelectedCourse("null");
-                                                    setIsCoursePopoverOpen(false);
-                                                }}
-                                            >
-                                                <Check className={cn("mr-2 h-4 w-4", selectedCourse === "null" ? "opacity-100" : "opacity-0")} />
-                                                Geral / Institucional
-                                            </CommandItem>
-                                            {courses
-                                                .filter(c => c.name.toLowerCase().includes(courseSearch.toLowerCase()))
-                                                .slice(0, 10)
-                                                .map((c) => (
-                                                    <CommandItem
-                                                        key={c.id}
-                                                        value={c.id}
-                                                        onSelect={() => {
-                                                            setSelectedCourse(c.id);
-                                                            setIsCoursePopoverOpen(false);
-                                                        }}
-                                                    >
-                                                        <Check className={cn("mr-2 h-4 w-4", selectedCourse === c.id ? "opacity-100" : "opacity-0")} />
-                                                        {c.name}
-                                                    </CommandItem>
-                                                ))}
-                                        </CommandGroup>
-                                    </CommandList>
-                                </Command>
-                            </PopoverContent>
-                        </Popover>
+                            )}
+                        </div>
+                        <Select
+                            value={selectedCourse}
+                            onValueChange={setSelectedCourse}
+                        >
+                            <SelectTrigger id="course">
+                                <SelectValue placeholder="Selecione um curso" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-[300px]">
+                                {isBulkMode && (
+                                    <SelectItem value="no-change" className="font-semibold text-muted-foreground">
+                                        [ Manter inalterado ]
+                                    </SelectItem>
+                                )}
+                                <SelectItem value="null">Geral / Institucional</SelectItem>
+                                {courses.map((course) => (
+                                    <SelectItem key={course.id} value={course.id}>
+                                        {course.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
 
                     {/* Quick Add Dialog (Nested) */}
@@ -344,10 +283,19 @@ export function CampaignMappingDialog({
                             <DialogHeader>
                                 <DialogTitle>Novo Curso</DialogTitle>
                                 <DialogDescription>
-                                    Você está cadastrando o curso <strong>"{courseSearch}"</strong>.
+                                    Cadastre um novo curso que não esteja na lista.
                                 </DialogDescription>
                             </DialogHeader>
                             <div className="grid gap-4 py-4">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="q-name">Nome do Curso</Label>
+                                    <Input
+                                        id="q-name"
+                                        placeholder="Ex: Engenharia Civil"
+                                        value={quickAddName}
+                                        onChange={(e) => setQuickAddName(e.target.value)}
+                                    />
+                                </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="q-line">Linha do Curso</Label>
                                     <Select value={quickAddLineId} onValueChange={setQuickAddLineId}>
@@ -378,8 +326,8 @@ export function CampaignMappingDialog({
                             <DialogFooter>
                                 <Button variant="outline" onClick={() => setIsQuickAddOpen(false)}>Cancelar</Button>
                                 <Button
-                                    onClick={() => createCourseMutation.mutate(courseSearch)}
-                                    disabled={createCourseMutation.isPending || !quickAddLineId}
+                                    onClick={() => createCourseMutation.mutate(quickAddName)}
+                                    disabled={createCourseMutation.isPending || !quickAddLineId || !quickAddName}
                                 >
                                     {createCourseMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                     Criar e Selecionar
