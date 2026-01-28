@@ -35,4 +35,6 @@ export const AppConfiguration = React.forwardRef<HTMLDivElement>((props, ref) =>
             </DialogContent>
         </Dialog>
     );
-}
+});
+
+AppConfiguration.displayName = "AppConfiguration";

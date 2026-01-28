@@ -176,7 +176,7 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData, monthDa
                                     {weeklyData.map((w) => {
                                         const var_ = w.orcado - w.realizado;
                                         // Calculate week end date (week start + 6 days)
-                                        const weekStart = new Date(w.weekStart);
+                                        const weekStart = new Date(`${w.weekStart}T00:00:00`);
                                         const weekEndDate = new Date(weekStart);
                                         weekEndDate.setDate(weekEndDate.getDate() + 6);
                                         const status = getStatus(w.orcado, w.realizado, weekStart, weekEndDate, monthDate);
