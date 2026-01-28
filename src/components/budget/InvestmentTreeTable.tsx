@@ -369,28 +369,53 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate, dateRange }
                         {cpl > 0 ? brl(cpl) : '-'}
                     </TableCell>
                     <TableCell className="text-center py-2">
-                        <div className="flex items-center justify-center gap-1">
-                            <span className={`text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
-                            <TooltipProvider>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                    </TooltipTrigger>
-                                    <TooltipContent className="max-w-xs">
-                                        <div className="space-y-1 text-xs">
-                                            <p className="font-semibold">Status: {statusLabel}</p>
-                                            <p>Utilização: {pct(utilization)}</p>
-                                            <p>Faixa ideal: {formatExpectedRange(getDynamicThresholds(new Date(), monthDate, dateRange))}</p>
-                                            <p className="text-muted-foreground">
-                                                {status === "error" && "Fora da margem aceitável para o dia atual."}
-                                                {status === "warning" && "Próximo aos limites, requer atenção."}
-                                                {status === "success" && "Dentro do ritmo esperado para o dia atual."}
-                                            </p>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <div className="flex items-center justify-center gap-1 cursor-help group">
+                                        <span className={`text-xs font-semibold underline decoration-dotted underline-offset-4 ${statusColor}`}>
+                                            {statusLabel}
+                                        </span>
+                                        <Info className="h-3 w-3 text-muted-foreground group-hover:text-primary transition-colors" />
+                                    </div>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-xs p-3">
+                                    <div className="space-y-2 text-xs">
+                                        <div className="flex justify-between items-center border-b pb-1">
+                                            <span className="font-bold text-sm">{statusLabel}</span>
+                                            <span className={statusColor}>{pct(utilization)} util.</span>
                                         </div>
-                                    </TooltipContent>
-                                </Tooltip>
-                            </TooltipProvider>
-                        </div>
+
+                                        <div className="space-y-1.5 pt-1">
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Progresso do período:</span>
+                                                <span className="font-medium">{pct(getDynamicThresholds(new Date(), monthDate, dateRange).expectedProgress)}</span>
+                                            </div>
+
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Faixa ideal (%):</span>
+                                                <span className="font-medium">{formatExpectedRange(getDynamicThresholds(new Date(), monthDate, dateRange))}</span>
+                                            </div>
+
+                                            {node.budget > 0 && (
+                                                <div className="flex justify-between border-t pt-1 mt-1">
+                                                    <span className="text-muted-foreground">Faixa ideal (R$):</span>
+                                                    <span className="font-bold">
+                                                        {brl(node.budget * getDynamicThresholds(new Date(), monthDate, dateRange).idealMin)} - {brl(node.budget * getDynamicThresholds(new Date(), monthDate, dateRange).idealMax)}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <p className="text-[10px] leading-tight text-muted-foreground italic border-t pt-1.5 mt-2">
+                                            {status === "error" && "O investimento está significativamente fora do esperado para o momento."}
+                                            {status === "warning" && "O ritmo de gasto requer atenção para não estourar ou sobrar budget."}
+                                            {status === "success" && "O investimento está seguindo o ritmo planejado corretamente."}
+                                        </p>
+                                    </div>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                     </TableCell>
                     <TableCell className="text-center py-2">
                         <div className="flex items-center justify-center gap-1">

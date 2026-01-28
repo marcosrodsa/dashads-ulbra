@@ -195,28 +195,57 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData, monthDa
                                                     {w.cpl > 0 ? brl(w.cpl) : '-'}
                                                 </TableCell>
                                                 <TableCell className="text-right">
-                                                    <div className="flex items-center justify-end gap-1">
-                                                        <Badge variant={status.variant} className="text-xs">{status.label}</Badge>
-                                                        <TooltipProvider delayDuration={0}>
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                    <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                                                </TooltipTrigger>
-                                                                <TooltipContent className="max-w-sm whitespace-normal">
-                                                                    <div className="space-y-1 text-xs">
-                                                                        <p className="font-semibold">Status: {status.label}</p>
-                                                                        <p>Utilização: {((w.realizado / w.orcado) * 100).toFixed(1)}%</p>
-                                                                        <p>Faixa ideal: {formatExpectedRange(getDynamicThresholds(new Date() < weekEndDate ? new Date() : weekEndDate, monthDate, { from: weekStart, to: weekEndDate }))}</p>
-                                                                        <p className="text-muted-foreground">
-                                                                            {status.variant === "destructive" && "Fora da margem aceitável para esta semana."}
-                                                                            {status.variant === "default" && "Próximo aos limites, requer atenção."}
-                                                                            {status.variant === "secondary" && "Dentro do ritmo esperado para esta semana."}
-                                                                        </p>
+                                                    <TooltipProvider delayDuration={0}>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <div className="flex items-center justify-end gap-1 cursor-help group">
+                                                                    <Badge variant={status.variant} className="text-xs decoration-dotted underline-offset-2 group-hover:underline">
+                                                                        {status.label}
+                                                                    </Badge>
+                                                                    <Info className="h-3 w-3 text-muted-foreground group-hover:text-primary transition-colors" />
+                                                                </div>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent className="max-w-sm whitespace-normal p-3">
+                                                                <div className="space-y-2 text-xs">
+                                                                    <div className="flex justify-between items-center border-b pb-1">
+                                                                        <span className="font-bold text-sm">Status: {status.label}</span>
+                                                                        <span>{((w.realizado / w.orcado) * 100).toFixed(1)}% util.</span>
                                                                     </div>
-                                                                </TooltipContent>
-                                                            </Tooltip>
-                                                        </TooltipProvider>
-                                                    </div>
+
+                                                                    <div className="space-y-1.5 pt-1">
+                                                                        <div className="flex justify-between">
+                                                                            <span className="text-muted-foreground">Progresso da semana:</span>
+                                                                            <span className="font-medium">
+                                                                                {(getDynamicThresholds(new Date() < weekEndDate ? new Date() : weekEndDate, monthDate, { from: weekStart, to: weekEndDate }).expectedProgress * 100).toFixed(1)}%
+                                                                            </span>
+                                                                        </div>
+
+                                                                        <div className="flex justify-between">
+                                                                            <span className="text-muted-foreground">Faixa ideal (%):</span>
+                                                                            <span className="font-medium">
+                                                                                {formatExpectedRange(getDynamicThresholds(new Date() < weekEndDate ? new Date() : weekEndDate, monthDate, { from: weekStart, to: weekEndDate }))}
+                                                                            </span>
+                                                                        </div>
+
+                                                                        {w.orcado > 0 && (
+                                                                            <div className="flex justify-between border-t pt-1 mt-1">
+                                                                                <span className="text-muted-foreground">Faixa ideal (R$):</span>
+                                                                                <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                                                                                    {brl(w.orcado * getDynamicThresholds(new Date() < weekEndDate ? new Date() : weekEndDate, monthDate, { from: weekStart, to: weekEndDate }).idealMin)} - {brl(w.orcado * getDynamicThresholds(new Date() < weekEndDate ? new Date() : weekEndDate, monthDate, { from: weekStart, to: weekEndDate }).idealMax)}
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+
+                                                                    <p className="text-[10px] leading-tight text-muted-foreground italic border-t pt-1.5 mt-2">
+                                                                        {status.variant === "destructive" && "O investimento desta semana está fora da margem esperada."}
+                                                                        {status.variant === "default" && "O ritmo desta semana requer atenção para não sair do plano."}
+                                                                        {status.variant === "secondary" && "O investimento está seguindo o ritmo planejado para esta semana."}
+                                                                    </p>
+                                                                </div>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    </TooltipProvider>
                                                 </TableCell>
                                             </TableRow>
                                         );

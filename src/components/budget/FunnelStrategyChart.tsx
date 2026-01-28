@@ -47,7 +47,15 @@ export function FunnelStrategyChart({ data }: FunnelStrategyChartProps) {
             const name = unitGroup.unit.toLowerCase();
             if (name.includes("branding") || name.includes("institucional")) {
                 category = "Branding";
-            } else if (name.includes("ead") || unitGroup.courses.some(c => c.course.toLowerCase().includes("ead"))) {
+            } else if (
+                name.includes("ead") ||
+                name.includes("pop") ||
+                name === "1. ead" ||
+                unitGroup.courses.some(c => {
+                    const cName = c.course.toLowerCase();
+                    return cName.includes("ead") || cName.includes("pop");
+                })
+            ) {
                 category = "EAD";
             }
 
