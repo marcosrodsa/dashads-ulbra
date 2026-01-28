@@ -1359,6 +1359,7 @@ export default function BudgetPage() {
               <InvestmentTreeTable
                 data={hybridRowsClean}
                 monthDate={filters.month}
+                dateRange={{ from: effectiveStart, to: effectiveEnd }}
                 onViewWeekly={(node: any) => {
                   /* 
                     Using node.filters provided by InvestmentTreeTable to guarantee alignment.

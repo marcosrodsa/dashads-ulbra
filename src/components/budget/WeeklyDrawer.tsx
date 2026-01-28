@@ -45,14 +45,17 @@ function brl(v: number) {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 }
 
-function getStatus(orcado: number, realizado: number, weekEndDate: Date, monthDate: Date): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
+function getStatus(orcado: number, realizado: number, weekStart: Date, weekEndDate: Date, monthDate: Date): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
     if (orcado === 0 && realizado > 0) return { label: "Sem budget", variant: "destructive" };
     if (orcado === 0) return { label: "-", variant: "outline" };
 
     const utilization = realizado / orcado;
+    const today = new Date();
+    // Use smaller of today vs week end to get current pacing within the week
+    const pacingDate = today < weekEndDate ? today : weekEndDate;
 
-    // Use dynamic pacing status based on week end date
-    const status: PacingStatus = getDynamicPacingStatus(utilization, weekEndDate, monthDate);
+    // Use dynamic pacing status with week range
+    const status: PacingStatus = getDynamicPacingStatus(utilization, pacingDate, monthDate, { from: weekStart, to: weekEndDate });
     const label = getPacingStatusLabel(status);
 
     const variant = status === "error" ? "destructive" : status === "warning" ? "default" : "secondary";
@@ -173,9 +176,10 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData, monthDa
                                     {weeklyData.map((w) => {
                                         const var_ = w.orcado - w.realizado;
                                         // Calculate week end date (week start + 6 days)
-                                        const weekEndDate = new Date(w.weekStart);
+                                        const weekStart = new Date(w.weekStart);
+                                        const weekEndDate = new Date(weekStart);
                                         weekEndDate.setDate(weekEndDate.getDate() + 6);
-                                        const status = getStatus(w.orcado, w.realizado, weekEndDate, monthDate);
+                                        const status = getStatus(w.orcado, w.realizado, weekStart, weekEndDate, monthDate);
                                         return (
                                             <TableRow key={w.weekStart}>
                                                 <TableCell className="font-medium text-sm">{w.semana}</TableCell>
@@ -202,7 +206,7 @@ export function WeeklyDrawer({ open, onOpenChange, unitName, weeklyData, monthDa
                                                                     <div className="space-y-1 text-xs">
                                                                         <p className="font-semibold">Status: {status.label}</p>
                                                                         <p>Utilização: {((w.realizado / w.orcado) * 100).toFixed(1)}%</p>
-                                                                        <p>Faixa ideal: {formatExpectedRange(getDynamicThresholds(weekEndDate, monthDate))}</p>
+                                                                        <p>Faixa ideal: {formatExpectedRange(getDynamicThresholds(new Date() < weekEndDate ? new Date() : weekEndDate, monthDate, { from: weekStart, to: weekEndDate }))}</p>
                                                                         <p className="text-muted-foreground">
                                                                             {status.variant === "destructive" && "Fora da margem aceitável para esta semana."}
                                                                             {status.variant === "default" && "Próximo aos limites, requer atenção."}

@@ -1,4 +1,4 @@
-import { endOfMonth } from "date-fns";
+import { endOfMonth, startOfDay, differenceInDays } from "date-fns";
 
 export type PacingStatus = "success" | "warning" | "error";
 
@@ -18,28 +18,55 @@ export interface DynamicThresholds {
  * - Mid month: ±10% tolerance  
  * - Late month: ±2% tolerance
  */
-export function getDynamicThresholds(currentDate: Date, monthDate: Date): DynamicThresholds {
-    const totalDays = endOfMonth(monthDate).getDate();
-    const currentDay = currentDate.getDate();
+export function getDynamicThresholds(currentDate: Date, monthDate: Date, customRange?: { from: Date; to: Date }): DynamicThresholds {
+    let totalDays: number;
+    let currentDay: number;
+    let progress: number;
 
-    const monthProgress = currentDay / totalDays; // 0.0 to 1.0
-    const daysRemaining = totalDays - currentDay;
+    if (customRange) {
+        // Pacing relative to a specific range (e.g. a week)
+        const dFrom = startOfDay(customRange.from);
+        const dTo = startOfDay(customRange.to);
+        const dCurrent = startOfDay(currentDate);
 
-    // Tolerance decreases linearly as month progresses
-    const baseTolerance = 0.20; // 20% at start of month
-    const progressFactor = daysRemaining / totalDays;
+        const total = Math.max(1, differenceInDays(dTo, dFrom) + 1);
+
+        if (dCurrent < dFrom) {
+            progress = 0;
+            currentDay = 0;
+        } else if (dCurrent > dTo) {
+            progress = 1;
+            currentDay = total;
+        } else {
+            currentDay = differenceInDays(dCurrent, dFrom) + 1;
+            progress = currentDay / total;
+        }
+        totalDays = total;
+    } else {
+        // Default: Pacing relative to month
+        const dCurrent = startOfDay(currentDate);
+        const dStart = startOfDay(monthDate);
+        totalDays = endOfMonth(monthDate).getDate();
+        currentDay = dCurrent.getDate();
+        progress = currentDay / totalDays;
+    }
+
+    const daysRemaining = Math.max(0, totalDays - currentDay);
+
+    // Tolerance decreases as we approach the end of the range
+    const baseTolerance = 0.20;
+    const progressFactor = totalDays > 0 ? daysRemaining / totalDays : 0;
     const tolerance = baseTolerance * progressFactor;
 
-    // Ensure minimum tolerance of 2% even at end of month
     const minTolerance = 0.02;
     const effectiveTolerance = Math.max(tolerance, minTolerance);
 
     return {
-        expectedProgress: monthProgress,
-        idealMin: Math.max(0, monthProgress - effectiveTolerance),
-        idealMax: Math.min(1, monthProgress + effectiveTolerance),
-        warningMin: Math.max(0, monthProgress - (effectiveTolerance * 1.5)),
-        warningMax: Math.min(1, monthProgress + (effectiveTolerance * 1.5)),
+        expectedProgress: progress,
+        idealMin: Math.max(0, progress - effectiveTolerance),
+        idealMax: Math.min(1.2, progress + effectiveTolerance), // Allow some overspend budget padding
+        warningMin: Math.max(0, progress - (effectiveTolerance * 1.5)),
+        warningMax: Math.min(1.5, progress + (effectiveTolerance * 1.5)),
         tolerance: effectiveTolerance,
     };
 }
@@ -53,9 +80,10 @@ export function getDynamicThresholds(currentDate: Date, monthDate: Date): Dynami
 export function getDynamicPacingStatus(
     utilization: number,
     currentDate: Date,
-    monthDate: Date
+    monthDate: Date,
+    customRange?: { from: Date; to: Date }
 ): PacingStatus {
-    const thresholds = getDynamicThresholds(currentDate, monthDate);
+    const thresholds = getDynamicThresholds(currentDate, monthDate, customRange);
 
     // Critical: Outside warning range
     if (utilization < thresholds.warningMin || utilization > thresholds.warningMax) {
@@ -81,7 +109,7 @@ export function getPacingStatusLabel(status: PacingStatus): string {
         case "warning":
             return "Atenção";
         case "success":
-            return "No Ritmo";
+            return "Dentro do Ritmo";
     }
 }
 

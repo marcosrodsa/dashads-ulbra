@@ -29,6 +29,7 @@ interface InvestmentTreeTableProps {
     data: TreeDataRow[];
     onViewWeekly: (node: TreeNode) => void;
     monthDate: Date; // Month being analyzed for dynamic pacing
+    dateRange?: { from: Date; to: Date };
 }
 
 type NodeStatus = "success" | "warning" | "error";
@@ -67,7 +68,7 @@ function pct(v: number) {
     return new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(v);
 }
 
-export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: InvestmentTreeTableProps) {
+export function InvestmentTreeTable({ data, onViewWeekly, monthDate, dateRange }: InvestmentTreeTableProps) {
     const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
 
     const toggle = (id: string) => {
@@ -215,7 +216,7 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
                             leads: 0,
                             children: [],
                             isLeaf: false,
-                            filters: { unit: unitLabel }
+                            filters: { unit: unitLabel, funnel: "conversion", isEad: false }
                         });
                     }
                     const uNode = unitMap.get(unitLabel)!;
@@ -238,7 +239,7 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
                             leads: 0,
                             children: [],
                             isLeaf: false,
-                            filters: { unit: unitLabel, course: courseLabel }
+                            filters: { unit: unitLabel, course: courseLabel, funnel: "conversion", isEad: false }
                         };
                         uNode.children.push(courseNode);
                     }
@@ -258,7 +259,7 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
                             leads: 0,
                             children: [],
                             isLeaf: true,
-                            filters: { unit: unitLabel, course: courseLabel, platform }
+                            filters: { unit: unitLabel, course: courseLabel, platform, funnel: "conversion", isEad: false }
                         };
                         courseNode.children.push(platNode);
                     }
@@ -300,7 +301,7 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
 
         // Dynamic Status Logic based on month progress
         const currentDate = new Date();
-        const status: PacingStatus = getDynamicPacingStatus(utilization, currentDate, monthDate);
+        const status: PacingStatus = getDynamicPacingStatus(utilization, currentDate, monthDate, dateRange);
 
         const statusColor = status === "error" ? "text-red-500" : status === "warning" ? "text-yellow-500" : "text-emerald-500";
         const statusLabel = getPacingStatusLabel(status);
@@ -379,7 +380,7 @@ export function InvestmentTreeTable({ data, onViewWeekly, monthDate }: Investmen
                                         <div className="space-y-1 text-xs">
                                             <p className="font-semibold">Status: {statusLabel}</p>
                                             <p>Utilização: {pct(utilization)}</p>
-                                            <p>Faixa ideal: {formatExpectedRange(getDynamicThresholds(new Date(), monthDate))}</p>
+                                            <p>Faixa ideal: {formatExpectedRange(getDynamicThresholds(new Date(), monthDate, dateRange))}</p>
                                             <p className="text-muted-foreground">
                                                 {status === "error" && "Fora da margem aceitável para o dia atual."}
                                                 {status === "warning" && "Próximo aos limites, requer atenção."}
