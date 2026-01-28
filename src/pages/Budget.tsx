@@ -421,13 +421,12 @@ export default function BudgetPage() {
       const courseAgg = new Map<string, Agg>(); // key: unit||course
       const platformAgg = new Map<string, Agg>(); // key: unit||course||platform
 
+      // Pass 1: Budget from Weekly Data
       for (const r of (weeklyRows ?? []) as WeeklyViewRow[]) {
         const unit = labelOr(r.unidade, "(Sem unidade)");
         const platform = labelOr(r.plataforma, "(Sem plataforma)");
         const course = labelOr(r.curso, "(Sem curso)");
-
         const budget = safeNumber(r.orcamento_semanal);
-        const spend = safeNumber(r.gasto_real);
 
         const uKey = unit;
         const cKey = `${unit}||${course}`;
@@ -435,18 +434,36 @@ export default function BudgetPage() {
 
         const u = unitAgg.get(uKey) ?? { budget: 0, spend: 0 };
         u.budget += budget;
-        u.spend += spend;
         unitAgg.set(uKey, u);
 
         const c = courseAgg.get(cKey) ?? { budget: 0, spend: 0 };
         c.budget += budget;
-        c.spend += spend;
         courseAgg.set(cKey, c);
 
         const p = platformAgg.get(pKey) ?? { budget: 0, spend: 0 };
         p.budget += budget;
-        p.spend += spend;
         platformAgg.set(pKey, p);
+      }
+
+      // Pass 2: Spend from Daily Data (Precision)
+      for (const r of (dailyRows ?? [])) {
+        const unit = labelOr(r[viewUnitCol], "(Sem unidade)");
+        const platform = labelOr(r[viewPlatformCol], "(Sem plataforma)");
+        const course = labelOr(r[viewCourseCol], "(Sem curso)");
+        const spend = safeNumber(r[viewSpendCol]);
+
+        const uKey = unit;
+        const cKey = `${unit}||${course}`;
+        const pKey = `${unit}||${course}||${platform}`;
+
+        // Ensure nodes exist even if no budget (Pass 1 might have missed them if spend-only)
+        if (!unitAgg.has(uKey)) unitAgg.set(uKey, { budget: 0, spend: 0 });
+        if (!courseAgg.has(cKey)) courseAgg.set(cKey, { budget: 0, spend: 0 });
+        if (!platformAgg.has(pKey)) platformAgg.set(pKey, { budget: 0, spend: 0 });
+
+        unitAgg.get(uKey)!.spend += spend;
+        courseAgg.get(cKey)!.spend += spend;
+        platformAgg.get(pKey)!.spend += spend;
       }
 
       const investmentMatrix: InvestmentMatrixUnitGroup[] = Array.from(unitAgg.entries())
