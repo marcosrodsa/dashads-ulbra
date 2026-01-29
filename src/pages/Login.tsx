@@ -64,15 +64,29 @@ export default function LoginPage() {
                 if (error) throw error;
 
                 let name = data.user?.user_metadata?.full_name || "";
+                console.log("Login: metadata name:", name);
 
                 // Se o nome não estiver no metadata, tenta buscar rápido no banco
                 if (!name && data.user?.id) {
-                    const { data: profile } = await client
+                    console.log("Login: fetching profile for", data.user.id);
+                    const { data: profiles, error: profileError } = await client
                         .from("profiles")
                         .select("full_name")
                         .eq("id", data.user.id)
-                        .maybeSingle();
-                    if (profile?.full_name) name = profile.full_name;
+                        .limit(1);
+
+                    if (profileError) console.error("Login: profile fetch error:", profileError);
+                    console.log("Login: profile data returned:", profiles);
+
+                    if (profiles?.[0]?.full_name) {
+                        name = profiles[0].full_name;
+                        console.log("Login: name found in DB:", name);
+                    }
+                }
+
+                // Último recurso: usa o prefixo do email
+                if (!name && email) {
+                    name = email.split('@')[0];
                 }
 
                 const greeting = name ? `Boas-vindas, ${name.split(" ")[0]}!` : "Boas-vindas!";

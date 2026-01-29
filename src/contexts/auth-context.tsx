@@ -23,7 +23,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .from("profiles")
                 .select("role, full_name")
                 .eq("id", userId)
-                .maybeSingle();
+                .limit(1);
+
+            const profile = data?.[0];
 
             if (error) {
                 // Silencie erros de 404 e AbortError
@@ -36,10 +38,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (error.code !== 'PGRST116' && !isAbort) {
                     console.error("Error fetching profile:", error);
                 }
-                setRole("viewer");
             } else {
-                setRole(data?.role as UserRole);
-                if (data?.full_name) setFullName(data.full_name);
+                console.log("AuthProvider: Profile found:", profile);
+                setRole(profile?.role as UserRole || "viewer");
+                if (profile?.full_name) {
+                    console.log("AuthProvider: Setting full name:", profile.full_name);
+                    setFullName(profile.full_name);
+                }
             }
         } catch (err: any) {
             const errString = String(err).toLowerCase();
