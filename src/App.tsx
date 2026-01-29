@@ -13,6 +13,8 @@ import ResetPasswordPage from "./pages/ResetPassword";
 import { AuthProvider } from "./contexts/auth-context";
 import { ProtectedRoute } from "./components/app/ProtectedRoute";
 import { AppLayout } from "./components/app/AppLayout";
+import TrackingTagsPage from "./pages/cadastros/TrackingTagsPage";
+import { TrackingScriptsProvider } from "./components/analytics/TrackingScriptsProvider";
 
 const queryClient = new QueryClient();
 
@@ -22,45 +24,56 @@ const App = () => (
       <AuthProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/reset-password" element={<ResetPasswordPage />} />
-            <Route
-              element={
-                <ProtectedRoute>
-                  <AppLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="/" element={<Navigate to="/budget" replace />} />
-              <Route path="/budget" element={<BudgetPage />} />
-              <Route path="/performance" element={<PerformancePage />} />
+        <TrackingScriptsProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route
-                path="/classificador"
                 element={
-                  <ProtectedRoute requireAdmin>
-                    <CampaignClassifierPage />
+                  <ProtectedRoute>
+                    <AppLayout />
                   </ProtectedRoute>
                 }
-              />
-              <Route
-                path="/cadastros"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <RegistriesPage />
-                  </ProtectedRoute>
-                }
-              />
-            </Route>
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<ProtectedRoute><NotFound /></ProtectedRoute>} />
-          </Routes>
-        </BrowserRouter>
+              >
+                <Route path="/" element={<Navigate to="/budget" replace />} />
+                <Route path="/budget" element={<BudgetPage />} />
+                <Route path="/performance" element={<PerformancePage />} />
+                <Route
+                  path="/classificador"
+                  element={
+                    <ProtectedRoute requireAdmin>
+                      <CampaignClassifierPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/cadastros"
+                  element={
+                    <ProtectedRoute requireAdmin>
+                      <RegistriesPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/cadastros/tags"
+                  element={
+                    <ProtectedRoute requireAdmin>
+                      <TrackingTagsPage />
+                    </ProtectedRoute>
+                  }
+                />
+              </Route>
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<ProtectedRoute><NotFound /></ProtectedRoute>} />
+            </Routes>
+          </BrowserRouter>
+        </TrackingScriptsProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );
 
 export default App;
+
 
