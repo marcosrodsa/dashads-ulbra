@@ -151,50 +151,57 @@ export default function UsersManagementPage() {
                                     </TableCell>
                                     <TableCell className="text-right">
                                         <div className="flex justify-end gap-2">
-                                            {!user.approved ? (
-                                                <Button
-                                                    size="sm"
-                                                    className="bg-green-600 hover:bg-green-500 text-white"
-                                                    onClick={() => mutationToggleApproval.mutate({ id: user.id, approved: true })}
-                                                >
-                                                    <Check className="mr-1 h-3 w-3" /> Aprovar
-                                                </Button>
+                                            {/* Prevent actions on Super Admin */}
+                                            {user.email === 'marcos.rodsa@gmail.com' ? (
+                                                <Badge variant="outline" className="ml-auto border-purple-200 text-purple-700 bg-purple-50">Super Admin</Badge>
                                             ) : (
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    className="text-red-500 hover:bg-red-50"
-                                                    onClick={() => {
-                                                        if (confirm("Bloquear acesso deste usuário?"))
-                                                            mutationToggleApproval.mutate({ id: user.id, approved: false })
-                                                    }}
-                                                >
-                                                    <X className="mr-1 h-3 w-3" /> Bloquear
-                                                </Button>
-                                            )}
+                                                <>
+                                                    {!user.approved ? (
+                                                        <Button
+                                                            size="sm"
+                                                            className="bg-green-600 hover:bg-green-500 text-white"
+                                                            onClick={() => mutationToggleApproval.mutate({ id: user.id, approved: true })}
+                                                        >
+                                                            <Check className="mr-1 h-3 w-3" /> Aprovar
+                                                        </Button>
+                                                    ) : (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="text-red-500 hover:bg-red-50"
+                                                            onClick={() => {
+                                                                if (confirm("Bloquear acesso deste usuário?"))
+                                                                    mutationToggleApproval.mutate({ id: user.id, approved: false })
+                                                            }}
+                                                        >
+                                                            <X className="mr-1 h-3 w-3" /> Bloquear
+                                                        </Button>
+                                                    )}
 
-                                            {user.role !== "admin" ? (
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => {
-                                                        if (confirm("Tornar este usuário Administrador?"))
-                                                            mutationChangeRole.mutate({ id: user.id, role: "admin" })
-                                                    }}
-                                                >
-                                                    <Shield className="mr-1 h-3 w-3" /> Promover
-                                                </Button>
-                                            ) : (
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => {
-                                                        if (confirm("Rebaixar para Visualizador?"))
-                                                            mutationChangeRole.mutate({ id: user.id, role: "viewer" })
-                                                    }}
-                                                >
-                                                    <User className="mr-1 h-3 w-3" /> Rebaixar
-                                                </Button>
+                                                    {user.role !== "admin" ? (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() => {
+                                                                if (confirm("Tornar este usuário Administrador?"))
+                                                                    mutationChangeRole.mutate({ id: user.id, role: "admin" })
+                                                            }}
+                                                        >
+                                                            <Shield className="mr-1 h-3 w-3" /> Promover
+                                                        </Button>
+                                                    ) : (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() => {
+                                                                if (confirm("Rebaixar para Visualizador?"))
+                                                                    mutationChangeRole.mutate({ id: user.id, role: "viewer" })
+                                                            }}
+                                                        >
+                                                            <User className="mr-1 h-3 w-3" /> Rebaixar
+                                                        </Button>
+                                                    )}
+                                                </>
                                             )}
                                         </div>
                                     </TableCell>
