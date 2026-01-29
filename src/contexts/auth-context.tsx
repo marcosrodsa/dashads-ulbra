@@ -23,7 +23,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .from("profiles")
                 .select("role, full_name")
                 .eq("id", userId)
-                .single();
+                .maybeSingle();
 
             if (error) {
                 // Silencie erros de 404 e AbortError

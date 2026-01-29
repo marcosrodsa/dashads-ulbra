@@ -60,9 +60,13 @@ export default function LoginPage() {
                 toast({ title: "Cadastro realizado!", description: "Verifique seu email (se aplicável) ou tente fazer login." });
                 setIsSignUp(false);
             } else {
-                const { error } = await client.auth.signInWithPassword({ email, password });
+                const { data, error } = await client.auth.signInWithPassword({ email, password });
                 if (error) throw error;
-                toast({ title: "Boas-vindas!", description: "Login realizado com sucesso." });
+
+                const name = data.user?.user_metadata?.full_name || "";
+                const greeting = name ? `Boas-vindas, ${name.split(" ")[0]}!` : "Boas-vindas!";
+
+                toast({ title: greeting, description: "Login realizado com sucesso." });
                 navigate("/");
             }
         } catch (error: any) {
