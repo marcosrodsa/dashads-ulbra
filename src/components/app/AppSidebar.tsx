@@ -46,16 +46,13 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className={collapsed ? "w-14" : "w-80"}>
       <SidebarHeader className="gap-2 relative">
-        <div className="flex items-center justify-between px-2 py-4">
+        <div className={`flex items-center justify-between py-4 ${collapsed ? 'px-0 justify-center' : 'px-2'}`}>
           {!collapsed ? (
             <>
               <img src="/university-logo.png" alt="Logo" className="h-12 w-auto object-contain" />
-              <SidebarTrigger />
             </>
           ) : (
-            <div className="flex w-full justify-center">
-              <SidebarTrigger />
-            </div>
+            <img src="/ulbra-logo-icon.png" alt="Logo" className="w-10 h-10 object-contain" />
           )}
         </div>
       </SidebarHeader>
