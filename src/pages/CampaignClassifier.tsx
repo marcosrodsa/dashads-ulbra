@@ -6,6 +6,8 @@ import { FcGoogle } from "react-icons/fc";
 import { Pencil, Search, Tag, X, ArrowUpDown, MessageSquareText } from "lucide-react";
 
 import { getSupabaseClient } from "@/integrations/supabase/client";
+import { resolvePerformanceDailyColumns } from "@/integrations/supabase/performanceSchema";
+import { resolvePerformanceMetricColumns } from "@/integrations/supabase/performanceMetricsSchema";
 import type {
     AggregatedCampaign,
     Unit,
@@ -146,13 +148,27 @@ export default function CampaignClassifierPage() {
             );
 
             // Step 2: Get aggregated campaigns from fact_ads_performance_daily
-            // Using a raw RPC call or direct query since we need aggregation
+            // Using dynamic column resolution to avoid 400 errors
+            const perfCols = await resolvePerformanceDailyColumns(client as SupabaseClient);
+            const metricCols = await resolvePerformanceMetricColumns(client as SupabaseClient);
+
+            const { dateCol, businessUnitCol, campaignIdCol } = perfCols;
+            const { spendCol, platformCol: platCol } = metricCols;
+
+            const selectCols = [
+                platCol || "platform",
+                campaignIdCol,
+                businessUnitCol,
+                spendCol
+            ].filter(Boolean);
+
             let query = (client as SupabaseClient)
                 .from("fact_ads_performance_daily")
-                .select("platform, campaign_id, campaign_name, spend");
+                .select(selectCols.join(", "))
+                .limit(100000); // Fetch enough history to find all campaigns
 
-            if (platform !== "all") {
-                query = query.eq("platform", platform);
+            if (platform !== "all" && platCol) {
+                query = query.eq(platCol, platform);
             }
 
             const { data: rawData, error: rawError } = await query;
@@ -165,15 +181,20 @@ export default function CampaignClassifierPage() {
             // Aggregate by platform + campaign_id
             const aggregated = new Map<string, AggregatedCampaign>();
 
-            (rawData || []).forEach((row) => {
-                const key = `${row.platform}|${row.campaign_id}`;
+            (rawData || []).forEach((row: any) => {
+                const rowPlatform = row[platCol || "platform"];
+                const rowCampaignId = row[campaignIdCol];
+                const rowCampaignName = row[businessUnitCol];
+                const rowSpend = Number(row[spendCol] || 0);
+
+                const key = `${rowPlatform}|${rowCampaignId}`;
                 const mapping = mappingsMap.get(key);
 
                 if (!aggregated.has(key)) {
                     aggregated.set(key, {
-                        platform: row.platform,
-                        campaign_id: row.campaign_id,
-                        campaign_name: row.campaign_name,
+                        platform: rowPlatform,
+                        campaign_id: rowCampaignId,
+                        campaign_name: rowCampaignName,
                         total_spend: 0,
                         mapping_id: mapping?.id || null,
                         unit_id: mapping?.unit_id || null, // from view
@@ -186,7 +207,7 @@ export default function CampaignClassifierPage() {
                 }
 
                 const entry = aggregated.get(key)!;
-                entry.total_spend += Number(row.spend || 0);
+                entry.total_spend += rowSpend;
             });
 
             // Enrich with unit/course names (only for unmapped items or fallbacks if view failed)

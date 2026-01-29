@@ -39,10 +39,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     console.error("Error fetching profile:", error);
                 }
             } else {
-                console.log("AuthProvider: Profile found:", profile);
                 setRole(profile?.role as UserRole || "viewer");
                 if (profile?.full_name) {
-                    console.log("AuthProvider: Setting full name:", profile.full_name);
                     setFullName(profile.full_name);
                 }
             }
@@ -66,7 +64,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Check for session immediately
         client.auth.getSession().then(({ data: { session } }) => {
             if (session) {
-                console.log("AuthProvider: Initial session found", session.user.id);
                 setSession(session);
                 setUser(session.user);
                 if (session.user.user_metadata?.full_name) {
@@ -110,7 +107,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setIsLoading(true);
             if (client) {
                 await client.auth.signOut();
-                console.log("SignOut completed via Supabase");
             }
         } catch (error: any) {
             const errString = String(error).toLowerCase();
@@ -132,7 +128,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const refreshProfile = async () => {
         if (user) {
-            console.log("Refreshing profile for:", user.id);
             await fetchProfile(user.id);
         }
     };

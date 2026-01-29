@@ -13,7 +13,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
     const location = useLocation();
 
     if (isLoading) {
-        console.log("ProtectedRoute: isLoading is true");
         return (
             <div className="min-h-svh w-full flex items-center justify-center bg-slate-950">
                 <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
@@ -21,10 +20,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
         );
     }
 
-    console.log("ProtectedRoute: State", { hasUser: !!user, role });
-
     if (!user) {
-        console.log("ProtectedRoute: No user, redirecting to /login from", location.pathname);
         // Redirect to login but save the current location
         return <Navigate to="/login" state={{ from: location }} replace />;
     }

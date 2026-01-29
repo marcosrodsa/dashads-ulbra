@@ -64,11 +64,9 @@ export default function LoginPage() {
                 if (error) throw error;
 
                 let name = data.user?.user_metadata?.full_name || "";
-                console.log("Login: metadata name:", name);
 
                 // Se o nome não estiver no metadata, tenta buscar rápido no banco
                 if (!name && data.user?.id) {
-                    console.log("Login: fetching profile for", data.user.id);
                     const { data: profiles, error: profileError } = await client
                         .from("profiles")
                         .select("full_name")

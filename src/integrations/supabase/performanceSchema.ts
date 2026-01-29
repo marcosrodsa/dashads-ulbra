@@ -6,6 +6,7 @@ export type PerformanceDailyColumns = {
   dateCol: string;
   businessUnitCol: string;
   courseCol: string;
+  campaignIdCol: string;
 };
 
 let _cached: PerformanceDailyColumns | null = null;
@@ -26,7 +27,7 @@ async function firstWorkingColumn(client: SupabaseClient, candidates: string[]):
 
   throw new Error(
     `Não consegui detectar colunas na tabela ${TABLE}. Testados: ${candidates.join(", ")}. ` +
-      `Confirme os nomes das colunas (data, unidade, curso) e me diga quais são.`
+    `Confirme os nomes das colunas (data, unidade, curso) e me diga quais são.`
   );
 }
 
@@ -87,6 +88,13 @@ export async function resolvePerformanceDailyColumns(
     "offer",
   ]);
 
-  _cached = { dateCol, businessUnitCol, courseCol };
+  const campaignIdCol = await firstWorkingColumn(client, [
+    "campaign_id",
+    "id",
+    "external_id",
+    "campaignid",
+  ]);
+
+  _cached = { dateCol, businessUnitCol, courseCol, campaignIdCol };
   return _cached;
 }
