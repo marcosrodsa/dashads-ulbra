@@ -240,6 +240,33 @@ export function PerformanceTable({ data }: PerformanceTableProps) {
                         })
                     )}
                 </TableBody>
+                {data.length > 0 && (
+                    <TableFooter className="bg-slate-100 font-bold border-t-2">
+                        <TableRow>
+                            <TableCell colSpan={3} className="text-left pl-4">Totais</TableCell>
+                            <TableCell className="text-right tabular-nums">
+                                {brl(data.reduce((acc, row) => acc + row.spend, 0))}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                                {number(data.reduce((acc, row) => acc + row.leads, 0))}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                                {(() => {
+                                    const tSpend = data.reduce((acc, row) => acc + row.spend, 0);
+                                    const tLeads = data.reduce((acc, row) => acc + row.leads, 0);
+                                    return tLeads > 0 ? brl(tSpend / tLeads) : "-";
+                                })()}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-muted-foreground">
+                                {(() => {
+                                    const tClicks = data.reduce((acc, row) => acc + row.clicks, 0);
+                                    const tImpr = data.reduce((acc, row) => acc + row.impressions, 0);
+                                    return tImpr > 0 ? pct(tClicks / tImpr) : "-";
+                                })()}
+                            </TableCell>
+                        </TableRow>
+                    </TableFooter>
+                )}
             </Table>
 
             <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
