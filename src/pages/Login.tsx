@@ -69,15 +69,28 @@ export default function LoginPage() {
                 if (!name && data.user?.id) {
                     const { data: profiles, error: profileError } = await client
                         .from("profiles")
-                        .select("full_name")
+                        .select("full_name, approved")
                         .eq("id", data.user.id)
                         .limit(1);
 
                     if (profileError) console.error("Login: profile fetch error:", profileError);
                     console.log("Login: profile data returned:", profiles);
 
-                    if (profiles?.[0]?.full_name) {
-                        name = profiles[0].full_name;
+                    const profile = profiles?.[0];
+
+                    if (profile?.approved === false) {
+                        await client.auth.signOut();
+                        toast({
+                            title: "Acesso Pendente",
+                            description: "Seu cadastro aguarda aprovação do administrador.",
+                            variant: "destructive"
+                        });
+                        setIsLoading(false);
+                        return;
+                    }
+
+                    if (profile?.full_name) {
+                        name = profile.full_name;
                         console.log("Login: name found in DB:", name);
                     }
                 }

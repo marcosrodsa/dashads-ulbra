@@ -8,6 +8,7 @@ export interface AuthContextType {
     session: Session | null;
     role: UserRole;
     fullName: string | null;
+    approved: boolean | null;
     isLoading: boolean;
     signOut: () => Promise<void>;
     refreshProfile: () => Promise<void>;

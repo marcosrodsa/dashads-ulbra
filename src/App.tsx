@@ -14,6 +14,7 @@ import { AuthProvider } from "./contexts/auth-context";
 import { ProtectedRoute } from "./components/app/ProtectedRoute";
 import { AppLayout } from "./components/app/AppLayout";
 import TrackingTagsPage from "./pages/cadastros/TrackingTagsPage";
+import UsersManagementPage from "./pages/cadastros/UsersManagementPage";
 import { TrackingScriptsProvider } from "./components/analytics/TrackingScriptsProvider";
 
 const queryClient = new QueryClient();
@@ -60,6 +61,14 @@ const App = () => (
                   element={
                     <ProtectedRoute requireAdmin>
                       <TrackingTagsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/cadastros/usuarios"
+                  element={
+                    <ProtectedRoute requireAdmin>
+                      <UsersManagementPage />
                     </ProtectedRoute>
                   }
                 />

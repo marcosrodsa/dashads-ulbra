@@ -8,6 +8,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [session, setSession] = useState<Session | null>(null);
     const [role, setRole] = useState<UserRole>(null);
     const [fullName, setFullName] = useState<string | null>(null);
+    const [approved, setApproved] = useState<boolean | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
     const client = getSupabaseClient();
@@ -21,7 +22,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             const { data, error } = await client
                 .from("profiles")
-                .select("role, full_name")
+                .select("role, full_name, approved")
                 .eq("id", userId)
                 .limit(1);
 
@@ -43,6 +44,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (profile?.full_name) {
                     setFullName(profile.full_name);
                 }
+                setApproved(profile?.approved ?? false); // Default false for safety, or check logic
             }
         } catch (err: any) {
             const errString = String(err).toLowerCase();
@@ -93,6 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else {
                 setRole(null);
                 setFullName(null);
+                setApproved(null);
             }
             setIsLoading(false);
         });
@@ -120,6 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setSession(null);
             setRole(null);
             setFullName(null);
+            setApproved(null);
             setIsLoading(false);
             // Optional: Clear local storage if using it for persistence beyond SDK
             localStorage.removeItem('supabase.auth.token');
@@ -133,7 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ user, session, role, fullName, isLoading, signOut, refreshProfile }}>
+        <AuthContext.Provider value={{ user, session, role, fullName, approved, isLoading, signOut, refreshProfile }}>
             {children}
         </AuthContext.Provider>
     );
