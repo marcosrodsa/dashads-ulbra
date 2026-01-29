@@ -63,7 +63,18 @@ export default function LoginPage() {
                 const { data, error } = await client.auth.signInWithPassword({ email, password });
                 if (error) throw error;
 
-                const name = data.user?.user_metadata?.full_name || "";
+                let name = data.user?.user_metadata?.full_name || "";
+
+                // Se o nome não estiver no metadata, tenta buscar rápido no banco
+                if (!name && data.user?.id) {
+                    const { data: profile } = await client
+                        .from("profiles")
+                        .select("full_name")
+                        .eq("id", data.user.id)
+                        .maybeSingle();
+                    if (profile?.full_name) name = profile.full_name;
+                }
+
                 const greeting = name ? `Boas-vindas, ${name.split(" ")[0]}!` : "Boas-vindas!";
 
                 toast({ title: greeting, description: "Login realizado com sucesso." });
