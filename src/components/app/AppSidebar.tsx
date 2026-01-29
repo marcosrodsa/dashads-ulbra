@@ -1,6 +1,6 @@
 import * as React from "react";
 import { BarChart3, Gauge, Filter, Tag, Database } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { useFilters } from "@/contexts/filters-context";
 import { NavLink } from "@/components/NavLink";
@@ -19,13 +19,15 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { getSupabaseClient } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/auth-context-core";
 import { AppConfiguration } from "./AppConfiguration";
+import { LogOut } from "lucide-react";
 
 const navItems = [
   { title: "Controle de Budget", url: "/budget", icon: Gauge },
   { title: "Performance de Captação", url: "/performance", icon: BarChart3 },
-  { title: "Classificação de Campanhas", url: "/classificador", icon: Tag },
-  { title: "Cadastros", url: "/cadastros", icon: Database },
+  { title: "Classificação de Campanhas", url: "/classificador", icon: Tag, adminOnly: true },
+  { title: "Cadastros", url: "/cadastros", icon: Database, adminOnly: true },
 ];
 
 export function AppSidebar() {
@@ -33,7 +35,11 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const client = getSupabaseClient();
+  const { role, signOut } = useAuth();
   const { toggleFilters } = useFilters();
+  const navigate = useNavigate();
+
+  const filteredNavItems = navItems.filter(item => !item.adminOnly || role === "admin");
 
   return (
     <Sidebar collapsible="icon" className={collapsed ? "w-14" : "w-80"}>
@@ -57,7 +63,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Navegação</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => (
+              {filteredNavItems.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton asChild tooltip={item.title}>
                     <NavLink
@@ -77,11 +83,26 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <SidebarMenuItem>
-          <SidebarMenuButton asChild tooltip="Configurações">
-            <AppConfiguration />
-          </SidebarMenuButton>
-        </SidebarMenuItem>
+        <div className="flex flex-col gap-1 p-1">
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Configurações">
+              <AppConfiguration />
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={async () => {
+                await signOut();
+                navigate("/login", { replace: true });
+              }}
+              tooltip="Sair"
+              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            >
+              <LogOut className="size-4" />
+              <span>Sair</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </div>
 
         {!client && !collapsed && (
           <div className="mb-2 rounded border border-destructive/50 bg-destructive/10 p-2 text-[10px] text-destructive flex items-center gap-2">

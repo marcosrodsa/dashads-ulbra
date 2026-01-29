@@ -1046,7 +1046,7 @@ export default function BudgetPage() {
       {/* Filtros em destaque */}
       <DashboardFilterBar />
 
-      {error ? (
+      {error && !String(error?.message).toLowerCase().includes("abort") ? (
         <Card>
           <CardHeader>
             <CardTitle>Erro ao carregar dados</CardTitle>

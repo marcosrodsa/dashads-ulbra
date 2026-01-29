@@ -8,6 +8,10 @@ import BudgetPage from "./pages/Budget";
 import PerformancePage from "./pages/Performance";
 import CampaignClassifierPage from "./pages/CampaignClassifier";
 import RegistriesPage from "./pages/Registries";
+import LoginPage from "./pages/Login";
+import ResetPasswordPage from "./pages/ResetPassword";
+import { AuthProvider } from "./contexts/auth-context";
+import { ProtectedRoute } from "./components/app/ProtectedRoute";
 import { AppLayout } from "./components/app/AppLayout";
 
 const queryClient = new QueryClient();
@@ -15,21 +19,45 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<Navigate to="/budget" replace />} />
-            <Route path="/budget" element={<BudgetPage />} />
-            <Route path="/performance" element={<PerformancePage />} />
-            <Route path="/classificador" element={<CampaignClassifierPage />} />
-            <Route path="/cadastros" element={<RegistriesPage />} />
-          </Route>
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+      <AuthProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route
+              element={
+                <ProtectedRoute>
+                  <AppLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/" element={<Navigate to="/budget" replace />} />
+              <Route path="/budget" element={<BudgetPage />} />
+              <Route path="/performance" element={<PerformancePage />} />
+              <Route
+                path="/classificador"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <CampaignClassifierPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/cadastros"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <RegistriesPage />
+                  </ProtectedRoute>
+                }
+              />
+            </Route>
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<ProtectedRoute><NotFound /></ProtectedRoute>} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

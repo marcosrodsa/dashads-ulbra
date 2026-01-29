@@ -93,7 +93,8 @@ export default function PerformancePage() {
           cpl: 0,
           clicks: 0,
           impressions: 0,
-          ctr: 0
+          ctr: 0,
+          campaigns: []
         });
       }
       const entry = tableMap.get(key)!;
@@ -106,12 +107,30 @@ export default function PerformancePage() {
       entry.leads += leads;
       entry.clicks += clicks;
       entry.impressions += impressions;
+
+      // Descer um nível até a campanha (caso exista no retorno da query)
+      const cName = r.campaign_name || "Campanha não identificada";
+      let cEntry = entry.campaigns!.find(c => c.name === cName);
+      if (!cEntry) {
+        cEntry = { name: cName, spend: 0, leads: 0, clicks: 0, impressions: 0, cpl: 0, ctr: 0 };
+        entry.campaigns!.push(cEntry);
+      }
+      cEntry.spend += invest;
+      cEntry.leads += leads;
+      cEntry.clicks += clicks;
+      cEntry.impressions += impressions;
     });
 
     const tableRows: PerformanceRow[] = Array.from(tableMap.values()).map(r => ({
       ...r,
       cpl: r.leads > 0 ? r.spend / r.leads : 0,
-      ctr: (r.clicks && r.impressions) ? r.clicks / r.impressions : 0
+      ctr: (r.clicks && r.impressions) ? r.clicks / r.impressions : 0,
+      // Calcula métricas para cada campanha individualmente
+      campaigns: r.campaigns!.map(c => ({
+        ...c,
+        cpl: c.leads > 0 ? c.spend / c.leads : 0,
+        ctr: (c.clicks && c.impressions) ? c.clicks / c.impressions : 0
+      })).sort((a, b) => b.spend - a.spend) // Ordena por investimento no modal
     }));
 
     // KPIs Calculation (aggregated from daily)

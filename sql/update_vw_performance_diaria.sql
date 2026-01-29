@@ -1,10 +1,10 @@
-CREATE OR REPLACE VIEW vw_performance_diaria AS
+CREATE OR REPLACE VIEW vw_performance_diaria2 AS
 
 WITH raw_data AS (
     SELECT 
-        -- MUDANÇA AQUI: Mantém a data exata (ou dia)
         date::date as data_referencia, 
         platform,
+        campaign_name,
         
         -- 1. LÓGICA DE UNIDADE (Idêntica à mensal)
         CASE 
@@ -60,10 +60,11 @@ WITH raw_data AS (
 )
 
 SELECT 
-    data_referencia, -- AQUI ESTÁ A CHAVE PARA O GRÁFICO
+    data_referencia,
     unidade,
     curso,
     platform,
+    campaign_name,
     SUM(spend) as investimento,
     SUM(leads) as leads,
     SUM(clicks) as clicks,
@@ -72,5 +73,5 @@ SELECT
     CASE WHEN SUM(clicks) > 0 THEN ROUND(SUM(spend) / SUM(clicks), 2) ELSE 0 END as cpc,
     CASE WHEN SUM(impressions) > 0 THEN ROUND((SUM(clicks)::numeric / SUM(impressions)) * 100, 2) ELSE 0 END as ctr
 FROM raw_data
-GROUP BY 1, 2, 3, 4
+GROUP BY 1, 2, 3, 4, 5
 ORDER BY data_referencia DESC;

@@ -1,6 +1,16 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-let _client: SupabaseClient | null = null;
+// Singleton pattern to survive HMR and prevent multiple instances
+const globalSymbols = globalThis as any;
+const CLIENT_SYMBOL = Symbol.for("dashads.supabase.client");
+
+function getCachedClient(): SupabaseClient | null {
+  return globalSymbols[CLIENT_SYMBOL] || null;
+}
+
+function setCachedClient(client: SupabaseClient | null) {
+  globalSymbols[CLIENT_SYMBOL] = client;
+}
 
 // Configuração via env (Vite). Não mantenha fallback hardcoded neste projeto.
 // Use Secrets para definir VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.
@@ -29,7 +39,7 @@ function readLocalStorageOverride() {
   }
 }
 
-function getEnv() {
+export function getEnv() {
   const override = readLocalStorageOverride();
   if (override) return { ...override, source: "override" as const };
 
@@ -49,7 +59,7 @@ export function getSupabaseConfigSource(): SupabaseConfigSource {
 }
 
 export function resetSupabaseClient(): void {
-  _client = null;
+  setCachedClient(null);
 }
 
 /**
@@ -57,23 +67,39 @@ export function resetSupabaseClient(): void {
  * If config is missing, returns null instead of crashing the app.
  */
 export function getSupabaseClient(): SupabaseClient | null {
-  if (_client) return _client;
+  const cached = getCachedClient();
+  if (cached) return cached;
 
   const { url, anonKey } = getEnv();
 
   const finalUrl = url.trimmed;
   const finalAnonKey = anonKey.trimmed;
 
-  if (!finalUrl || !finalAnonKey) return null;
+  const cachedCheck = getCachedClient();
+  if (cachedCheck) return cachedCheck;
 
   try {
-    _client = createClient(finalUrl, finalAnonKey);
-    return _client;
+    const client = createClient(finalUrl, finalAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce'
+      }
+    });
+    setCachedClient(client);
+    return client;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[supabase] createClient failed", e);
     return null;
   }
+}
+
+// Helper for Console Debugging
+// Usage: await window.supabase.auth.getSession()
+if (typeof window !== "undefined") {
+  (window as any).supabase = getSupabaseClient();
 }
 
 // Central place to adjust if your daily table uses a different column name.
