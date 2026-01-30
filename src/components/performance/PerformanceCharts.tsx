@@ -107,6 +107,112 @@ export function CplEvolutionChart({ data }: CplEvolutionChartProps) {
     );
 }
 
+// --- CPL by Platform Chart ---
+
+interface CplPlatformData {
+    platform: string;
+    cpl: number;
+    leads: number;
+    spend: number;
+}
+
+interface CplByPlatformChartProps {
+    data: CplPlatformData[];
+}
+
+export function CplByPlatformChart({ data }: CplByPlatformChartProps) {
+    return (
+        <Card className="col-span-1">
+            <CardHeader>
+                <CardTitle>CPL por Plataforma</CardTitle>
+                <CardDescription>
+                    Comparativo de CPL entre Meta e Google.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={data} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis
+                                dataKey="platform"
+                                fontSize={12}
+                                tickLine={false}
+                                axisLine={false}
+                                tickFormatter={(val) => val.charAt(0) + val.slice(1).toLowerCase()}
+                            />
+                            <YAxis
+                                fontSize={12}
+                                tickLine={false}
+                                axisLine={false}
+                                tickFormatter={(v) => `R$${v}`}
+                            />
+                            <Tooltip
+                                content={({ active, payload }) => {
+                                    if (active && payload && payload.length) {
+                                        const data = payload[0].payload as CplPlatformData;
+                                        return (
+                                            <div className="rounded-lg border bg-background p-2 shadow-sm">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[0.70rem] uppercase text-muted-foreground">
+                                                            Plataforma
+                                                        </span>
+                                                        <span className="font-bold text-muted-foreground">
+                                                            {data.platform}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[0.70rem] uppercase text-muted-foreground">
+                                                            CPL
+                                                        </span>
+                                                        <span className="font-bold">
+                                                            {brl(data.cpl)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[0.70rem] uppercase text-muted-foreground">
+                                                            Leads
+                                                        </span>
+                                                        <span className="font-bold text-muted-foreground">
+                                                            {number(data.leads)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[0.70rem] uppercase text-muted-foreground">
+                                                            Investimento
+                                                        </span>
+                                                        <span className="font-bold text-muted-foreground">
+                                                            {brl(data.spend)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                }}
+                            />
+                            <Bar dataKey="cpl" radius={[4, 4, 0, 0]} maxBarSize={60}>
+                                {data.map((entry, index) => {
+                                    const plat = (entry.platform || "").toUpperCase();
+                                    let color = "#8884d8"; // Default
+                                    if (plat.includes("META") || plat.includes("FACEBOOK") || plat.includes("INSTAGRAM")) {
+                                        color = "#8b5cf6"; // Violet-500
+                                    } else if (plat.includes("GOOGLE") || plat.includes("YOUTUBE") || plat.includes("SEARCH")) {
+                                        color = "#10b981"; // Emerald-500
+                                    }
+                                    return <Cell key={`cell-${index}`} fill={color} />;
+                                })}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
 // --- Donut Chart ---
 
 interface ShareData {
@@ -169,12 +275,39 @@ export function LeadsShareChart({ data }: LeadsShareChartProps) {
                                 ))}
                             </Pie>
                             <Tooltip
-                                formatter={(value: any, name: any, props: any) => {
-                                    const percent = total > 0 ? (Number(value) / total) : 0;
-                                    return [
-                                        `${number(Number(value))} (${(percent * 100).toFixed(1)}%)`,
-                                        name
-                                    ];
+                                content={({ active, payload }) => {
+                                    if (active && payload && payload.length) {
+                                        const data = payload[0];
+                                        const percent = total > 0 ? (Number(data.value) / total) : 0;
+                                        return (
+                                            <div className="rounded-lg border bg-background p-2 shadow-sm">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div className="flex flex-col col-span-2 border-b pb-1 mb-1">
+                                                        <span className="font-bold text-foreground">
+                                                            {data.name}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[0.70rem] uppercase text-muted-foreground">
+                                                            Leads
+                                                        </span>
+                                                        <span className="font-bold text-muted-foreground">
+                                                            {number(Number(data.value))}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[0.70rem] uppercase text-muted-foreground">
+                                                            Share
+                                                        </span>
+                                                        <span className="font-bold text-muted-foreground">
+                                                            {(percent * 100).toFixed(1)}%
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
                                 }}
                             />
                             <Legend
@@ -186,32 +319,13 @@ export function LeadsShareChart({ data }: LeadsShareChartProps) {
                                     const percent = total > 0 ? (payload.value / total) : 0;
                                     return (
                                         <span className="text-xs text-muted-foreground ml-2 mr-4">
-                                            {value} ({(percent * 100).toFixed(0)}%)
+                                            {value} {(percent * 100).toFixed(0)}%
                                         </span>
                                     );
                                 }}
                             />
                             {/* Central Label */}
-                            <text
-                                x="50%"
-                                y="50%"
-                                dy={-10}
-                                textAnchor="middle"
-                                dominantBaseline="middle"
-                                className="fill-foreground text-2xl font-bold"
-                            >
-                                {total.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
-                            </text>
-                            <text
-                                x="50%"
-                                y="50%"
-                                dy={24}
-                                textAnchor="middle"
-                                dominantBaseline="middle"
-                                className="fill-muted-foreground text-xs"
-                            >
-                                Leads
-                            </text>
+
                         </PieChart>
                     </ResponsiveContainer>
                 </div>

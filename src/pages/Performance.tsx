@@ -8,7 +8,7 @@ import { getSupabaseClient } from "@/integrations/supabase/client";
 
 import { PerformanceFilterBar } from "@/components/performance/PerformanceFilterBar";
 import { PerformanceKpiGrid, type PerformanceKpis } from "@/components/performance/PerformanceKpiGrid";
-import { CplEvolutionChart, LeadsShareChart } from "@/components/performance/PerformanceCharts";
+import { CplEvolutionChart, LeadsShareChart, CplByPlatformChart } from "@/components/performance/PerformanceCharts";
 import { PerformanceTable, type PerformanceRow } from "@/components/performance/PerformanceTable";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -46,7 +46,7 @@ export default function PerformancePage() {
   });
 
   // --- Transform Data ---
-  const { kpis, tableRows, evolutionData, shareData } = React.useMemo(() => {
+  const { kpis, tableRows, evolutionData, shareData, cplData } = React.useMemo(() => {
     const rows = dailyQuery.data ?? [];
 
     // 1. KPIs Agregados
@@ -174,7 +174,27 @@ export default function PerformancePage() {
     });
     const shareData = Array.from(shareMap.entries()).map(([name, value]) => ({ name, value }));
 
-    return { kpis, tableRows, evolutionData, shareData };
+
+
+    // 5. CPL By Platform (New Chart)
+    const cplMap = new Map<string, { leads: number; spend: number }>();
+
+    activeRows.forEach((r: any) => {
+      const plat = (r.platform || "Outros").toUpperCase();
+      const curr = cplMap.get(plat) ?? { leads: 0, spend: 0 };
+      curr.leads += Number(r.leads || 0);
+      curr.spend += Number(r.investimento || r.spend || 0);
+      cplMap.set(plat, curr);
+    });
+
+    const cplData = Array.from(cplMap.entries()).map(([platform, v]) => ({
+      platform,
+      leads: v.leads,
+      spend: v.spend,
+      cpl: v.leads > 0 ? v.spend / v.leads : 0
+    }));
+
+    return { kpis, tableRows, evolutionData, shareData, cplData };
   }, [dailyQuery.data, filters.hideBranding]);
 
   if (dailyQuery.error) {
@@ -209,8 +229,13 @@ export default function PerformancePage() {
         <>
           <PerformanceKpiGrid data={kpis} />
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             <LeadsShareChart data={shareData} />
+            {dailyQuery.isLoading ? (
+              <Skeleton className="h-[300px] w-full" />
+            ) : (
+              <CplByPlatformChart data={cplData} />
+            )}
             {dailyQuery.isLoading ? (
               <Skeleton className="h-[300px] w-full" />
             ) : (
