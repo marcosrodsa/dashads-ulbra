@@ -13,6 +13,7 @@ import ResetPasswordPage from "./pages/ResetPassword";
 import { AuthProvider } from "./contexts/auth-context";
 import { ProtectedRoute } from "./components/app/ProtectedRoute";
 import { AppLayout } from "./components/app/AppLayout";
+import SystemStatusPage from "./pages/SystemStatus";
 import TrackingTagsPage from "./pages/cadastros/TrackingTagsPage";
 import UsersManagementPage from "./pages/cadastros/UsersManagementPage";
 import { TrackingScriptsProvider } from "./components/analytics/TrackingScriptsProvider";
@@ -40,6 +41,7 @@ const App = () => (
                 <Route path="/" element={<Navigate to="/budget" replace />} />
                 <Route path="/budget" element={<BudgetPage />} />
                 <Route path="/performance" element={<PerformancePage />} />
+                <Route path="/status" element={<SystemStatusPage />} />
                 <Route
                   path="/classificador"
                   element={
