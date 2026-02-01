@@ -1,7 +1,13 @@
-import * as React from "react";
-import { format } from "date-fns";
+
 import { useQuery } from "@tanstack/react-query";
-import { getSupabaseClient } from "@/integrations/supabase/client";
+import { format } from "date-fns";
+import { Activity, AlertOctagon, CheckCircle2, AlertTriangle, Clock, RotateCcw, Database, DollarSign, RefreshCcw } from "lucide-react";
+import * as React from "react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
     Table,
     TableBody,
@@ -10,16 +16,30 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { RefreshCcw, AlertOctagon, CheckCircle2, Activity, DollarSign, Database, AlertTriangle, Clock } from "lucide-react";
-import { SystemIntegrationLog, FinancialAuditDaily } from "@/integrations/supabase/systemStatusSchema";
-import { Skeleton } from "@/components/ui/skeleton";
+import { getSupabaseClient } from "@/integrations/supabase/client";
+import type { SystemIntegrationLog, FinancialAuditDaily } from "@/integrations/supabase/systemStatusSchema";
+
+const client = getSupabaseClient();
 
 // --- Helpers ---
 function formatCurrency(val: number) {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
+}
+
+function formatDateBR(dateStr: string | null | undefined) {
+    if (!dateStr) return "-";
+    try {
+        return new Intl.DateTimeFormat("pt-BR", {
+            timeZone: "America/Sao_Paulo",
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit" // Added seconds for logs precision
+        }).format(new Date(dateStr));
+    } catch (e) {
+        return "-";
+    }
 }
 
 function getStatusBadge(status: string) {
@@ -39,9 +59,7 @@ function getPlatformIcon(platform: string) {
     return <span className="text-muted-foreground">{platform}</span>;
 }
 
-export default function SystemStatusPage() {
-    const client = getSupabaseClient();
-
+export default function SystemStatus() {
     // 1. Logs Query
     const logsQuery = useQuery({
         queryKey: ["sys-logs"],
@@ -51,12 +69,13 @@ export default function SystemStatusPage() {
                 .select("*")
                 .order("start_time", { ascending: false })
                 .limit(50);
+
             if (error) {
                 // Mock return if table doesn't exist yet for dev
                 console.warn("sys_integration_logs mock used", error);
                 return [
-                    { id: '123', start_time: new Date().toISOString(), end_time: new Date().toISOString(), workflow_name: "Meta Ads ETL - Processor", step_name: "Data Import", platform: "META", status: "SUCCESS", error_message: null, records_processed: 50 },
-                    { id: '124', start_time: new Date(Date.now() - 1000 * 60 * 60).toISOString(), end_time: null, workflow_name: "Google Ads ETL", step_name: "Request Job", platform: "GOOGLE", status: "ERROR", error_message: "Timeout Connection", records_processed: 0 },
+                    { id: '123', start_time: new Date().toISOString(), end_time: new Date().toISOString(), workflow_name: "Meta Ads ETL - Processor", step_name: "Data Import", platform: "META", status: "SUCCESS", error_message: null, records_processed: 50, additional_info: "Ulbra Geral (123456)" },
+                    { id: '124', start_time: new Date(Date.now() - 1000 * 60 * 60).toISOString(), end_time: null, workflow_name: "Google Ads ETL", step_name: "Request Job", platform: "GOOGLE", status: "ERROR", error_message: "Timeout Connection", records_processed: 0, additional_info: "Ulbra Search (987654)" },
                 ] as SystemIntegrationLog[];
             }
             return data as SystemIntegrationLog[];
@@ -71,15 +90,14 @@ export default function SystemStatusPage() {
             const { data, error } = await client
                 .from("vw_auditoria_diaria")
                 .select("*")
-
                 .order("data_referencia", { ascending: false });
 
             if (error) {
                 console.warn("vw_auditoria_diaria mock used", error);
                 return [
-                    { data_referencia: "2024-01-29", platform: "Meta", account_name: "Ulbra Geral", investimento: 1250.50, leads: 45, campaign_count: 5 },
-                    { data_referencia: "2024-01-29", platform: "Google", account_name: "Ulbra Search", investimento: 890.00, leads: 22, campaign_count: 3 },
-                    { data_referencia: "2024-01-28", platform: "Meta", account_name: "Ulbra Geral", investimento: 1100.00, leads: 40, campaign_count: 5 },
+                    { data_referencia: "2024-01-29", plataforma: "Meta", conta: "Ulbra Geral", investimento_total: 1250.50, leads_total: 45, qtd_registros: 5, ultima_atualizacao: new Date().toISOString() },
+                    { data_referencia: "2024-01-29", plataforma: "Google", conta: "Ulbra Search", investimento_total: 890.00, leads_total: 22, qtd_registros: 3, ultima_atualizacao: new Date().toISOString() },
+                    { data_referencia: "2024-01-28", plataforma: "Meta", conta: "Ulbra Geral", investimento_total: 1100.00, leads_total: 40, qtd_registros: 5, ultima_atualizacao: new Date().toISOString() },
                 ] as FinancialAuditDaily[];
             }
             return data as FinancialAuditDaily[];
@@ -99,7 +117,7 @@ export default function SystemStatusPage() {
         const audit = auditQuery.data || [];
         const todayAudit = audit.filter(a => a.data_referencia === todayStr);
         const todayVolume = todayAudit.reduce((acc, curr) => {
-            const val = Number(curr.investimento) || Number((curr as any).spend) || 0;
+            const val = Number(curr.investimento_total) || Number((curr as any).investimento) || Number((curr as any).spend) || 0;
             return acc + val;
         }, 0);
 
@@ -168,6 +186,7 @@ export default function SystemStatusPage() {
                                 <TableRow>
                                     <TableHead>Horário</TableHead>
                                     <TableHead>Plataforma</TableHead>
+                                    <TableHead>Conta</TableHead>
                                     <TableHead>Workflow / Passo</TableHead>
                                     <TableHead>Status</TableHead>
                                     <TableHead>Infos</TableHead>
@@ -179,6 +198,7 @@ export default function SystemStatusPage() {
                                         <TableRow key={i}>
                                             <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                                             <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                                            <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                                             <TableCell><Skeleton className="h-4 w-48" /></TableCell>
                                             <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
                                             <TableCell><Skeleton className="h-4 w-32" /></TableCell>
@@ -187,9 +207,12 @@ export default function SystemStatusPage() {
                                 ) : logsQuery.data?.map((log) => (
                                     <TableRow key={log.id} className={log.status === 'ERROR' ? 'bg-red-50 dark:bg-red-900/10' : ''}>
                                         <TableCell className="font-mono text-xs whitespace-nowrap">
-                                            {format(new Date(log.start_time), "dd/MM HH:mm:ss")}
+                                            {formatDateBR(log.start_time)}
                                         </TableCell>
                                         <TableCell>{getPlatformIcon(log.platform)}</TableCell>
+                                        <TableCell className="text-xs font-medium">
+                                            {log.additional_info || "-"}
+                                        </TableCell>
                                         <TableCell>
                                             <div className="flex flex-col">
                                                 <span className="font-medium text-xs">{log.workflow_name}</span>
@@ -221,7 +244,6 @@ export default function SystemStatusPage() {
                     </div>
                 </CardHeader>
                 <CardContent>
-
                     <div className="rounded-md border">
                         <Table>
                             <TableHeader>
@@ -231,6 +253,7 @@ export default function SystemStatusPage() {
                                     <TableHead>Conta</TableHead>
                                     <TableHead>Investimento</TableHead>
                                     <TableHead>Leads</TableHead>
+                                    <TableHead>Atualização</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -242,17 +265,21 @@ export default function SystemStatusPage() {
                                             <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                                             <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                                             <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                                            <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                                         </TableRow>
                                     ))
                                 ) : auditQuery.data?.map((row, i) => (
                                     <TableRow key={i}>
                                         <TableCell>{format(new Date(row.data_referencia), "dd/MM/yyyy")}</TableCell>
-                                        <TableCell>{getPlatformIcon(row.platform)}</TableCell>
-                                        <TableCell>{row.account_name || (row as any).account || (row as any).campaign_name || "-"}</TableCell>
+                                        <TableCell>{getPlatformIcon(row.plataforma || (row as any).platform)}</TableCell>
+                                        <TableCell>{row.conta || (row as any).account_name || (row as any).account || "-"}</TableCell>
                                         <TableCell className="font-medium">
-                                            {formatCurrency(Number(row.investimento || (row as any).spend || 0))}
+                                            {formatCurrency(Number(row.investimento_total || (row as any).investimento || 0))}
                                         </TableCell>
-                                        <TableCell>{row.leads}</TableCell>
+                                        <TableCell>{row.leads_total || (row as any).leads || 0}</TableCell>
+                                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                            {formatDateBR(row.ultima_atualizacao)}
+                                        </TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>

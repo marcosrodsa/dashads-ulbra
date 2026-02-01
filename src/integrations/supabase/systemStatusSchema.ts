@@ -9,13 +9,15 @@ export interface SystemIntegrationLog {
     error_message?: string;
     records_processed?: number;
     execution_id?: string;
+    additional_info?: string;
 }
 
 export interface FinancialAuditDaily {
     data_referencia: string;
-    platform: string;
-    account_name: string;
-    investimento: number;
-    leads: number;
-    campaign_count: number;
+    plataforma: string;
+    conta: string;
+    qtd_registros: number;
+    investimento_total: number;
+    leads_total: number;
+    ultima_atualizacao: string;
 }
