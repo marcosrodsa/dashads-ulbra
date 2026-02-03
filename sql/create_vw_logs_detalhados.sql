@@ -3,6 +3,7 @@ CREATE OR REPLACE VIEW vw_logs_detalhados AS
 SELECT 
     id as log_id,
     start_time as data_hora, -- Mantém timestamp com timezone para o front tratar
+    TO_CHAR(start_time AT TIME ZONE 'America/Sao_Paulo', 'HH24:MI:SS') as horario_brasilia,
     platform as plataforma,
     COALESCE(additional_info, 'Geral / Sistema') as conta,
     workflow_name as workflow,

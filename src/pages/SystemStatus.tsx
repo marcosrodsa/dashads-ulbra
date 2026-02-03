@@ -91,6 +91,7 @@ interface AccountGroup {
     logs: LogDetailed[];
     latestStatus: string;
     latestTime: string;
+    latestTimeBR: string;
     hasError: boolean;
     errorCount: number;
     totalLogs: number;
@@ -171,6 +172,7 @@ function groupLogsByAccount(logs: LogDetailed[]): LogGroup[] {
                         logs, // Flat list
                         latestStatus: worstLog?.status || 'UNKNOWN',
                         latestTime: latestLog?.data_hora || new Date().toISOString(),
+                        latestTimeBR: latestLog?.horario_brasilia || formatDateBR(latestLog?.data_hora).split(' ')[1],
                         hasError,
                         errorCount,
                         totalLogs: logs.length
@@ -228,7 +230,7 @@ function LogAccountItem({ group, onSelectLog }: { group: AccountGroup, onSelectL
 
                 <div className="flex items-center gap-3">
                     <span className="text-xs font-mono text-muted-foreground">
-                        {formatDateBR(group.latestTime).split(' ')[1]}
+                        {group.latestTimeBR}
                     </span>
                     {getStatusBadge(group.latestStatus)}
                 </div>
@@ -244,7 +246,7 @@ function LogAccountItem({ group, onSelectLog }: { group: AccountGroup, onSelectL
                         >
                             <div className="flex items-center gap-3 flex-1 min-w-0">
                                 <span className="font-mono text-muted-foreground w-14 shrink-0">
-                                    {formatDateBR(log.data_hora).split(' ')[1]}
+                                    {log.horario_brasilia || formatDateBR(log.data_hora).split(' ')[1]}
                                 </span>
                                 <span className="text-muted-foreground/40 hidden sm:inline">|</span>
 
@@ -584,7 +586,10 @@ export default function SystemStatus() {
                                 </div>
                                 <div>
                                     <span className="text-muted-foreground">Horário:</span>
-                                    <p className="font-medium">{formatDateBR(selectedLog.data_hora)}</p>
+                                    <p className="font-medium text-xs">
+                                        {formatDateBR(selectedLog.data_hora).split(' ')[0]} {selectedLog.horario_brasilia || formatDateBR(selectedLog.data_hora).split(' ')[1]}
+                                        <span className="ml-1 text-[9px] text-muted-foreground opacity-50">(BRT)</span>
+                                    </p>
                                 </div>
                             </div>
 

@@ -45,4 +45,5 @@ export interface LogDetailed {
     registros: number;
     error_message?: string;
     execution_id?: string;
+    horario_brasilia?: string;
 }
