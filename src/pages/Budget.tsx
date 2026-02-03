@@ -1,5 +1,5 @@
 import * as React from "react";
-import { endOfMonth, format, isSameMonth, startOfMonth, startOfWeek, endOfWeek } from "date-fns";
+import { endOfMonth, format, isSameMonth, startOfMonth, startOfWeek, endOfWeek, subDays } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -146,9 +146,10 @@ export default function BudgetPage() {
       budgetFromDate = format(startOfMonth(effectiveStart), "yyyy-MM-dd");
       budgetToDate = format(endOfMonth(effectiveEnd), "yyyy-MM-dd");
 
-      // Weekly needs to cover the weeks involved accurately
+      // Weekly needs to cover the weeks involved accurately. 
+      // Fix: Subtract 1 day from endOfWeek to avoid capturing the *start* of the next week if it falls on Sunday.
       weeklyFromDate = format(startOfWeek(effectiveStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
-      weeklyToDate = format(endOfWeek(effectiveEnd, { weekStartsOn: 1 }), "yyyy-MM-dd");
+      weeklyToDate = format(subDays(endOfWeek(effectiveEnd, { weekStartsOn: 1 }), 1), "yyyy-MM-dd");
 
       // --- Budget (planejado)
       const budgetSelectCols = Array.from(
@@ -992,7 +993,7 @@ export default function BudgetPage() {
     });
 
     // Pass 2: Spend from DailyRows
-    (budgetDataQuery.data.dailyRows ?? []).forEach(r => {
+    (budgetDataQuery.data.dailyRows ?? []).forEach((r: any) => {
 
       // Safe Date Parsing (YYYY-MM-DD -> Noon to avoid timezone shifts)
       const parts = String(r.data_referencia).split("-");
@@ -1171,7 +1172,7 @@ export default function BudgetPage() {
             // Regra de exemplo: Abaixo de 50 é bom, acima de 100 é ruim? 
             // Como não temos meta definida no banco, deixamos neutro ou fixo por enquanto.
             // O usuário disse: Se CPL R$ 200 é fracasso.
-            return "neutral";
+            return "neutral" as KpiStatus;
           })()}
         />
       </section>
