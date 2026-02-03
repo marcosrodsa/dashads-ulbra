@@ -1,5 +1,5 @@
 import * as React from "react";
-import { endOfMonth, format, isSameMonth, startOfMonth, startOfWeek, endOfWeek, subDays } from "date-fns";
+import { endOfMonth, format, isSameMonth, startOfMonth, startOfWeek, endOfWeek, subDays, addDays } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -148,7 +148,15 @@ export default function BudgetPage() {
 
       // Weekly needs to cover the weeks involved accurately. 
       // Fix: Subtract 1 day from endOfWeek to avoid capturing the *start* of the next week if it falls on Sunday.
-      weeklyFromDate = format(startOfWeek(effectiveStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
+      let wStart = startOfWeek(effectiveStart, { weekStartsOn: 1 });
+
+      // Fix 2: If finding "All Weeks" for a Month, excludes weeks that *started* in the previous month.
+      // E.g. Feb 01 starts Jan 26. We want to exclude the Jan 26 week from Feb totals to match Excel.
+      if (!filters.week && !isSameMonth(wStart, effectiveStart)) {
+        wStart = addDays(wStart, 7);
+      }
+
+      weeklyFromDate = format(wStart, "yyyy-MM-dd");
       weeklyToDate = format(subDays(endOfWeek(effectiveEnd, { weekStartsOn: 1 }), 1), "yyyy-MM-dd");
 
       // --- Budget (planejado)
