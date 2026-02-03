@@ -91,6 +91,7 @@ interface AccountGroup {
     latestStatus: string;
     latestTime: string;
     hasError: boolean;
+    errorCount: number;
     totalLogs: number;
 }
 
@@ -156,7 +157,8 @@ function groupLogsByAccount(logs: LogDetailed[]): LogGroup[] {
                     logs.sort((a, b) => new Date(a.data_hora).getTime() - new Date(b.data_hora).getTime());
 
                     const latestLog = logs[logs.length - 1]; // Last item is now the latest
-                    const hasError = logs.some(l => l.status === 'ERROR' || l.status === 'TIMEOUT');
+                    const errorCount = logs.filter(l => l.status === 'ERROR' || l.status === 'TIMEOUT').length;
+                    const hasError = errorCount > 0;
 
                     // Calculate Worst Case Status
                     const worstLog = logs.reduce((prev, current) => {
@@ -169,6 +171,7 @@ function groupLogsByAccount(logs: LogDetailed[]): LogGroup[] {
                         latestStatus: worstLog?.status || 'UNKNOWN',
                         latestTime: latestLog?.data_hora || new Date().toISOString(),
                         hasError,
+                        errorCount,
                         totalLogs: logs.length
                     };
                 });
@@ -210,8 +213,14 @@ function LogAccountItem({ group, onSelectLog }: { group: AccountGroup, onSelectL
                     </div>
                     <div>
                         <div className="font-medium text-sm">{group.accountName}</div>
-                        <div className="text-xs text-muted-foreground">
-                            {group.totalLogs} execuções
+                        <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                            <span>{group.totalLogs} execuções</span>
+                            {group.errorCount > 0 && (
+                                <>
+                                    <span>•</span>
+                                    <span className="text-red-600 font-medium">{group.errorCount} falhas</span>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -562,7 +571,7 @@ export default function SystemStatus() {
                                 </div>
                                 <div>
                                     <span className="text-muted-foreground">Workflow:</span>
-                                    <p className="font-medium">{selectedLog.workflow}</p>
+                                    <p className="font-medium">{selectedLog.workflow || (selectedLog as any).workflow_name}</p>
                                 </div>
                                 <div>
                                     <span className="text-muted-foreground">Etapa:</span>
