@@ -75,7 +75,8 @@ function getPlatformIcon(platform: string) {
     const p = (platform || "").toLowerCase();
     if (p.includes("meta") || p.includes("facebook")) return <span className="text-blue-700 font-bold">META</span>;
     if (p.includes("google")) return <span className="text-emerald-700 font-bold">GOOGLE</span>;
-    return <span className="text-muted-foreground">{platform}</span>;
+    if (p.includes("system")) return <span className="text-red-700 font-bold uppercase">ERRO</span>;
+    return <span className="text-muted-foreground uppercase">{platform}</span>;
 }
 
 // --- Grouping Logic ---
