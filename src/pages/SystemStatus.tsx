@@ -498,6 +498,7 @@ export default function SystemStatus() {
                                                             <TableHeader>
                                                                 <TableRow className="hover:bg-transparent border-none">
                                                                     <TableHead className="h-7 text-xs pl-0">Conta</TableHead>
+                                                                    <TableHead className="h-7 text-xs text-center w-[60px]">Data</TableHead>
                                                                     <TableHead className="h-7 text-xs text-right">Invest.</TableHead>
                                                                     <TableHead className="h-7 text-xs text-right pr-0">Leads</TableHead>
                                                                 </TableRow>
@@ -510,6 +511,9 @@ export default function SystemStatus() {
                                                                                 <span className="truncate max-w-[160px]" title={row.conta}>{row.conta || "Sem Conta"}</span>
                                                                                 {row.conta_id && <span className="text-[9px] text-muted-foreground font-mono truncate max-w-[160px]">{row.conta_id}</span>}
                                                                             </div>
+                                                                        </TableCell>
+                                                                        <TableCell className="py-1.5 text-xs text-center text-muted-foreground">
+                                                                            {formatDateLiteral(row.data_referencia).slice(0, 5)}
                                                                         </TableCell>
                                                                         <TableCell className="py-1.5 text-xs text-right">
                                                                             {formatCurrency(Number(row.investimento_total || (row as any).investimento || 0))}
