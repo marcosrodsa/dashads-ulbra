@@ -43,23 +43,25 @@ function weekOptions(month: Date) {
         end: endOfWeek(end, { weekStartsOn: 1 })
     }, { weekStartsOn: 1 });
 
-    return weeks.map(w => {
-        const s = startOfWeek(w, { weekStartsOn: 1 });
-        const e = endOfWeek(w, { weekStartsOn: 1 });
+    return weeks
+        .filter(w => isSameMonth(w, month)) // Only include weeks starting in the selected month
+        .map(w => {
+            const s = startOfWeek(w, { weekStartsOn: 1 });
+            const e = endOfWeek(w, { weekStartsOn: 1 });
 
-        let label = "";
-        if (isSameMonth(s, e)) {
-            label = `${format(s, "dd")} a ${format(e, "dd MMM", { locale: ptBR })}`;
-        } else {
-            label = `${format(s, "dd MMM", { locale: ptBR })} a ${format(e, "dd MMM", { locale: ptBR })}`;
-        }
+            let label = "";
+            if (isSameMonth(s, e)) {
+                label = `${format(s, "dd")} a ${format(e, "dd MMM", { locale: ptBR })}`;
+            } else {
+                label = `${format(s, "dd MMM", { locale: ptBR })} a ${format(e, "dd MMM", { locale: ptBR })}`;
+            }
 
-        return {
-            value: s.toISOString(),
-            label: label.toLowerCase(),
-            startDate: s
-        };
-    });
+            return {
+                value: s.toISOString(),
+                label: label.toLowerCase(),
+                startDate: s
+            };
+        });
 }
 
 function asMonthKey(d: Date) {
