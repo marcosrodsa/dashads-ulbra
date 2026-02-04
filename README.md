@@ -1,6 +1,6 @@
 # DashAds ULBRA - Product Requirements Document (PRD)
 
-**Versão:** 1.0  
+**Versão:** 2.0  
 **Data:** 03/02/2026  
 **Autor:** Sistema de Documentação Automatizado  
 **Projeto:** Dashboard de Controle de Budget e Performance de Mídia Digital  
