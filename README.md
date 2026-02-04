@@ -1,7 +1,7 @@
 # DashAds ULBRA - Product Requirements Document (PRD)
 
 **Versão:** 1.0  
-**Data:** 26/01/2026  
+**Data:** 03/02/2026  
 **Autor:** Sistema de Documentação Automatizado  
 **Projeto:** Dashboard de Controle de Budget e Performance de Mídia Digital  
 
@@ -132,9 +132,22 @@ dashads-ulbra/
 
 ## 🗄️ Modelagem de Dados (Backend)
 
-### Tabelas Fato (Supabase/PostgreSQL)
+### Tabelas do Sistema (Supabase/PostgreSQL)
 
-#### `fact_ads_performance_daily`
+#### Tabelas Dimensionais e Auxiliares
+
+| Tabela | Descrição |
+|--------|-----------|
+| `units` | Unidades de negócio (ex: Ulbra Canoas, EAD). |
+| `courses` | Cursos ofertados (ex: Medicina, Direito). |
+| `dim_campaign_mapping` | Regras manuais para vincular campanhas a Unidades/Cursos. |
+| `tracking_scripts` | Scripts de rastreamento (GTM, Pixels) gerenciáveis via painel. |
+| `profiles` | Perfis de usuários do sistema (vinculado ao `auth.users`). |
+| `sys_integration_logs` | Logs brutos de execução dos workflows de ETL/Integração. |
+
+#### Tabelas Fato
+
+**`fact_ads_performance_daily`**
 Tabela principal com dados diários de performance de anúncios.
 
 | Coluna | Tipo | Descrição |
@@ -143,128 +156,63 @@ Tabela principal com dados diários de performance de anúncios.
 | `campaign_name` | VARCHAR | Nome da campanha |
 | `account_name` | VARCHAR | Nome da conta de anúncios |
 | `platform` | VARCHAR | Plataforma (META, GOOGLE) |
-| `channel_type` | VARCHAR | Tipo de canal (video, search, etc) |
 | `spend` | DECIMAL | Gasto do dia |
-| `clicks` | INTEGER | Cliques |
-| `impressions` | INTEGER | Impressões |
 | `conversions` | INTEGER | Conversões (Leads) |
 
-#### `fact_ads_budget`
+**`fact_ads_budget`**
 Tabela de orçamento planejado mensal.
 
 | Coluna | Tipo | Descrição |
 |--------|------|-----------|
 | `month` | DATE | Mês de referência |
 | `budget` | DECIMAL | Orçamento planejado |
-| `platform` | VARCHAR | Plataforma (opcional) |
-| `campaign_name` | VARCHAR | Campanha/Unidade (opcional) |
-| `funnel_stage` | VARCHAR | Etapa do funil (opcional) |
-| `location` | VARCHAR | Localização (opcional) |
+| `platform` | VARCHAR | META / GOOGLE |
+| `campaign_name` | VARCHAR | Unidade/Campanha |
 
 ---
 
 ### Views SQL
 
-#### `vw_performance_diaria2`
+#### Views de Log e Auditoria
+
+| View | Função | Arquivo SQL |
+|------|--------|-------------|
+| `vw_logs_detalhados` | Exibe logs com horário ajustado (Brasília) e nomes legíveis. | `create_vw_logs_detalhados.sql` |
+| `vw_logs_resumidos` | Agrupa logs por hora para mostrar status macro (Sucesso, Erro, Timeout). | `create_vw_logs_resumidos.sql` |
+| `vw_auditoria_diaria` | Resumo financeiro diário por conta auditoria com NFs. | `create_vw_auditoria_diaria.sql` |
+| `vw_campaign_mapping_readable` | Facilita a leitura do mapeamento de campanhas trazendo nomes de Units/Courses. | `vw_campaign_mapping_readable.sql` |
+
+#### Views de Negócio
+
+**`vw_performance_diaria2`**
 View que classifica automaticamente campanhas em Unidade e Curso baseado em regras de negócio.
 
 ```sql
 CREATE OR REPLACE VIEW vw_performance_diaria2 AS
-
-WITH raw_data AS (
-    SELECT 
-        date::date as data_referencia, 
-        platform,
-        
-        -- LÓGICA DE UNIDADE (baseada em campaign_name)
-        CASE 
-            WHEN (campaign_name ILIKE '%EAD%' AND campaign_name NOT ILIKE '%Lead%') 
-                 OR account_name ILIKE '%EAD%' 
-                 OR campaign_name ILIKE '%Google Pix%' 
-                 OR campaign_name ILIKE '%Ulbra Pop%' THEN 'EAD'
-            WHEN campaign_name ILIKE '%Medicina%' THEN 'Ulbra Medicina'
-            WHEN campaign_name ILIKE '%Visitas%' OR campaign_name ILIKE '%Branding%' 
-                 OR campaign_name ILIKE '%Institucional%' THEN 'Institucional'
-            WHEN campaign_name ILIKE '%Canoas%' OR campaign_name ILIKE '%| RS |%' THEN 'Ulbra Canoas'
-            WHEN campaign_name ILIKE '%Torres%' THEN 'Ulbra Torres'
-            WHEN campaign_name ILIKE '%Itumbiara%' THEN 'Ulbra Itumbiara'
-            WHEN campaign_name ILIKE '%Manaus%' THEN 'Ulbra Manaus'
-            WHEN campaign_name ILIKE '%Palmas%' THEN 'Ulbra Palmas'
-            WHEN campaign_name ILIKE '%Santarém%' OR campaign_name ILIKE '%Santarem%' THEN 'Ulbra Santarém'
-            WHEN campaign_name ILIKE '%Gravataí%' OR campaign_name ILIKE '%Gravatai%' THEN 'Ulbra Gravataí'
-            WHEN campaign_name ILIKE '%São Jerônimo%' OR campaign_name ILIKE '%Jeronimo%' THEN 'Ulbra São Jerônimo'
-            WHEN campaign_name ILIKE '%Cachoeira%' OR campaign_name ILIKE '%Cach do Sul%' THEN 'Ulbra Cachoeira do Sul'
-            WHEN campaign_name ILIKE '%Santa Maria%' THEN 'Ulbra Santa Maria'
-            WHEN campaign_name ILIKE '%Guaíba%' OR campaign_name ILIKE '%Guaiba%' THEN 'Ulbra Guaíba'
-            WHEN campaign_name ILIKE '%Carazinho%' THEN 'Ulbra Carazinho'
-            ELSE 'Outros / Não Identificado' 
-        END as unidade,
-
-        -- LÓGICA DE CURSO
-        CASE
-            WHEN platform = 'GOOGLE' AND channel_type = 'video' THEN 'Branding'
-            WHEN campaign_name ILIKE '%Medicina%' THEN 'Medicina'
-            WHEN (campaign_name ILIKE '%EAD%' AND campaign_name NOT ILIKE '%Lead%') 
-                 OR campaign_name ILIKE '%Google Pix%' 
-                 OR campaign_name ILIKE '%Ulbra Pop%' THEN 'EAD'
-            WHEN campaign_name ILIKE '%Branding%' OR campaign_name ILIKE '%Institucional%' 
-                 OR campaign_name ILIKE '%Visitas%' THEN 'Branding'
-            WHEN campaign_name ILIKE '%Direito%' THEN 'Direito'
-            WHEN campaign_name ILIKE '%Odonto%' THEN 'Odonto'
-            WHEN campaign_name ILIKE '%Psicologia%' THEN 'Psicologia'
-            WHEN campaign_name ILIKE '%Enfermagem%' THEN 'Enfermagem'
-            WHEN campaign_name ILIKE '%MedVet%' OR campaign_name ILIKE '%Veterinaria%' THEN 'MedVet'
-            WHEN campaign_name ILIKE '%Fisioterapia%' THEN 'Fisioterapia'
-            WHEN campaign_name ILIKE '%Biomedicina%' THEN 'Biomedicina'
-            WHEN campaign_name ILIKE '%Estética%' THEN 'Estética'
-            WHEN campaign_name ILIKE '%Agronomia%' THEN 'Agronomia'
-            WHEN campaign_name ILIKE '%Terapia Ocupacional%' THEN 'Terapia Ocupacional'
-            WHEN campaign_name ILIKE '%Engenharia%' THEN 'Engenharias'
-            ELSE 'Geral'
-        END as curso,
-
-        spend,
-        conversions as leads,
-        clicks,
-        impressions
-    FROM fact_ads_performance_daily
-    WHERE campaign_name NOT ILIKE '%Ultec%'  -- Exclui Ultec
-)
-
+-- (Trecho simplificado da lógica)
 SELECT 
-    data_referencia,
-    unidade,
-    curso,
+    date::date as data_referencia, 
     platform,
-    SUM(spend) as investimento,
-    SUM(leads) as leads,
-    SUM(clicks) as clicks,
-    SUM(impressions) as impressoes,
-    CASE WHEN SUM(leads) > 0 THEN ROUND(SUM(spend) / SUM(leads), 2) ELSE 0 END as cpl,
-    CASE WHEN SUM(clicks) > 0 THEN ROUND(SUM(spend) / SUM(clicks), 2) ELSE 0 END as cpc,
-    CASE WHEN SUM(impressions) > 0 THEN ROUND((SUM(clicks)::numeric / SUM(impressions)) * 100, 2) ELSE 0 END as ctr
-FROM raw_data
-GROUP BY 1, 2, 3, 4
-ORDER BY data_referencia DESC;
+    -- Lógica de Unidade (ex: '%EAD%' -> 'EAD')
+    CASE ... END as unidade,
+    -- Lógica de Curso (ex: '%Medicina%' -> 'Medicina')
+    CASE ... END as curso,
+    spend,
+    conversions as leads
+FROM fact_ads_performance_daily
+WHERE campaign_name NOT ILIKE '%Ultec%' -- Exclui Ultec
 ```
 
-#### `vw_dashboard_semanal_detalhado2`
+**`vw_dashboard_semanal_detalhado2`**
 View que agrega dados por semana para o dashboard de Budget.
 
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `data_inicio_semana` | DATE | Início da semana (segunda-feira) |
-| `semana_label` | VARCHAR | Label (ex: "19 a 25 jan") |
-| `unidade` | VARCHAR | Unidade classificada |
-| `plataforma` | VARCHAR | META / GOOGLE |
-| `curso` | VARCHAR | Curso classificado |
-| `orcamento_semanal` | DECIMAL | Budget planejado da semana |
-| `gasto_real` | DECIMAL | Gasto realizado |
-| `diferenca` | DECIMAL | Variância (Budget - Gasto) |
-| `leads` | INTEGER | Total de leads |
-| `percentual_consumido` | DECIMAL | % de utilização |
-| `funnel_stage` | VARCHAR | Etapa do funil |
-| `location` | VARCHAR | Localização |
+| Coluna | Descrição |
+|--------|-----------|
+| `semana_label` | Label (ex: "19 a 25 jan") |
+| `unidade` | Unidade classificada |
+| `orcamento_semanal` | Budget planejado da semana |
+| `gasto_real` | Gasto realizado |
+| `percentual_consumido` | % de utilização |
 
 ---
 
