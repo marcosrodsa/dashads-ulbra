@@ -1,0 +1,163 @@
+import * as React from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
+
+interface CreativeHeatmapData {
+    ad_id: string;
+    ad_name: string | null;
+    conversoes: number;
+    cpl: number | null;
+    investimento: number;
+}
+
+interface CreativeHeatmapProps {
+    data: CreativeHeatmapData[];
+    avgCPL: number | null;
+}
+
+function brl(v: number | null) {
+    if (v === null || v === undefined) return "-";
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+}
+
+/**
+ * Calculates color based on CPL performance relative to average.
+ * Green = below average (good), Yellow = around average, Red = above average (bad)
+ */
+function getCPLColor(cpl: number | null, avgCPL: number | null): string {
+    if (cpl === null || avgCPL === null || avgCPL === 0) return "bg-gray-100 dark:bg-gray-800";
+
+    const ratio = cpl / avgCPL;
+
+    if (ratio <= 0.7) return "bg-emerald-500"; // Excellent: 30% below average
+    if (ratio <= 0.9) return "bg-emerald-400"; // Good: 10-30% below average
+    if (ratio <= 1.1) return "bg-yellow-400"; // Average: within 10%
+    if (ratio <= 1.3) return "bg-orange-400"; // Warning: 10-30% above average
+    return "bg-rose-500"; // Critical: 30%+ above average
+}
+
+function getCPLTextColor(cpl: number | null, avgCPL: number | null): string {
+    if (cpl === null || avgCPL === null || avgCPL === 0) return "text-gray-600 dark:text-gray-300";
+
+    const ratio = cpl / avgCPL;
+
+    if (ratio <= 0.9) return "text-white";
+    if (ratio <= 1.1) return "text-gray-900";
+    return "text-white";
+}
+
+export function CreativeCPLHeatmap({ data, avgCPL }: CreativeHeatmapProps) {
+    // Take top 15 by conversions for heatmap
+    const top15 = React.useMemo(() => {
+        return [...data]
+            .filter(d => d.cpl !== null && d.conversoes > 0)
+            .sort((a, b) => (b.conversoes || 0) - (a.conversoes || 0))
+            .slice(0, 15);
+    }, [data]);
+
+    if (top15.length === 0) {
+        return null;
+    }
+
+    return (
+        <Card>
+            <CardHeader>
+                <div className="flex items-center gap-2">
+                    <CardTitle>Mapa de Calor: CPL por Criativo</CardTitle>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-[300px]">
+                            <div className="text-xs space-y-1">
+                                <p><strong>Como interpretrar:</strong></p>
+                                <p>Cada quadrado representa um criativo. A cor indica performance do CPL comparado à média ({brl(avgCPL)}):</p>
+                                <ul className="list-disc pl-4 space-y-0.5">
+                                    <li><strong>🟢 Verde escuro:</strong> CPL ≤70% da média (excelente)</li>
+                                    <li><strong>🟢 Verde claro:</strong> CPL 70-90% da média (bom)</li>
+                                    <li><strong>🟡 Amarelo:</strong> CPL 90-110% da média (na média)</li>
+                                    <li><strong>🟠 Laranja:</strong> CPL 110-130% da média (alerta)</li>
+                                    <li><strong>🔴 Vermelho:</strong> CPL &gt;130% da média (crítico)</li>
+                                </ul>
+                            </div>
+                        </TooltipContent>
+                    </Tooltip>
+                </div>
+                <CardDescription>
+                    Top 15 criativos por conversões. Clique para ver detalhes.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-5 lg:grid-cols-5 gap-2">
+                    {top15.map((item) => (
+                        <Tooltip key={item.ad_id}>
+                            <TooltipTrigger asChild>
+                                <div
+                                    className={`
+                                        ${getCPLColor(item.cpl, avgCPL)}
+                                        ${getCPLTextColor(item.cpl, avgCPL)}
+                                        rounded-lg p-3 cursor-pointer transition-all hover:scale-105 hover:shadow-lg
+                                        flex flex-col items-center justify-center text-center min-h-[80px]
+                                    `}
+                                >
+                                    <span className="text-lg font-bold">{brl(item.cpl)}</span>
+                                    <span className="text-xs opacity-80 truncate max-w-full">
+                                        {item.conversoes} conv.
+                                    </span>
+                                </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[280px]">
+                                <div className="space-y-1">
+                                    <p className="font-bold text-sm">{item.ad_name || item.ad_id}</p>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                        <span className="text-muted-foreground">CPL:</span>
+                                        <span className="font-medium">{brl(item.cpl)}</span>
+                                        <span className="text-muted-foreground">Conversões:</span>
+                                        <span className="font-medium">{item.conversoes}</span>
+                                        <span className="text-muted-foreground">Investimento:</span>
+                                        <span className="font-medium">{brl(item.investimento)}</span>
+                                        <span className="text-muted-foreground">vs Média:</span>
+                                        <span className={`font-medium ${(item.cpl && avgCPL && item.cpl < avgCPL)
+                                            ? "text-emerald-600"
+                                            : "text-rose-600"
+                                            }`}>
+                                            {item.cpl && avgCPL
+                                                ? `${((item.cpl / avgCPL - 1) * 100).toFixed(0)}%`
+                                                : "-"
+                                            }
+                                        </span>
+                                    </div>
+                                </div>
+                            </TooltipContent>
+                        </Tooltip>
+                    ))}
+                </div>
+
+                {/* Legend */}
+                <div className="flex items-center justify-center gap-4 mt-4 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 rounded bg-emerald-500"></div>
+                        <span>Excelente</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 rounded bg-emerald-400"></div>
+                        <span>Bom</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 rounded bg-yellow-400"></div>
+                        <span>Médio</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 rounded bg-orange-400"></div>
+                        <span>Alerta</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 rounded bg-rose-500"></div>
+                        <span>Crítico</span>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}

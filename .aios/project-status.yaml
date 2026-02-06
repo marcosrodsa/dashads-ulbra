@@ -1,0 +1,18 @@
+status:
+  branch: main
+  modifiedFiles:
+    - .env.example
+    - .gitignore
+    - .agent/
+    - .aios-core/
+    - .aios/
+  modifiedFilesTotalCount: 10
+  recentCommits:
+    - V2.0
+    - 'docs: update database schema documentation in README and PRD'
+  currentEpic: null
+  currentStory: null
+  lastUpdate: '2026-02-05T15:45:28.636Z'
+  isGitRepo: true
+timestamp: 1770306328638
+ttl: 60

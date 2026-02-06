@@ -1,0 +1,52 @@
+name: dashads-core
+title: DashAds-Ulbra Core Squad
+description: Squad especializada em BI, performance de mídia e orquestração de dados para o projeto DashAds Ulbra.
+version: 1.0.0
+author: Craft (Squad Creator)
+agents:
+  - id: data-engineer
+    name: Flux
+    role: Data Orchestration & Pacing Specialist
+  - id: analyst
+    name: Adriel
+    role: BI Intelligence & Media Strategy Expert
+  - id: dev
+    name: Dex
+    role: Full Stack Builder
+  - id: ux-design-expert
+    name: Aura
+    role: Dashboard UX & Visualization Specialist
+  - id: architect
+    name: Skye
+    role: Architectural Strategy & Scalability
+  - id: devops
+    name: Gage
+    role: Cloud Infrastructure & Deployment Automation
+  - id: pm
+    name: Morgan
+    role: Product Requirements & Strategy Specialist
+  - id: qa
+    name: Quinn
+    role: Quality & Calculation Auditor
+  - id: sm
+    name: River
+    role: Delivery & Integration Coordinator
+  - id: creative-analyst-ai
+    name: Gaia
+    role: Creative Intelligence (Runtime LLM Agent)
+    type: product-agent
+tasks:
+
+  - id: validate-pacing-logic
+    title: Validate Pacing Logic
+    agent: data-engineer
+  - id: analyze-creative-performance
+    title: Analyze Creative Performance
+    agent: analyst
+  - id: design-bi-component
+    title: Design BI Component
+    agent: ux-design-expert
+config:
+  - coding-standards.md
+  - tech-stack.md
+  - source-tree.md

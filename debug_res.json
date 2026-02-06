@@ -1,0 +1,10 @@
+﻿{
+    "insights":  [
+
+                 ],
+    "success":  true,
+    "saved":  true,
+    "raw":  "```json\n[\n  {\n    \"type\": \"success\",\n    \"title\": \"CPL Excepcional\",\n    \"description\": \"O CPL de R$ 5",
+    "trace":  "rawText length: 102. No jsonMatch found via bracket regex. ",
+    "debug":  null
+}
