@@ -24,8 +24,18 @@ Deno.serve(async (req) => {
             throw new Error("Missing environment variables");
         }
 
-        const { adId } = await req.json() as EnrichRequest;
-        if (!adId) throw new Error("Missing adId");
+        // A. Robust Payload Parsing
+        let adId = "";
+        try {
+            const body = await req.json();
+            console.log("Raw Payload received:", JSON.stringify(body));
+            adId = body.adId;
+        } catch (e) {
+            console.error("Failed to parse JSON body:", e);
+            throw new Error("Invalid JSON payload");
+        }
+
+        if (!adId) throw new Error("Missing adId in payload");
 
         // 1. Fetch Ad & Creative Info (Adding effective_object_story_id)
         console.log(`Enriching creative for adId: ${adId}`);
@@ -49,17 +59,26 @@ Deno.serve(async (req) => {
         let highResImageUrl = creative.image_url || creative.thumbnail_url || "";
         const storyId = creative.effective_object_story_id;
 
-        // A. If it's a Post-based ad, fetch the 'full_picture' (Original resolution)
+        // B. If it's a Post-based ad, fetch rich assets (full_picture, picture, attachments)
         if (storyId) {
-            console.log(`Fetching high-res story asset for storyId: ${storyId}`);
+            console.log(`Fetching high-res story assets for storyId: ${storyId}`);
             try {
+                // Expanding fields to find the best possible image
                 const storyResponse = await fetch(
-                    `https://graph.facebook.com/v21.0/${storyId}?fields=full_picture&access_token=${META_API_KEY}`
+                    `https://graph.facebook.com/v21.0/${storyId}?fields=full_picture,picture,attachments{media}&access_token=${META_API_KEY}`
                 );
                 const storyData = await storyResponse.json();
+                console.log("Story Metadata received:", JSON.stringify(storyData));
+
                 if (storyData.full_picture) {
                     highResImageUrl = storyData.full_picture;
-                    console.log("High-res full_picture found!");
+                    console.log("✅ High-res full_picture found");
+                } else if (storyData.attachments?.data?.[0]?.media?.image?.src) {
+                    highResImageUrl = storyData.attachments.data[0].media.image.src;
+                    console.log("✅ High-res image found in attachments");
+                } else if (storyData.picture) {
+                    highResImageUrl = storyData.picture;
+                    console.log("⚠️ Fallback to 'picture' field (medium res)");
                 }
             } catch (e) {
                 console.warn("Could not fetch high-res story picture:", e);
