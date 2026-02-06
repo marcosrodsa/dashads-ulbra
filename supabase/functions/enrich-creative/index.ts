@@ -55,10 +55,10 @@ Deno.serve(async (req) => {
             throw new Error("Missing adId in payload (Checked: Query Params, JSON Body [adId, ad_id, id])");
         }
 
-        // 1. Fetch Ad & Creative Info (Adding account_id and image_hash)
+        // 1. Fetch Ad & Creative Info (Adding account_id, image_hash and object_story_spec)
         console.log(`Enriching creative for adId: ${adId}`);
         const adResponse = await fetch(
-            `https://graph.facebook.com/v21.0/${adId}?fields=account_id,preview_shareable_link,effective_status,adlabels,recommendations,creative{id,name,title,body,image_url,thumbnail_url,video_id,effective_object_story_id,image_hash}&access_token=${META_API_KEY}`
+            `https://graph.facebook.com/v21.0/${adId}?fields=account_id,preview_shareable_link,effective_status,adlabels,recommendations,creative{id,name,title,body,image_url,thumbnail_url,video_id,effective_object_story_id,image_hash,object_story_spec}&access_token=${META_API_KEY}`
         );
         const adData = await adResponse.json();
 
@@ -76,15 +76,28 @@ Deno.serve(async (req) => {
         // 2. High-Resolution Asset Retrieval Strategy
         let highResImageUrl = creative.image_url || creative.thumbnail_url || "";
         const storyId = creative.effective_object_story_id;
-        const imageHash = creative.image_hash;
         const accountId = adData.account_id;
 
+        // --- DEEP HASH HUNT ---
+        let foundHash = creative.image_hash;
+        if (!foundHash && creative.object_story_spec) {
+            const spec = creative.object_story_spec;
+            console.log("Deep Hunting in object_story_spec...");
+            foundHash = spec.link_data?.image_hash ||
+                spec.photo_data?.image_hash ||
+                spec.video_data?.image_hash ||
+                spec.link_data?.child_attachments?.[0]?.image_hash;
+        }
+
+        if (foundHash) console.log(`🔍 Hash detected: ${foundHash}`);
+        else console.log("⚠️ No image_hash found in Creative or ObjectStorySpec");
+
         // A. Primary Strategy: Fetch via Image Hash (Requires only ads_read)
-        if (imageHash && accountId) {
-            console.log(`Fetching high-res asset via Image Hash: ${imageHash}`);
+        if (foundHash && accountId) {
+            console.log(`Fetching high-res asset via Image Hash: ${foundHash}`);
             try {
                 const adImageResponse = await fetch(
-                    `https://graph.facebook.com/v21.0/act_${accountId}/adimages?hashes=["${imageHash}"]&fields=permalink_url,url,original_height,original_width&access_token=${META_API_KEY}`
+                    `https://graph.facebook.com/v21.0/act_${accountId}/adimages?hashes=["${foundHash}"]&fields=permalink_url,url,original_height,original_width&access_token=${META_API_KEY}`
                 );
                 const adImageData = await adImageResponse.json();
                 const imageAsset = adImageData.data?.[0];
@@ -139,7 +152,7 @@ Deno.serve(async (req) => {
                 const bestThumbnail = videoAssetData.thumbnails?.data?.sort((a: any, b: any) => (b.width || 0) - (a.width || 0))[0];
                 if (bestThumbnail?.uri) {
                     videoThumbnailUrl = bestThumbnail.uri;
-                    if (!imageHash && !storyId) highResImageUrl = bestThumbnail.uri;
+                    if (!foundHash && !storyId) highResImageUrl = bestThumbnail.uri;
                 }
             } catch (e) {
                 console.warn("Could not fetch high-res video thumbnail:", e);
