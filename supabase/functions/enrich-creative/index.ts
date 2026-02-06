@@ -73,6 +73,11 @@ Deno.serve(async (req) => {
             throw new Error("Creative not found");
         }
 
+        // --- RAIO-X LOG (Squad Debug) ---
+        console.log("--------- RAIO-X: AD CREATIVE OBJECT ---------");
+        console.log(JSON.stringify(creative, null, 2));
+        console.log("----------------------------------------------");
+
         // 2. High-Resolution Asset Retrieval Strategy
         let highResImageUrl = creative.image_url || creative.thumbnail_url || "";
         const storyId = creative.effective_object_story_id;
