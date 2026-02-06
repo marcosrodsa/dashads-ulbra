@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
         // 1. Fetch Ad & Creative Info (Adding account_id, image_hash and object_story_spec)
         console.log(`Enriching creative for adId: ${adId}`);
         const adResponse = await fetch(
-            `https://graph.facebook.com/v21.0/${adId}?fields=account_id,preview_shareable_link,effective_status,adlabels,recommendations,creative{id,name,title,body,image_url,thumbnail_url,video_id,effective_object_story_id,image_hash,object_story_spec}&access_token=${META_API_KEY}`
+            `https://graph.facebook.com/v21.0/${adId}?fields=account_id,preview_shareable_link,effective_status,adlabels,recommendations,creative{id,name,title,body,image_url,thumbnail_url,video_id,effective_object_story_id,image_hash,object_story_spec,asset_feed_spec}&access_token=${META_API_KEY}`
         );
         const adData = await adResponse.json();
 
@@ -83,8 +83,10 @@ Deno.serve(async (req) => {
         const storyId = creative.effective_object_story_id;
         const accountId = adData.account_id;
 
-        // --- DEEP HASH HUNT ---
+        // --- TRIPLE-THREAT ASSET RETRIEVAL ---
         let foundHash = creative.image_hash;
+
+        // A. Hunt in Story Spec
         if (!foundHash && creative.object_story_spec) {
             const spec = creative.object_story_spec;
             console.log("Deep Hunting in object_story_spec...");
@@ -94,10 +96,18 @@ Deno.serve(async (req) => {
                 spec.link_data?.child_attachments?.[0]?.image_hash;
         }
 
-        if (foundHash) console.log(`🔍 Hash detected: ${foundHash}`);
-        else console.log("⚠️ No image_hash found in Creative or ObjectStorySpec");
+        // B. Hunt in Asset Feed (Dynamic Ads)
+        if (!foundHash && creative.asset_feed_spec) {
+            console.log("Deep Hunting in asset_feed_spec...");
+            const assets = creative.asset_feed_spec.images || [];
+            foundHash = assets[0]?.hash;
+            if (assets[0]?.url && !highResImageUrl) highResImageUrl = assets[0].url;
+        }
 
-        // A. Primary Strategy: Fetch via Image Hash (Requires only ads_read)
+        if (foundHash) console.log(`🔍 Hash detected: ${foundHash}`);
+        else console.log("⚠️ No image_hash found in Creative or Specs");
+
+        // Strategy 1: Fetch via Image Hash (Requires only ads_read)
         if (foundHash && accountId) {
             console.log(`Fetching high-res asset via Image Hash: ${foundHash}`);
             try {
@@ -110,17 +120,14 @@ Deno.serve(async (req) => {
                 if (imageAsset?.permalink_url) {
                     highResImageUrl = imageAsset.permalink_url;
                     console.log("✅ High-res permalink_url found via Image Hash");
-                } else if (imageAsset?.url) {
-                    highResImageUrl = imageAsset.url;
-                    console.log("✅ Image URL found via Image Hash");
                 }
             } catch (e) {
                 console.warn("Could not fetch high-res via image hash:", e);
             }
         }
 
-        // B. Secondary Strategy: If hash failed or not available, try Story (Fallback)
-        if (storyId && (!highResImageUrl || highResImageUrl === creative.image_url)) {
+        // Strategy 2: If hash failed or not available, try Story (Fallback)
+        if (storyId && (!highResImageUrl || highResImageUrl === creative.image_url || highResImageUrl.includes("p64x64"))) {
             console.log(`Fallback: Fetching story assets for storyId: ${storyId}`);
             try {
                 const storyResponse = await fetch(
@@ -139,6 +146,27 @@ Deno.serve(async (req) => {
                 }
             } catch (e) {
                 console.warn("Could not fetch high-res story picture:", e);
+            }
+        }
+
+        // Strategy 3: Ultimate Fallback via AdPreview (Scraping the preview src)
+        if (!highResImageUrl || highResImageUrl === creative.image_url || highResImageUrl.includes("p64x64")) {
+            console.log("Ultimate Fallback: Extracting from AdPreview...");
+            try {
+                const previewResponse = await fetch(
+                    `https://graph.facebook.com/v21.0/${creative.id}/previews?ad_format=DESKTOP_FEED_STANDARD&access_token=${META_API_KEY}`
+                );
+                const previewData = await previewResponse.json();
+                const html = previewData.data?.[0]?.body;
+                if (html) {
+                    const imgMatch = html.match(/src="(https:\/\/scontent[^"]+)/);
+                    if (imgMatch && imgMatch[1]) {
+                        highResImageUrl = imgMatch[1].replace(/&amp;/g, '&');
+                        console.log("✅ High-res image extracted from AdPreview");
+                    }
+                }
+            } catch (e) {
+                console.warn("Could not extract from preview:", e);
             }
         }
 
