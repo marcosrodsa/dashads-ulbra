@@ -24,18 +24,36 @@ Deno.serve(async (req) => {
             throw new Error("Missing environment variables");
         }
 
-        // A. Robust Payload Parsing
+        // A. Ultra-Resilient Payload Extraction
         let adId = "";
-        try {
-            const body = await req.json();
-            console.log("Raw Payload received:", JSON.stringify(body));
-            adId = body.adId;
-        } catch (e) {
-            console.error("Failed to parse JSON body:", e);
-            throw new Error("Invalid JSON payload");
+
+        // 1. Try Query Parameters (First priority for simple triggers)
+        const url = new URL(req.url);
+        adId = url.searchParams.get("adId") || url.searchParams.get("ad_id") || url.searchParams.get("id") || "";
+
+        // 2. Try JSON Body (If not in Query Params)
+        if (!adId && req.method !== "GET") {
+            try {
+                const body = await req.json();
+                console.log("Incoming Payload:", JSON.stringify(body));
+
+                if (Array.isArray(body)) {
+                    const first = body[0];
+                    adId = first?.adId || first?.ad_id || first?.id || "";
+                } else if (body && typeof body === "object") {
+                    adId = (body as any).adId || (body as any).ad_id || (body as any).id || "";
+                } else if (typeof body === "string") {
+                    adId = body;
+                }
+            } catch (e) {
+                console.warn("Payload is not JSON or empty:", (e as Error).message);
+            }
         }
 
-        if (!adId) throw new Error("Missing adId in payload");
+        if (!adId) {
+            console.error("Critical: Could not find adId in URL or Body");
+            throw new Error("Missing adId in payload (Checked: Query Params, JSON Body [adId, ad_id, id])");
+        }
 
         // 1. Fetch Ad & Creative Info (Adding account_id and image_hash)
         console.log(`Enriching creative for adId: ${adId}`);
