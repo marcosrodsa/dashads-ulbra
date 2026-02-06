@@ -37,10 +37,10 @@ Deno.serve(async (req) => {
 
         if (!adId) throw new Error("Missing adId in payload");
 
-        // 1. Fetch Ad & Creative Info (Adding effective_object_story_id)
+        // 1. Fetch Ad & Creative Info (Adding account_id and image_hash)
         console.log(`Enriching creative for adId: ${adId}`);
         const adResponse = await fetch(
-            `https://graph.facebook.com/v21.0/${adId}?fields=preview_shareable_link,effective_status,adlabels,recommendations,creative{id,name,title,body,image_url,thumbnail_url,video_id,effective_object_story_id}&access_token=${META_API_KEY}`
+            `https://graph.facebook.com/v21.0/${adId}?fields=account_id,preview_shareable_link,effective_status,adlabels,recommendations,creative{id,name,title,body,image_url,thumbnail_url,video_id,effective_object_story_id,image_hash}&access_token=${META_API_KEY}`
         );
         const adData = await adResponse.json();
 
@@ -58,27 +58,48 @@ Deno.serve(async (req) => {
         // 2. High-Resolution Asset Retrieval Strategy
         let highResImageUrl = creative.image_url || creative.thumbnail_url || "";
         const storyId = creative.effective_object_story_id;
+        const imageHash = creative.image_hash;
+        const accountId = adData.account_id;
 
-        // B. If it's a Post-based ad, fetch rich assets (full_picture, picture, attachments)
-        if (storyId) {
-            console.log(`Fetching high-res story assets for storyId: ${storyId}`);
+        // A. Primary Strategy: Fetch via Image Hash (Requires only ads_read)
+        if (imageHash && accountId) {
+            console.log(`Fetching high-res asset via Image Hash: ${imageHash}`);
             try {
-                // Expanding fields to find the best possible image
+                const adImageResponse = await fetch(
+                    `https://graph.facebook.com/v21.0/act_${accountId}/adimages?hashes=["${imageHash}"]&fields=permalink_url,url,original_height,original_width&access_token=${META_API_KEY}`
+                );
+                const adImageData = await adImageResponse.json();
+                const imageAsset = adImageData.data?.[0];
+
+                if (imageAsset?.permalink_url) {
+                    highResImageUrl = imageAsset.permalink_url;
+                    console.log("✅ High-res permalink_url found via Image Hash");
+                } else if (imageAsset?.url) {
+                    highResImageUrl = imageAsset.url;
+                    console.log("✅ Image URL found via Image Hash");
+                }
+            } catch (e) {
+                console.warn("Could not fetch high-res via image hash:", e);
+            }
+        }
+
+        // B. Secondary Strategy: If hash failed or not available, try Story (Fallback)
+        if (storyId && (!highResImageUrl || highResImageUrl === creative.image_url)) {
+            console.log(`Fallback: Fetching story assets for storyId: ${storyId}`);
+            try {
                 const storyResponse = await fetch(
                     `https://graph.facebook.com/v21.0/${storyId}?fields=full_picture,picture,attachments{media}&access_token=${META_API_KEY}`
                 );
                 const storyData = await storyResponse.json();
-                console.log("Story Metadata received:", JSON.stringify(storyData));
 
-                if (storyData.full_picture) {
+                if (storyData.error) {
+                    console.warn(`Story fetch blocked by permission: ${storyData.error.message}`);
+                } else if (storyData.full_picture) {
                     highResImageUrl = storyData.full_picture;
-                    console.log("✅ High-res full_picture found");
+                    console.log("✅ High-res full_picture found via Story");
                 } else if (storyData.attachments?.data?.[0]?.media?.image?.src) {
                     highResImageUrl = storyData.attachments.data[0].media.image.src;
-                    console.log("✅ High-res image found in attachments");
-                } else if (storyData.picture) {
-                    highResImageUrl = storyData.picture;
-                    console.log("⚠️ Fallback to 'picture' field (medium res)");
+                    console.log("✅ High-res image found in Story attachments");
                 }
             } catch (e) {
                 console.warn("Could not fetch high-res story picture:", e);
@@ -88,7 +109,7 @@ Deno.serve(async (req) => {
         const isVideo = !!creative.video_id;
         const creativeType = isVideo ? "VIDEO" : "IMAGE";
 
-        // B. If it's a video, try to get the highest quality thumbnail
+        // C. Video Thumbnail Strategy
         let videoThumbnailUrl = creative.thumbnail_url || null;
         if (isVideo && creative.video_id) {
             console.log(`Fetching highest quality thumbnail for video: ${creative.video_id}`);
@@ -100,8 +121,7 @@ Deno.serve(async (req) => {
                 const bestThumbnail = videoAssetData.thumbnails?.data?.sort((a: any, b: any) => (b.width || 0) - (a.width || 0))[0];
                 if (bestThumbnail?.uri) {
                     videoThumbnailUrl = bestThumbnail.uri;
-                    // Also use this as the primary image_url if it's high res
-                    if (!storyId) highResImageUrl = bestThumbnail.uri;
+                    if (!imageHash && !storyId) highResImageUrl = bestThumbnail.uri;
                 }
             } catch (e) {
                 console.warn("Could not fetch high-res video thumbnail:", e);
