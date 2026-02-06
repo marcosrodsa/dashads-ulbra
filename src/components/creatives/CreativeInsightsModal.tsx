@@ -307,7 +307,7 @@ export function CreativeInsightsModal({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogContent className="max-w-[95vw] md:max-w-2xl max-h-[90vh] md:max-h-[80vh] overflow-y-auto p-4 md:p-6">
                 <DialogHeader>
                     <div className="flex items-center gap-2">
                         <DialogTitle className="flex items-center gap-2 text-xl">
@@ -321,9 +321,9 @@ export function CreativeInsightsModal({
                 </DialogHeader>
 
                 {assets && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border rounded-lg bg-slate-50/50">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-3 md:p-4 border rounded-lg bg-slate-50/50">
                         {assets.image_url && (
-                            <div className="md:col-span-1 rounded-md overflow-hidden h-32 md:h-full bg-slate-200">
+                            <div className="md:col-span-1 rounded-md overflow-hidden h-40 md:h-full bg-slate-200">
                                 <img src={assets.image_url} alt="Creative Preview" className="w-full h-full object-cover" />
                             </div>
                         )}
@@ -339,15 +339,15 @@ export function CreativeInsightsModal({
 
                 <div className="space-y-4 mt-4">
                     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                        <TabsList className="grid w-full grid-cols-3">
-                            <TabsTrigger value="analysis" className="gap-2">
-                                <Sparkles className="h-4 w-4" /> Análise
+                        <TabsList className="grid w-full grid-cols-3 h-auto p-1 bg-muted/50">
+                            <TabsTrigger value="analysis" className="gap-2 py-2 text-xs md:text-sm px-1 md:px-3">
+                                <Sparkles className="h-4 w-4 shrink-0" /> <span className="truncate">Análise</span>
                             </TabsTrigger>
-                            <TabsTrigger value="vision" className="gap-2">
-                                <Eye className="h-4 w-4" /> Visão Gaia
+                            <TabsTrigger value="vision" className="gap-2 py-2 text-xs md:text-sm px-1 md:px-3">
+                                <Eye className="h-4 w-4 shrink-0" /> <span className="truncate">Visão Gaia</span>
                             </TabsTrigger>
-                            <TabsTrigger value="history" className="gap-2">
-                                <History className="h-4 w-4" /> Histórico ({history.length})
+                            <TabsTrigger value="history" className="gap-2 py-2 text-xs md:text-sm px-1 md:px-3">
+                                <History className="h-4 w-4 shrink-0" /> <span className="truncate">Histórico ({history.length})</span>
                             </TabsTrigger>
                         </TabsList>
 

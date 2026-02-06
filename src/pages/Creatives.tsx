@@ -628,7 +628,7 @@ export default function CreativesPage() {
                                                 </div>
                                                 <div className="flex flex-col gap-1">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="font-medium text-sm line-clamp-1">
+                                                        <span className="font-medium text-sm line-clamp-2">
                                                             {row.ad_name || `Anúncio: ${row.ad_id}`}
                                                         </span>
                                                         {row.preview_shareable_link && (
@@ -649,14 +649,14 @@ export default function CreativesPage() {
                                                                     <div className="flex items-center cursor-default">
                                                                         <div
                                                                             className={`relative h-[12px] w-[24px] rounded-full transition-colors duration-200 ${row.effective_status === 'ACTIVE'
-                                                                                    ? 'bg-[#0081C9]'
-                                                                                    : 'bg-[#E9EBEE] border border-[#BEC3C9]'
+                                                                                ? 'bg-[#0081C9]'
+                                                                                : 'bg-[#E9EBEE] border border-[#BEC3C9]'
                                                                                 }`}
                                                                         >
                                                                             <div
                                                                                 className={`absolute top-1/2 -translate-y-1/2 h-[8px] w-[8px] rounded-full transition-all duration-200 ${row.effective_status === 'ACTIVE'
-                                                                                        ? 'right-[2px] bg-white'
-                                                                                        : 'left-[2px] bg-[#4B4F56]'
+                                                                                    ? 'right-[2px] bg-white'
+                                                                                    : 'left-[2px] bg-[#4B4F56]'
                                                                                     }`}
                                                                             />
                                                                         </div>
