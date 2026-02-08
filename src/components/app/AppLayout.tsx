@@ -5,6 +5,7 @@ import { AppSidebar } from "./AppSidebar";
 import { useAuth } from "@/contexts/auth-context-core";
 import { LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GaiaChatDrawer } from "@/components/gaia/GaiaChatDrawer";
 
 export function AppLayout() {
   const { fullName, user, signOut } = useAuth();
@@ -37,7 +38,9 @@ export function AppLayout() {
                 </h1>
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
+                <GaiaChatDrawer />
+
                 <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-border">
                   <User className="size-4 text-muted-foreground" />
                   <span className="text-sm font-medium text-foreground max-w-[120px] truncate">

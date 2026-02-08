@@ -11,12 +11,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Sparkles, TrendingUp, TrendingDown, Eye, MousePointer, DollarSign, Users, Image, Video, LayoutGrid, RefreshCw, CalendarIcon, Info, ArrowUpDown, ArrowUp, ArrowDown, Wand2, ExternalLink } from "lucide-react";
+import { Sparkles, TrendingUp, TrendingDown, Eye, MousePointer, DollarSign, Users, Image, Video, LayoutGrid, RefreshCw, CalendarIcon, Info, ArrowUpDown, ArrowUp, ArrowDown, Wand2, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CplEvolutionChart } from "@/components/performance/PerformanceCharts";
 import { CreativeCPLHeatmap } from "@/components/creatives/CreativeCPLHeatmap";
 import { Switch } from "@/components/ui/switch";
 import { CreativeInsightsModal } from "@/components/creatives/CreativeInsightsModal";
+import { CplSparkline } from "@/components/creatives/CplSparkline";
 
 // Types
 interface CreativeRow {
@@ -88,6 +89,8 @@ export default function CreativesPage() {
     const [curso, setCurso] = React.useState<string>("all");
     const [sortBy, setSortBy] = React.useState<string>("conversoes");
     const [sortDir, setSortDir] = React.useState<"asc" | "desc">("desc");
+    const [currentPage, setCurrentPage] = React.useState(1);
+    const itemsPerPage = 20;
 
     // Toggle sort function
     const toggleSort = (column: string) => {
@@ -185,6 +188,24 @@ export default function CreativesPage() {
     const aggregatedData = React.useMemo(() => {
         if (!data) return [];
 
+        // Group daily data by ad_id for sparklines
+        const dailyByAd: Record<string, { date: string; cpl: number }[]> = {};
+        data.forEach(row => {
+            if (!dailyByAd[row.ad_id]) {
+                dailyByAd[row.ad_id] = [];
+            }
+            if (row.conversoes > 0 && row.investimento > 0) {
+                dailyByAd[row.ad_id].push({
+                    date: row.data_referencia,
+                    cpl: row.investimento / row.conversoes
+                });
+            }
+        });
+        // Sort daily data by date
+        Object.keys(dailyByAd).forEach(adId => {
+            dailyByAd[adId].sort((a, b) => a.date.localeCompare(b.date));
+        });
+
         const grouped = data.reduce((acc, row) => {
             if (!acc[row.ad_id]) {
                 acc[row.ad_id] = {
@@ -193,10 +214,6 @@ export default function CreativesPage() {
                     impressoes: 0,
                     cliques: 0,
                     conversoes: 0,
-                    // Initialize these to null if they might not be present in the first row
-                    // or to ensure they are picked up correctly by the OR logic below.
-                    // The spread `...row` already handles initial values if present.
-                    // We just need to ensure the OR logic works for subsequent rows.
                 };
             }
             // Accumulate metrics
@@ -219,6 +236,7 @@ export default function CreativesPage() {
                 ...r,
                 ctr: r.impressoes > 0 ? (r.cliques / r.impressoes) * 100 : 0,
                 cpl: r.conversoes > 0 ? r.investimento / r.conversoes : null,
+                dailyHistory: dailyByAd[r.ad_id] || [],
             }))
             .sort((a, b) => {
                 const getValue = (row: any) => {
@@ -245,8 +263,19 @@ export default function CreativesPage() {
                         : bVal.localeCompare(aVal);
                 }
                 return sortDir === "asc" ? aVal - bVal : bVal - aVal;
-            })
-            .slice(0, 50);
+            });
+    }, [data, sortBy, sortDir]);
+
+    // Paginated data
+    const totalPages = Math.ceil(aggregatedData.length / itemsPerPage);
+    const paginatedData = React.useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return aggregatedData.slice(start, start + itemsPerPage);
+    }, [aggregatedData, currentPage, itemsPerPage]);
+
+    // Reset page when filters change
+    React.useEffect(() => {
+        setCurrentPage(1);
     }, [data, sortBy, sortDir]);
 
 
@@ -487,8 +516,13 @@ export default function CreativesPage() {
 
             {/* Table */}
             <Card>
-                <CardHeader>
-                    <CardTitle>Top 50 Criativos por Conversões</CardTitle>
+                <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle>Criativos ({aggregatedData.length} total)</CardTitle>
+                    {totalPages > 1 && (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <span>Página {currentPage} de {totalPages}</span>
+                        </div>
+                    )}
                 </CardHeader>
                 <CardContent>
                     {isLoading ? (
@@ -584,6 +618,24 @@ export default function CreativesPage() {
                                             Investimento {getSortIcon("investimento")}
                                         </button>
                                     </TableHead>
+                                    <TableHead className="w-[100px]">
+                                        <div className="flex items-center gap-1.5">
+                                            Tendência
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                                                </TooltipTrigger>
+                                                <TooltipContent side="top" className="max-w-[220px]">
+                                                    <div className="text-xs space-y-1">
+                                                        <p><strong>Evolução do CPL ao longo do período.</strong></p>
+                                                        <p>🟢 Verde = CPL caindo (bom)</p>
+                                                        <p>🟡 Amarelo = Estável</p>
+                                                        <p>🔴 Vermelho = CPL subindo (ruim)</p>
+                                                    </div>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </div>
+                                    </TableHead>
                                     <TableHead>
                                         <div className="flex items-center gap-1.5">
                                             Análise IA
@@ -604,7 +656,7 @@ export default function CreativesPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {aggregatedData.map((row) => (
+                                {paginatedData.map((row) => (
                                     <TableRow key={row.ad_id}>
 
                                         <TableCell>
@@ -688,6 +740,9 @@ export default function CreativesPage() {
                                         <TableCell className="text-right">{brl(row.cpl)}</TableCell>
                                         <TableCell className="text-right">{brl(row.investimento)}</TableCell>
                                         <TableCell>
+                                            <CplSparkline data={row.dailyHistory} />
+                                        </TableCell>
+                                        <TableCell>
                                             <div className="flex flex-wrap gap-1">
                                                 {/* Fatigue Indicator */}
                                                 {row.cpl && kpis.avgCPL && row.cpl > kpis.avgCPL * 1.3 && (
@@ -733,6 +788,60 @@ export default function CreativesPage() {
                                 ))}
                             </TableBody>
                         </Table>
+                    )}
+
+                    {/* Pagination Controls */}
+                    {totalPages > 1 && (
+                        <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                            <div className="text-sm text-muted-foreground">
+                                Mostrando {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, aggregatedData.length)} de {aggregatedData.length} criativos
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                >
+                                    <ChevronLeft className="h-4 w-4 mr-1" />
+                                    Anterior
+                                </Button>
+                                <div className="flex items-center gap-1">
+                                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                        let pageNum: number;
+                                        if (totalPages <= 5) {
+                                            pageNum = i + 1;
+                                        } else if (currentPage <= 3) {
+                                            pageNum = i + 1;
+                                        } else if (currentPage >= totalPages - 2) {
+                                            pageNum = totalPages - 4 + i;
+                                        } else {
+                                            pageNum = currentPage - 2 + i;
+                                        }
+                                        return (
+                                            <Button
+                                                key={pageNum}
+                                                variant={currentPage === pageNum ? "default" : "outline"}
+                                                size="sm"
+                                                className="w-8 h-8 p-0"
+                                                onClick={() => setCurrentPage(pageNum)}
+                                            >
+                                                {pageNum}
+                                            </Button>
+                                        );
+                                    })}
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                >
+                                    Próximo
+                                    <ChevronRight className="h-4 w-4 ml-1" />
+                                </Button>
+                            </div>
+                        </div>
                     )}
                 </CardContent>
             </Card>

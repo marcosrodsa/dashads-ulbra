@@ -44,6 +44,27 @@ interface CreativeVector {
     created_at: string;
 }
 
+// NEW: Contextual Analysis with performance KPIs
+interface ContextualAnalysis {
+    performance: {
+        ctr: number;
+        cpa: number | null;
+        conversions: number;
+        impressions: number;
+        clicks: number;
+        spend: number;
+        trend: "improving" | "stable" | "declining";
+    };
+    analysis: {
+        why_performs: string;
+        improvement_suggestions: string[];
+        fatigue_risk: "low" | "medium" | "high";
+        recommended_action: "scale" | "pause" | "iterate" | "test";
+        confidence_score: number;
+    };
+    tokensUsed?: number;
+}
+
 interface InsightsModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -128,6 +149,43 @@ async function fetchCreativeVision(adId: string): Promise<CreativeVector | null>
         if (error) return null;
         return data as CreativeVector;
     } catch (e) {
+        return null;
+    }
+}
+
+// NEW: Call Edge Function for contextual analysis with performance KPIs
+async function generateContextualInsights(
+    creativeId: string,
+    periodStart?: string,
+    periodEnd?: string
+): Promise<ContextualAnalysis | null> {
+    try {
+        const supabase = getSupabaseClient();
+        if (!supabase) {
+            console.warn("Supabase client not available");
+            return null;
+        }
+
+        const { data, error } = await supabase.functions.invoke("gaia-contextual-analysis", {
+            body: {
+                creativeId,
+                periodStart,
+                periodEnd
+            }
+        });
+
+        if (error || !data || data.error) {
+            console.error("Contextual Analysis Error:", error || data?.error);
+            return null;
+        }
+
+        return {
+            performance: data.performance,
+            analysis: data.analysis,
+            tokensUsed: data.tokensUsed
+        };
+    } catch (e) {
+        console.error("Exception invoking Contextual Analysis:", e);
         return null;
     }
 }
@@ -258,6 +316,9 @@ export function CreativeInsightsModal({
     const [history, setHistory] = React.useState<HistoricalInsight[]>([]);
     const [vision, setVision] = React.useState<CreativeVector | null>(null);
     const [activeTab, setActiveTab] = React.useState<string>("analysis");
+    // NEW: Contextual analysis state
+    const [contextualAnalysis, setContextualAnalysis] = React.useState<ContextualAnalysis | null>(null);
+    const [isContextualLoading, setIsContextualLoading] = React.useState(false);
 
     React.useEffect(() => {
         if (open && creativeId) {
@@ -268,6 +329,7 @@ export function CreativeInsightsModal({
             setAssets(null);
             setHistory([]);
             setActiveTab("analysis");
+            setContextualAnalysis(null);
         }
     }, [open, creativeId]);
 
@@ -302,6 +364,21 @@ export function CreativeInsightsModal({
             console.error("Error generating insights:", error);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    // NEW: Handle contextual analysis generation
+    const handleContextualGenerate = async () => {
+        if (!creativeId) return;
+
+        setIsContextualLoading(true);
+        try {
+            const result = await generateContextualInsights(creativeId);
+            setContextualAnalysis(result);
+        } catch (error) {
+            console.error("Error generating contextual analysis:", error);
+        } finally {
+            setIsContextualLoading(false);
         }
     };
 
@@ -376,12 +453,21 @@ export function CreativeInsightsModal({
                                     <Sparkles className="h-12 w-12 mx-auto text-purple-400 mb-4" />
                                     <h3 className="text-lg font-semibold mb-2">Pronto para analisar?</h3>
                                     <p className="text-muted-foreground mb-4 text-sm">
-                                        Gaia irá processar as métricas e o visual para gerar recomendações acionáveis.
+                                        Escolha o tipo de análise que deseja realizar.
                                     </p>
-                                    <Button onClick={handleGenerate} className="gap-2">
-                                        <Wand2 className="h-4 w-4" />
-                                        Gerar Insights com IA
-                                    </Button>
+                                    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                                        <Button onClick={handleGenerate} variant="outline" className="gap-2">
+                                            <Wand2 className="h-4 w-4" />
+                                            Análise Rápida
+                                        </Button>
+                                        <Button onClick={handleContextualGenerate} className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700">
+                                            <BarChart3 className="h-4 w-4" />
+                                            Análise Contextualizada (KPIs)
+                                        </Button>
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground mt-3">
+                                        A análise contextualizada usa dados de performance dos últimos 30 dias.
+                                    </p>
                                 </div>
                             )}
 
@@ -397,6 +483,136 @@ export function CreativeInsightsModal({
                                             <Skeleton className="h-4 w-full" />
                                         </div>
                                     ))}
+                                </div>
+                            )}
+
+                            {/* NEW: Contextual Analysis Loading */}
+                            {isContextualLoading && (
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-2 text-purple-600">
+                                        <RefreshCw className="h-4 w-4 animate-spin" />
+                                        <span>Gaia está analisando com contexto de performance...</span>
+                                    </div>
+                                    <div className="border-2 border-purple-200 rounded-lg p-4 space-y-3 bg-purple-50/50">
+                                        <Skeleton className="h-6 w-1/2" />
+                                        <Skeleton className="h-4 w-full" />
+                                        <Skeleton className="h-4 w-3/4" />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* NEW: Contextual Analysis Result */}
+                            {contextualAnalysis && !isContextualLoading && (
+                                <div className="space-y-4">
+                                    {/* Performance Context */}
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border">
+                                        <div className="text-center">
+                                            <p className="text-[10px] text-muted-foreground uppercase">Impressões</p>
+                                            <p className="text-lg font-bold">{contextualAnalysis.performance.impressions.toLocaleString('pt-BR')}</p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-[10px] text-muted-foreground uppercase">CTR</p>
+                                            <p className="text-lg font-bold">{contextualAnalysis.performance.ctr}%</p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-[10px] text-muted-foreground uppercase">Conversões</p>
+                                            <p className="text-lg font-bold">{contextualAnalysis.performance.conversions}</p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-[10px] text-muted-foreground uppercase">CPA</p>
+                                            <p className="text-lg font-bold">
+                                                {contextualAnalysis.performance.cpa ? `R$ ${contextualAnalysis.performance.cpa.toFixed(2)}` : 'N/A'}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Recommended Action Banner */}
+                                    <div className={`p-4 rounded-lg border-2 ${contextualAnalysis.analysis.recommended_action === 'scale'
+                                        ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800'
+                                        : contextualAnalysis.analysis.recommended_action === 'pause'
+                                            ? 'bg-rose-50 border-rose-200 dark:bg-rose-900/20 dark:border-rose-800'
+                                            : 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800'
+                                        }`}>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-[10px] uppercase font-bold text-muted-foreground">Ação Recomendada</span>
+                                            <Badge className={
+                                                contextualAnalysis.analysis.recommended_action === 'scale'
+                                                    ? 'bg-emerald-500'
+                                                    : contextualAnalysis.analysis.recommended_action === 'pause'
+                                                        ? 'bg-rose-500'
+                                                        : 'bg-amber-500'
+                                            }>
+                                                {contextualAnalysis.analysis.recommended_action === 'scale' && '📈 ESCALAR'}
+                                                {contextualAnalysis.analysis.recommended_action === 'pause' && '⏸️ PAUSAR'}
+                                                {contextualAnalysis.analysis.recommended_action === 'iterate' && '🔄 ITERAR'}
+                                                {contextualAnalysis.analysis.recommended_action === 'test' && '🧪 TESTAR'}
+                                            </Badge>
+                                        </div>
+                                        <div className="flex items-center justify-between text-sm">
+                                            <div className="flex items-center gap-2">
+                                                <span>Tendência:</span>
+                                                {contextualAnalysis.performance.trend === 'improving' && <span className="text-emerald-600 flex items-center gap-1"><TrendingUp className="h-4 w-4" /> Melhorando</span>}
+                                                {contextualAnalysis.performance.trend === 'declining' && <span className="text-rose-600 flex items-center gap-1"><TrendingDown className="h-4 w-4" /> Caindo</span>}
+                                                {contextualAnalysis.performance.trend === 'stable' && <span className="text-amber-600">➡️ Estável</span>}
+                                            </div>
+                                            {contextualAnalysis.analysis.confidence_score && (
+                                                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                                    <span>Confiança:</span>
+                                                    <div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden">
+                                                        <div
+                                                            className={`h-full rounded-full ${contextualAnalysis.analysis.confidence_score >= 0.8 ? 'bg-emerald-500' :
+                                                                    contextualAnalysis.analysis.confidence_score >= 0.6 ? 'bg-amber-500' : 'bg-rose-500'
+                                                                }`}
+                                                            style={{ width: `${contextualAnalysis.analysis.confidence_score * 100}%` }}
+                                                        />
+                                                    </div>
+                                                    <span className="font-mono">{Math.round(contextualAnalysis.analysis.confidence_score * 100)}%</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Why It Performs */}
+                                    <div className="border rounded-lg p-4 space-y-2">
+                                        <div className="flex items-center gap-2">
+                                            <Lightbulb className="h-5 w-5 text-purple-500" />
+                                            <h4 className="font-semibold">Por que este criativo performa assim?</h4>
+                                        </div>
+                                        <p className="text-sm text-muted-foreground pl-7">
+                                            {contextualAnalysis.analysis.why_performs}
+                                        </p>
+                                    </div>
+
+                                    {/* Improvement Suggestions */}
+                                    {contextualAnalysis.analysis.improvement_suggestions.length > 0 && (
+                                        <div className="border rounded-lg p-4 space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <CheckCircle className="h-5 w-5 text-blue-500" />
+                                                <h4 className="font-semibold">Sugestões de Melhoria</h4>
+                                            </div>
+                                            <ul className="space-y-1 pl-7">
+                                                {contextualAnalysis.analysis.improvement_suggestions.map((suggestion, idx) => (
+                                                    <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
+                                                        <span className="text-purple-500">•</span>
+                                                        {suggestion}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+
+                                    {/* Footer */}
+                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-2">
+                                        <span>Análise contextualizada com dados dos últimos 30 dias</span>
+                                        <button
+                                            onClick={handleContextualGenerate}
+                                            disabled={isContextualLoading}
+                                            className="flex items-center gap-1 hover:text-purple-500 transition-colors disabled:opacity-50"
+                                        >
+                                            <RefreshCw className={`h-3 w-3 ${isContextualLoading ? "animate-spin" : ""}`} />
+                                            Regerar
+                                        </button>
+                                    </div>
                                 </div>
                             )}
 
