@@ -72,6 +72,8 @@ BEGIN
     FROM (
       SELECT 
         COALESCE(p.entity_name, p.campaign_name) as ad_name,
+        COALESCE(m.unidade_nome, ''Outros'') as unidade,
+        COALESCE(m.curso_nome, ''Geral'') as curso,
         SUM(p.conversions) as conversions,
         SUM(p.spend) as spend,
         CASE WHEN SUM(p.conversions) > 0 THEN SUM(p.spend)/SUM(p.conversions) ELSE 0 END as cpl,
@@ -80,9 +82,13 @@ BEGIN
       LEFT JOIN vw_campaign_mapping_readable m 
         ON p.platform = m.platform AND p.campaign_id = m.campaign_id
       WHERE %s
-      GROUP BY COALESCE(p.entity_name, p.campaign_name)
+      GROUP BY 
+        COALESCE(p.entity_name, p.campaign_name),
+        m.unidade_nome,
+        m.curso_nome,
+        p.campaign_id
       ORDER BY conversions DESC
-      LIMIT 5
+      LIMIT 10
     ) sub', v_where)
   INTO v_creatives;
 
