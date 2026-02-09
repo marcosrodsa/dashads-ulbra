@@ -9,6 +9,28 @@ const corsHeaders = {
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Helper to fetch image and convert to Base64 safely (Avoiding any stack-based methods)
+async function fetchImageAsBase64(url: string): Promise<string | null> {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+        const arrayBuffer = await response.arrayBuffer();
+
+        const bytes = new Uint8Array(arrayBuffer);
+        // Use a more memory-efficient way to convert to base64
+        let binary = "";
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+            const chunk = bytes.subarray(i, i + chunkSize);
+            binary += String.fromCharCode.apply(null, chunk as any);
+        }
+        return btoa(binary);
+    } catch (e) {
+        console.error("Error fetching image:", e);
+        return null;
+    }
+}
+
 interface AnalysisRequest {
     creativeId: string;
     periodStart?: string;  // ISO date, default: 30 days ago
@@ -37,6 +59,7 @@ Deno.serve(async (req) => {
     }
 
     try {
+        console.log("DEBUG: gaia-contextual-analysis invoked - Build: 09/02 16:45");
         const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
         const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -202,7 +225,14 @@ Deno.serve(async (req) => {
 
         console.log("Performance snapshot:", performanceSnapshot);
 
-        // 4. Build contextual prompt for Gemini
+        // 4. PRE-FETCH IMAGE (Required for prompt flag)
+        let imageBase64: string | null = null;
+        if (asset.image_url) {
+            console.log("Fetching image for analysis:", asset.image_url);
+            imageBase64 = await fetchImageAsBase64(asset.image_url);
+        }
+
+        // 5. Build contextual prompt for Gemini
         const prompt = `Você é a Gaia, uma Diretora de Criação Sênior especializada em anúncios de performance para instituições de ensino superior no Brasil (Ulbra).
 
 Analise este criativo com base nos dados de performance REAIS fornecidos. Sua análise deve explicar POR QUE ele performa dessa forma.
@@ -213,6 +243,7 @@ Analise este criativo com base nos dados de performance REAIS fornecidos. Sua an
 - Tipo: ${asset.creative_type || "IMAGE"}
 ${asset.hook_rate ? `- Hook Rate: ${asset.hook_rate}%` : ""}
 ${asset.hold_rate ? `- Hold Rate: ${asset.hold_rate}%` : ""}
+- Imagem Fornecida: ${imageBase64 ? "SIM (Use a imagem enviada para a análise visual)" : "NÃO (Ocorreu um erro técnico ao buscar a imagem)"}
 
 **Performance Real (${startDate} a ${endDate}):**
 - Impressões: ${totals.impressions.toLocaleString('pt-BR')}
@@ -229,14 +260,16 @@ ${forecast.predicted_cpl ? `- CPA Projetado: R$ ${forecast.predicted_cpl.toFixed
 ${forecast.confidence_r2 > 0.6 ? `(Alta Confiança Estatística: R²=${forecast.confidence_r2})` : "(Baixa Confiança Estatística)"}
 
 **Instruções:**
-1. Explique POR QUE este criativo está performando assim (relacione copy/visual com os KPIs)
-2. **COMENTE A PREVISÃO:** Se a tendência é de alta no CPA, alerte o usuário. Se é de queda, sugira aproveitar.
-3. Sugira 2-3 melhorias específicas e acionáveis
-4. Identifique o risco de fadiga (low/medium/high)
-5. Recomende UMA ação: scale (escalar investimento), pause (pausar), iterate (criar variação), test (testar A/B)
+1. Descreva visualmente o criativo em 1 parágrafo (elementos, cores, texto na imagem). IMPORTANTE: Se a imagem NÃO foi fornecida (indicado acima), escreva OBRIGATORIAMENTE: "Diagnóstico visual indisponível para este criativo devido a erro de acesso à imagem." e NÃO invente ou alucine detalhes visuais nem sugestões baseadas em imagens que você não viu.
+2. Explique POR QUE este criativo está performando assim (relacione copy/visual com os KPIs).
+3. **COMENTE A PREVISÃO:** Se a tendência é de alta no CPA, alerte o usuário. Se é de queda, sugira aproveitar.
+4. Sugira 2-3 melhorias específicas e acionáveis (baseadas na imagem APENAS se disponível).
+5. Identifique o risco de fadiga (low/medium/high).
+6. Recomende UMA ação: scale (escalar investimento), pause (pausar), iterate (criar variação), test (testar A/B).
 
 **Formato de Resposta (JSON):**
 {
+  "visual_description": "Descrição visual detalhada da imagem...",
   "why_performs": "Explicação detalhada conectando elementos criativos aos resultados...",
   "improvement_suggestions": ["Sugestão 1", "Sugestão 2", "Sugestão 3"],
   "fatigue_risk": "low" | "medium" | "high",
@@ -247,9 +280,21 @@ ${forecast.confidence_r2 > 0.6 ? `(Alta Confiança Estatística: R²=${forecast.
 IMPORTANTE: Retorne APENAS o JSON. NÃO formate com Markdown. NÃO use \`\`\`json.
 Retorne apenas o JSON válido.`;
 
-        // 5. Call Gemini API
+        // 6. Call Gemini API
+        // Prepare request parts
+        const parts: any[] = [{ text: prompt }];
+
+        if (imageBase64) {
+            parts.push({
+                inlineData: {
+                    mimeType: "image/jpeg",
+                    data: imageBase64
+                }
+            });
+        }
+
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-        console.log("DEBUG: Contextual Analysis - Target Gemini URL:", `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY ? 'HIDDEN_KEY' : 'MISSING'}`);
+        console.log("DEBUG: Contextual Analysis - Target Gemini URL:", `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY ? GEMINI_API_KEY.substring(0, 8) + '...' : 'MISSING'}`);
 
         const geminiResponse = await fetch(
             geminiUrl,
@@ -257,10 +302,11 @@ Retorne apenas o JSON válido.`;
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
+                    contents: [{ parts }],
                     generationConfig: {
                         temperature: 0.7,
                         maxOutputTokens: 8192,
+                        response_mime_type: "application/json",
                     },
                 }),
             }
@@ -272,34 +318,40 @@ Retorne apenas o JSON válido.`;
                 console.warn("Gemini 429 Quota Exceeded for Contextual Analysis");
                 // Return a mock "Quota Exceeded" analysis result so frontend doesn't crash
                 const quotaFallback = {
-                    candidates: [{
-                        content: {
-                            parts: [{
-                                text: JSON.stringify({
-                                    why_performs: "⚠️ Cota da IA excedida temporariamente. Tente novamente em alguns minutos.",
-                                    improvement_suggestions: ["Verifique o plano no Google AI Studio", "Aguarde a renovação da cota"],
-                                    fatigue_risk: "medium",
-                                    recommended_action: "iterate",
-                                    confidence_score: 0.0
-                                })
-                            }]
-                        }
-                    }]
+                    success: true,
+                    saved: false,
+                    performance: performanceSnapshot,
+                    analysis: {
+                        visual_description: "Diagnóstico indisponível temporariamente devido a limite de cota da IA.",
+                        why_performs: "⚠️ Cota da IA excedida temporariamente. Tente novamente em alguns minutos.",
+                        improvement_suggestions: ["Verifique o plano no Google AI Studio", "Aguarde a renovação da cota"],
+                        fatigue_risk: "medium",
+                        recommended_action: "iterate",
+                        confidence_score: 0.0
+                    }
                 };
-                // Mock the response methods to simulate a success regarding the flow, but with specific content
-                return new Response(JSON.stringify(quotaFallback), { status: 200 }); // We'll parse this below
+                return new Response(JSON.stringify(quotaFallback), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                    status: 200
+                });
             }
             throw new Error(`Gemini API error: ${geminiResponse.status} - ${errorText}`);
         }
 
         const geminiData = await geminiResponse.json();
+        const finishReason = geminiData.candidates?.[0]?.finishReason;
         const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
         const tokensUsed = geminiData.usageMetadata?.totalTokenCount || 0;
 
-        console.log("DEBUG: Raw Gemini Text:", rawText);
+        console.log(`DEBUG: Gemini Response - FinishReason: ${finishReason}, Length: ${rawText.length}, Tokens: ${tokensUsed}`);
+
+        if (finishReason === "MAX_TOKENS") {
+            console.warn("⚠️ Gemini response truncated due to MAX_TOKENS limit.");
+        }
 
         // 6. Parse JSON response
         let analysis = {
+            visual_description: "",
             why_performs: "Análise não disponível (Erro de processamento da IA)",
             improvement_suggestions: ["Tente gerar novamente"],
             fatigue_risk: "medium" as const,
@@ -341,22 +393,38 @@ Retorne apenas o JSON válido.`;
             analysis_period_end: endDate,
             performance_snapshot: performanceSnapshot,
             why_performs: analysis.why_performs,
+            visual_description: analysis.visual_description, // NEW: Save in history
             improvement_suggestions: analysis.improvement_suggestions,
             fatigue_risk: analysis.fatigue_risk,
             recommended_action: analysis.recommended_action,
             confidence_score: analysis.confidence_score,
-            llm_model: "gemini-flash-latest",
+            llm_model: "gemini-2.5-flash",
             tokens_used: tokensUsed
         };
 
         const { error: insertError } = await supabase
             .from("creative_contextual_insights")
-            .upsert(insertPayload, {
-                onConflict: "ad_id,analysis_period_start,analysis_period_end"
-            });
+            .insert(insertPayload);
 
         if (insertError) {
-            console.error("Insert error:", insertError);
+            console.error("DEBUG: Insert error creative_contextual_insights:", JSON.stringify(insertError));
+            // Log specifically if it's a missing column error to help the user
+            if (insertError.code === "PGRST204" || (insertError as any).message?.includes("column")) {
+                console.warn("CRITICAL: Column 'visual_description' seems to be missing in 'creative_contextual_insights'. Run sql/consolidate_gaia_history.sql");
+            }
+        }
+
+        // 8. Upsert visual description to fact_creative_vectors
+        if (analysis.visual_description) {
+            console.log("Upserting visual description...");
+            const { error: vectorError } = await supabase
+                .from("fact_creative_vectors")
+                .upsert({
+                    ad_id: creativeId,
+                    visual_description: analysis.visual_description
+                }, { onConflict: "ad_id" });
+
+            if (vectorError) console.error("Error upserting vectors:", vectorError);
         }
 
         return new Response(

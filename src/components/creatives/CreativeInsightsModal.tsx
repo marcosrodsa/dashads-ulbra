@@ -35,8 +35,13 @@ interface CreativeAsset {
 interface HistoricalInsight {
     analyzed_at: string;
     llm_model: string;
-    diagnostico: string;
-    insights: CreativeInsight[];
+    diagnostico?: string;
+    insights?: CreativeInsight[];
+    visual_description?: string; // NEW: Store per-event visual description
+    // Contextual specific
+    why_performs?: string;
+    recommended_action?: string;
+    is_contextual: boolean;
 }
 
 interface CreativeVector {
@@ -56,6 +61,7 @@ interface ContextualAnalysis {
         trend: "improving" | "stable" | "declining";
     };
     analysis: {
+        visual_description: string;
         why_performs: string;
         improvement_suggestions: string[];
         fatigue_risk: "low" | "medium" | "high";
@@ -70,6 +76,7 @@ interface InsightsModalProps {
     onOpenChange: (open: boolean) => void;
     creativeName: string | null;
     creativeId: string | null;
+    campaignName?: string | null;
     metrics: {
         conversoes: number;
         cpl: number | null;
@@ -82,33 +89,103 @@ interface InsightsModalProps {
 
 interface GenerationResult {
     insights: CreativeInsight[];
+    visualDescription?: string;
     debug?: any;
 }
 
-// Fetch Historical Insights
+// Helper for Brazil/Sao Paulo timezone formatting
+function formatDateBR(dateStr: string | null | undefined) {
+    if (!dateStr) return "-";
+    try {
+        const safeDateStr = (dateStr.endsWith('Z') || dateStr.includes('+')) ? dateStr : dateStr + 'Z';
+        return new Intl.DateTimeFormat("pt-BR", {
+            timeZone: "America/Sao_Paulo",
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
+        }).format(new Date(safeDateStr));
+    } catch (e) {
+        return "-";
+    }
+}
+
+// Fetch Historical Insights (Unified)
 async function fetchHistory(adId: string): Promise<HistoricalInsight[]> {
     try {
         const supabase = getSupabaseClient();
         if (!supabase) return [];
 
-        const { data, error } = await supabase
+        // 1. Fetch Quick Insights
+        const { data: quickData, error: quickError } = await supabase
             .from("fact_creative_insights")
-            .select("analyzed_at, llm_model, diagnostico")
+            .select("analyzed_at, llm_model, diagnostico, visual_description")
             .eq("ad_id", adId)
             .order("analyzed_at", { ascending: false })
             .limit(10);
 
-        if (error) return [];
+        // 2. Fetch Contextual Insights
+        const { data: contextData, error: contextError } = await supabase
+            .from("creative_contextual_insights")
+            .select("analyzed_at, llm_model, why_performs, recommended_action, visual_description")
+            .eq("ad_id", adId)
+            .order("analyzed_at", { ascending: false })
+            .limit(10);
 
-        return data.map(item => {
-            let insights: CreativeInsight[] = [];
-            try {
-                const jsonMatch = item.diagnostico.match(/\[[\s\S]*\]/);
-                if (jsonMatch) insights = JSON.parse(jsonMatch[0]);
-            } catch (e) { }
-            return { ...item, insights };
+        const history: HistoricalInsight[] = [];
+
+        if (!quickError && quickData) {
+            quickData.forEach(item => {
+                let insights: CreativeInsight[] = [];
+                try {
+                    // Try to parse the diagnostico if it's a JSON string of insights
+                    if (item.diagnostico.startsWith('[') || item.diagnostico.startsWith('{')) {
+                        const parsed = JSON.parse(item.diagnostico);
+                        insights = Array.isArray(parsed) ? parsed : (parsed.insights || []);
+                    } else {
+                        const jsonMatch = item.diagnostico.match(/\[[\s\S]*\]/);
+                        if (jsonMatch) insights = JSON.parse(jsonMatch[0]);
+                    }
+                } catch (e) { }
+
+                history.push({
+                    analyzed_at: item.analyzed_at,
+                    llm_model: item.llm_model,
+                    diagnostico: item.diagnostico,
+                    visual_description: item.visual_description,
+                    insights,
+                    is_contextual: false
+                });
+            });
+        }
+
+        if (!contextError && contextData) {
+            contextData.forEach(item => {
+                history.push({
+                    analyzed_at: item.analyzed_at,
+                    llm_model: item.llm_model,
+                    why_performs: item.why_performs,
+                    visual_description: item.visual_description,
+                    recommended_action: item.recommended_action,
+                    is_contextual: true
+                });
+            });
+        }
+
+        // Sort combined history by date descending (ensure strict descending order)
+        const sortedHistory = [...history].sort((a, b) => {
+            const parseDate = (d: string | null | undefined) => {
+                if (!d) return 0;
+                const safe = (d.endsWith('Z') || d.includes('+')) ? d : d + 'Z';
+                return new Date(safe).getTime();
+            };
+            return parseDate(b.analyzed_at) - parseDate(a.analyzed_at);
         });
+
+        return sortedHistory.slice(0, 15);
     } catch (e) {
+        console.error("fetchHistory error:", e);
         return [];
     }
 }
@@ -194,7 +271,16 @@ async function generateContextualInsights(
 async function generateInsights(
     creativeName: string,
     creativeId: string,
-    metrics: { conversoes: number; cpl: number | null; ctr: number; investimento: number; avgCPL: number | null }
+    metrics: {
+        conversoes: number;
+        cpl: number | null;
+        ctr: number;
+        investimento: number;
+        avgCPL: number | null;
+        imageUrl?: string;
+        title?: string;
+        body?: string;
+    }
 ): Promise<GenerationResult> {
     try {
         const supabase = getSupabaseClient();
@@ -224,6 +310,7 @@ async function generateInsights(
 
         return {
             insights: data.insights || [],
+            visualDescription: data.visualDescription || "",
             debug: data.debug || null
         };
     } catch (e) {
@@ -305,16 +392,17 @@ export function CreativeInsightsModal({
     onOpenChange,
     creativeName,
     creativeId,
+    campaignName,
     metrics,
     onGenerate
 }: InsightsModalProps) {
     const [insights, setInsights] = React.useState<CreativeInsight[]>([]);
+    const [visualDescription, setVisualDescription] = React.useState<string>("");
     const [isLoading, setIsLoading] = React.useState(false);
     const [hasGenerated, setHasGenerated] = React.useState(false);
     const [debugInfo, setDebugInfo] = React.useState<any>(null);
     const [assets, setAssets] = React.useState<CreativeAsset | null>(null);
     const [history, setHistory] = React.useState<HistoricalInsight[]>([]);
-    const [vision, setVision] = React.useState<CreativeVector | null>(null);
     const [activeTab, setActiveTab] = React.useState<string>("analysis");
     // NEW: Contextual analysis state
     const [contextualAnalysis, setContextualAnalysis] = React.useState<ContextualAnalysis | null>(null);
@@ -335,14 +423,12 @@ export function CreativeInsightsModal({
 
     const handleInitialFetch = async () => {
         if (!creativeId) return;
-        const [enriched, hist, vis] = await Promise.all([
+        const [enriched, hist] = await Promise.all([
             fetchCreativeAssets(creativeId),
-            fetchHistory(creativeId),
-            fetchCreativeVision(creativeId)
+            fetchHistory(creativeId)
         ]);
         setAssets(enriched);
         setHistory(hist);
-        setVision(vis);
     };
 
     const handleGenerate = async () => {
@@ -351,12 +437,18 @@ export function CreativeInsightsModal({
         setIsLoading(true);
         setDebugInfo(null);
         try {
-            const { insights: results, debug } = await generateInsights(creativeName, creativeId, metrics);
+            const { insights: results, visualDescription: visDesc, debug } = await generateInsights(creativeName, creativeId, {
+                ...metrics,
+                imageUrl: assets?.image_url,
+                title: assets?.title,
+                body: assets?.body
+            });
             setInsights(results);
+            setVisualDescription(visDesc || "");
             setDebugInfo(debug);
             onGenerate?.();
 
-            // Refresh history after generation
+            // Refresh history
             const updatedHistory = await fetchHistory(creativeId);
             setHistory(updatedHistory);
             setHasGenerated(true);
@@ -375,6 +467,10 @@ export function CreativeInsightsModal({
         try {
             const result = await generateContextualInsights(creativeId);
             setContextualAnalysis(result);
+
+            // Refresh history
+            const updatedHistory = await fetchHistory(creativeId);
+            setHistory(updatedHistory);
         } catch (error) {
             console.error("Error generating contextual analysis:", error);
         } finally {
@@ -386,13 +482,18 @@ export function CreativeInsightsModal({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-[95vw] md:max-w-2xl max-h-[90vh] md:max-h-[80vh] overflow-y-auto p-4 md:p-6">
                 <DialogHeader>
-                    <div className="flex items-center gap-2">
-                        <DialogTitle className="flex items-center gap-2 text-xl">
-                            <Sparkles className="h-5 w-5 text-purple-500" />
+                    <div className="flex items-center gap-2 mb-1">
+                        <Sparkles className="h-5 w-5 text-purple-500" />
+                        <DialogTitle className="text-xl">
                             Análise IA: {creativeName || "Criativo"}
                         </DialogTitle>
                     </div>
-                    <DialogDescription>
+                    {campaignName && (
+                        <div className="text-xs text-muted-foreground font-medium bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded w-fit italic">
+                            Campanha: {campaignName}
+                        </div>
+                    )}
+                    <DialogDescription className="text-slate-500 dark:text-slate-400">
                         Insights gerados pela Gaia (@creative-analyst-ai) para otimização de performance.
                     </DialogDescription>
                 </DialogHeader>
@@ -416,12 +517,9 @@ export function CreativeInsightsModal({
 
                 <div className="space-y-4 mt-4">
                     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                        <TabsList className="grid w-full grid-cols-3 h-auto p-1 bg-muted/50">
+                        <TabsList className="grid w-full grid-cols-2 h-auto p-1 bg-muted/50">
                             <TabsTrigger value="analysis" className="gap-2 py-2 text-xs md:text-sm px-1 md:px-3">
-                                <Sparkles className="h-4 w-4 shrink-0" /> <span className="truncate">Análise</span>
-                            </TabsTrigger>
-                            <TabsTrigger value="vision" className="gap-2 py-2 text-xs md:text-sm px-1 md:px-3">
-                                <Eye className="h-4 w-4 shrink-0" /> <span className="truncate">Visão Gaia</span>
+                                <Sparkles className="h-4 w-4 shrink-0" /> <span className="truncate">Análise Gaia</span>
                             </TabsTrigger>
                             <TabsTrigger value="history" className="gap-2 py-2 text-xs md:text-sm px-1 md:px-3">
                                 <History className="h-4 w-4 shrink-0" /> <span className="truncate">Histórico ({history.length})</span>
@@ -561,7 +659,7 @@ export function CreativeInsightsModal({
                                                     <div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden">
                                                         <div
                                                             className={`h-full rounded-full ${contextualAnalysis.analysis.confidence_score >= 0.8 ? 'bg-emerald-500' :
-                                                                    contextualAnalysis.analysis.confidence_score >= 0.6 ? 'bg-amber-500' : 'bg-rose-500'
+                                                                contextualAnalysis.analysis.confidence_score >= 0.6 ? 'bg-amber-500' : 'bg-rose-500'
                                                                 }`}
                                                             style={{ width: `${contextualAnalysis.analysis.confidence_score * 100}%` }}
                                                         />
@@ -573,6 +671,16 @@ export function CreativeInsightsModal({
                                     </div>
 
                                     {/* Why It Performs */}
+                                    <div className="border rounded-lg p-4 space-y-2 bg-slate-50/30">
+                                        <div className="flex items-center gap-2">
+                                            <Eye className="h-5 w-5 text-purple-500" />
+                                            <h4 className="font-semibold italic">Visão Gaia: O que vemos aqui?</h4>
+                                        </div>
+                                        <p className="text-sm text-slate-700 dark:text-slate-300 pl-7 border-l-2 border-purple-200 ml-2">
+                                            {contextualAnalysis.analysis.visual_description}
+                                        </p>
+                                    </div>
+
                                     <div className="border rounded-lg p-4 space-y-2">
                                         <div className="flex items-center gap-2">
                                             <Lightbulb className="h-5 w-5 text-purple-500" />
@@ -618,6 +726,19 @@ export function CreativeInsightsModal({
 
                             {hasGenerated && !isLoading && (
                                 <>
+                                    {/* Visual Description (Quick) */}
+                                    {visualDescription && (
+                                        <div className="border rounded-lg p-4 space-y-2 bg-slate-50/30">
+                                            <div className="flex items-center gap-2">
+                                                <Eye className="h-5 w-5 text-purple-500" />
+                                                <h4 className="font-semibold italic font-serif">Análise Visual</h4>
+                                            </div>
+                                            <p className="text-sm text-slate-700 dark:text-slate-300 pl-7 border-l-2 border-purple-200 ml-2 leading-relaxed">
+                                                {visualDescription}
+                                            </p>
+                                        </div>
+                                    )}
+
                                     {insights.map((insight, index) => (
                                         <div key={index} className="border rounded-lg p-4 space-y-2 hover:shadow-sm transition-shadow">
                                             <div className="flex items-center justify-between">
@@ -650,49 +771,7 @@ export function CreativeInsightsModal({
                             )}
                         </TabsContent>
 
-                        <TabsContent value="vision" className="mt-4">
-                            {!vision ? (
-                                <div className="text-center py-12 border-2 border-dashed rounded-lg bg-slate-50/50">
-                                    <Eye className="h-10 w-10 mx-auto text-slate-300 mb-3" />
-                                    <p className="text-sm text-muted-foreground font-medium">Nenhum diagnóstico visual encontrado.</p>
-                                    <p className="text-[11px] text-muted-foreground/60 max-w-[250px] mx-auto mt-1">
-                                        Rode o ETL de Criativos no n8n para gerar esta análise detalhada.
-                                    </p>
-                                </div>
-                            ) : (
-                                <div className="prose prose-sm dark:prose-invert max-w-none bg-slate-50 dark:bg-slate-900/50 p-6 rounded-xl border shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
-                                    <div className="flex items-center justify-between mb-6 border-b pb-4">
-                                        <div className="flex items-center gap-2">
-                                            <div className="bg-purple-100 dark:bg-purple-900/30 p-2 rounded-lg">
-                                                <Sparkles className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-sm font-bold m-0 leading-none">Diagnóstico de Identidade Visual</h3>
-                                                <p className="text-[10px] text-muted-foreground m-0 mt-1 uppercase font-semibold">Análise Profissional Gaia</p>
-                                            </div>
-                                        </div>
-                                        <Badge variant="secondary" className="text-[10px] font-mono">
-                                            {format(new Date(vision.created_at), "dd/MM/yy", { locale: ptBR })}
-                                        </Badge>
-                                    </div>
-                                    <div className="text-slate-700 dark:text-slate-300 leading-relaxed space-y-4">
-                                        <ReactMarkdown
-                                            remarkPlugins={[remarkGfm]}
-                                            components={{
-                                                p: ({ node, ...props }) => <p className="mb-4 last:mb-0" {...props} />,
-                                                h2: ({ node, ...props }) => <h2 className="text-base font-bold text-slate-900 dark:text-white mt-6 mb-3 flex items-center gap-2 border-l-4 border-purple-500 pl-3" {...props} />,
-                                                h3: ({ node, ...props }) => <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-5 mb-2" {...props} />,
-                                                ul: ({ node, ...props }) => <ul className="list-disc pl-5 space-y-2 mb-4" {...props} />,
-                                                li: ({ node, ...props }) => <li className="text-sm mb-1" {...props} />,
-                                                strong: ({ node, ...props }) => <strong className="font-bold text-purple-700 dark:text-purple-400" {...props} />
-                                            }}
-                                        >
-                                            {vision.visual_description}
-                                        </ReactMarkdown>
-                                    </div>
-                                </div>
-                            )}
-                        </TabsContent>
+
 
                         <TabsContent value="history" className="space-y-4 mt-4">
                             {history.length === 0 ? (
@@ -706,19 +785,43 @@ export function CreativeInsightsModal({
                                         <div key={i} className="space-y-3">
                                             <div className="flex items-center justify-between">
                                                 <Badge variant="outline" className="text-[10px]">
-                                                    {format(new Date(item.analyzed_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                                                    {formatDateBR(item.analyzed_at)}
                                                 </Badge>
                                                 <span className="text-[10px] text-muted-foreground uppercase font-bold">{item.llm_model}</span>
                                             </div>
-                                            <div className="space-y-2 pl-2 border-l-2 border-slate-100">
-                                                {item.insights.map((ins, idx) => (
-                                                    <div key={idx} className="text-sm">
-                                                        <span className="font-medium inline-flex items-center gap-1">
-                                                            {getInsightIcon(ins.type)} {ins.title}:
-                                                        </span>
-                                                        <span className="text-muted-foreground ml-1">{ins.description}</span>
+                                            <div className="space-y-2 pl-2 border-l-2 border-slate-100 dark:border-slate-800">
+                                                {/* Visual Description in History */}
+                                                {item.visual_description && (
+                                                    <div className="mb-2 p-2 bg-slate-50 dark:bg-slate-900 rounded text-xs text-slate-600 dark:text-slate-400 border-l-2 border-purple-300">
+                                                        <div className="flex items-center gap-1 mb-1 font-semibold text-purple-600">
+                                                            <Eye className="h-3 w-3" /> Gaia Vision
+                                                        </div>
+                                                        <p className="italic text-slate-700 dark:text-slate-300 leading-relaxed">
+                                                            "{item.visual_description}"
+                                                        </p>
                                                     </div>
-                                                ))}
+                                                )}
+
+                                                {item.is_contextual ? (
+                                                    <div className="text-sm">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <Badge variant="secondary" className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">Análise Contextual</Badge>
+                                                            {item.recommended_action && (
+                                                                <Badge className="text-[10px] uppercase">{item.recommended_action}</Badge>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-muted-foreground leading-relaxed">{item.why_performs}</p>
+                                                    </div>
+                                                ) : (
+                                                    item.insights?.map((ins, idx) => (
+                                                        <div key={idx} className="text-sm border-b border-slate-50 last:border-0 pb-1 mb-1">
+                                                            <span className="font-medium inline-flex items-center gap-1">
+                                                                {getInsightIcon(ins.type)} {ins.title}:
+                                                            </span>
+                                                            <span className="text-muted-foreground ml-1">{ins.description}</span>
+                                                        </div>
+                                                    ))
+                                                )}
                                             </div>
                                         </div>
                                     ))}

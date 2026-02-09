@@ -92,7 +92,7 @@ export default function CreativesPage() {
     const [currentPage, setCurrentPage] = React.useState(1);
     const [hideBranding, setHideBranding] = React.useState(true);
     const [statusFilter, setStatusFilter] = React.useState<string>("all");
-    const itemsPerPage = 20;
+    const itemsPerPage = 50;
 
     // Helper function to filter branding
     const filterBranding = React.useCallback((row: CreativeRow) => {
@@ -767,9 +767,9 @@ export default function CreativesPage() {
                                                         )}
                                                     </div>
                                                 </div>
-                                                <div className="flex flex-col gap-1">
+                                                <div className="flex flex-col gap-0.5">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="font-medium text-sm line-clamp-2">
+                                                        <span className="font-medium text-sm line-clamp-1">
                                                             {row.ad_name || `Anúncio: ${row.ad_id}`}
                                                         </span>
                                                         {row.preview_shareable_link && (
@@ -783,11 +783,9 @@ export default function CreativesPage() {
                                                             </a>
                                                         )}
                                                     </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-[10px] text-muted-foreground font-mono bg-slate-100 dark:bg-slate-800 px-1 rounded">
-                                                            ID: {row.ad_id}
-                                                        </span>
-                                                    </div>
+                                                    <span className="text-[10px] text-muted-foreground font-mono bg-slate-100 dark:bg-slate-800 px-1 rounded w-fit mt-0.5">
+                                                        ID: {row.ad_id}
+                                                    </span>
                                                 </div>
                                             </div>
                                         </TableCell>
@@ -849,9 +847,7 @@ export default function CreativesPage() {
                                                         Top
                                                     </Badge>
                                                 )}
-                                                {row.has_assets && (
-                                                    <Badge variant="outline" className="text-xs">Enriquecido</Badge>
-                                                )}
+
                                                 {row.has_insights && (
                                                     <Badge variant="secondary" className="text-xs">
                                                         <Sparkles className="h-3 w-3 mr-1" />
@@ -943,6 +939,7 @@ export default function CreativesPage() {
                 onOpenChange={(open) => setInsightsModal({ ...insightsModal, open })}
                 creativeName={insightsModal.creative?.ad_name || insightsModal.creative?.ad_id || null}
                 creativeId={insightsModal.creative?.ad_id || null}
+                campaignName={insightsModal.creative?.campaign_name}
                 metrics={insightsModal.creative ? {
                     conversoes: insightsModal.creative.conversoes,
                     cpl: insightsModal.creative.cpl,
@@ -955,6 +952,6 @@ export default function CreativesPage() {
                     console.log("Insights generated for:", insightsModal.creative?.ad_id);
                 }}
             />
-        </div>
+        </div >
     );
 }

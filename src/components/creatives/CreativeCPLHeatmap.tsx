@@ -8,6 +8,7 @@ import { Info, Image as ImageIcon } from "lucide-react";
 interface CreativeHeatmapData {
     ad_id: string;
     ad_name: string | null;
+    campaign_name: string | null;
     conversoes: number;
     cpl: number | null;
     investimento: number;
@@ -129,9 +130,17 @@ export function CreativeCPLHeatmap({ data, avgCPL }: CreativeHeatmapProps) {
                                     </div>
                                 )}
                                 {/* Info */}
-                                <div className="p-3 space-y-2">
-                                    <p className="font-bold text-sm line-clamp-2">{item.ad_name || item.ad_id}</p>
-                                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                <div className="p-3 space-y-1">
+                                    <p className="font-bold text-sm line-clamp-1">{item.ad_name || item.ad_id}</p>
+                                    <p className="text-[10px] text-muted-foreground font-mono bg-slate-100 dark:bg-slate-800 px-1 rounded w-fit">
+                                        ID: {item.ad_id}
+                                    </p>
+                                    {item.campaign_name && (
+                                        <p className="text-[10px] text-muted-foreground italic line-clamp-1">
+                                            campanha: {item.campaign_name}
+                                        </p>
+                                    )}
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs pt-1">
                                         <span className="text-muted-foreground">CPL:</span>
                                         <span className="font-medium">{brl(item.cpl)}</span>
                                         <span className="text-muted-foreground">Conversões:</span>
