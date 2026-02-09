@@ -215,10 +215,53 @@ Deno.serve(async (req) => {
             }
         }
 
+        // --- TEXT EXTRACTION STRATEGY ---
+        let adBody = creative.body || "";
+
+        // A. Hunt in Object Story Spec (Link/Photo/Video)
+        if (!adBody && creative.object_story_spec) {
+            const spec = creative.object_story_spec;
+            console.log("Deep Hunting for Text in object_story_spec...");
+            adBody = spec.link_data?.message ||
+                spec.photo_data?.caption ||
+                spec.video_data?.message ||
+                spec.text_data?.message || // Sometimes simple text ads
+                "";
+        }
+
+        // B. Hunt in Asset Feed (DCO / Dynamic Ads)
+        if (!adBody && creative.asset_feed_spec) {
+            console.log("Deep Hunting for Text in asset_feed_spec...");
+            const bodies = creative.asset_feed_spec.bodies || [];
+            if (bodies.length > 0 && bodies[0].text) {
+                adBody = bodies[0].text;
+            }
+        }
+
+        // C. Ultimate Fallback: Fetch Story Message via Graph API
+        if (!adBody && storyId) {
+            console.log(`Fallback: Fetching story message for storyId: ${storyId}`);
+            try {
+                const storyMsgResponse = await fetch(
+                    `https://graph.facebook.com/v21.0/${storyId}?fields=message&access_token=${META_API_KEY}`
+                );
+                const storyMsgData = await storyMsgResponse.json();
+                if (storyMsgData.message) {
+                    adBody = storyMsgData.message;
+                    console.log("✅ Text found via Story ID");
+                }
+            } catch (e) {
+                console.warn("Could not fetch story message:", e);
+            }
+        }
+
+        if (adBody) console.log("✅ Ad Body Extracted:", adBody.substring(0, 50) + "...");
+        else console.warn("⚠️ No Ad Body found after deep hunt");
+
         const assets = {
             ad_id: adId,
             title: creative.title || "",
-            body: creative.body || "",
+            body: adBody,
             image_url: highResImageUrl,
             video_id: creative.video_id || null,
             video_thumbnail_url: videoThumbnailUrl,

@@ -56,19 +56,19 @@ export async function resolveBudgetColumns(client: SupabaseClient): Promise<Budg
 
   const monthCol = await firstWorkingColumn(client, [
     "month",
+    "date",
     "ref_month",
     "competence",
     "competencia",
-    "date",
     "dt",
     "data",
     "month_date",
   ]);
 
   const plannedCol = await firstWorkingColumn(client, [
-    "budget",
-    "planned_budget",
     "budget_planned",
+    "planned_budget",
+    "budget",
     "planned",
     "amount",
     "value",
@@ -84,14 +84,7 @@ export async function resolveBudgetColumns(client: SupabaseClient): Promise<Budg
     "source",
   ]);
 
-  const unitCol = await firstOptionalWorkingColumn(client, [
-    "campaign_name",
-    "campaign",
-    "entity_name",
-    "account_name",
-    "business_unit",
-    "unidade",
-  ]);
+  const unitCol = await firstOptionalWorkingColumn(client, ["business_unit", "unidade", "campaign_name", "campaign", "entity_name", "account_name"]);
 
   const funnelCol = await firstOptionalWorkingColumn(client, [
     "funnel_stage",

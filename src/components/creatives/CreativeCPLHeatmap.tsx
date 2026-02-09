@@ -138,7 +138,17 @@ export function CreativeCPLHeatmap({ data, avgCPL }: CreativeHeatmapProps) {
                                         <span className="font-medium">{item.conversoes}</span>
                                         <span className="text-muted-foreground">Investimento:</span>
                                         <span className="font-medium">{brl(item.investimento)}</span>
-                                        <span className="text-muted-foreground">vs Média:</span>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <span className="text-muted-foreground cursor-help flex items-center gap-0.5">
+                                                    vs Média:
+                                                    <Info className="h-3 w-3" />
+                                                </span>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="max-w-[200px]">
+                                                <p className="text-xs">Comparativo do CPL deste criativo com a média geral ({brl(avgCPL)}). Negativo = abaixo da média (bom).</p>
+                                            </TooltipContent>
+                                        </Tooltip>
                                         <span className={`font-medium ${(item.cpl && avgCPL && item.cpl < avgCPL)
                                             ? "text-emerald-600"
                                             : "text-rose-600"

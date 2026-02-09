@@ -90,7 +90,33 @@ export default function CreativesPage() {
     const [sortBy, setSortBy] = React.useState<string>("conversoes");
     const [sortDir, setSortDir] = React.useState<"asc" | "desc">("desc");
     const [currentPage, setCurrentPage] = React.useState(1);
+    const [hideBranding, setHideBranding] = React.useState(true);
+    const [statusFilter, setStatusFilter] = React.useState<string>("all");
     const itemsPerPage = 20;
+
+    // Helper function to filter branding
+    const filterBranding = React.useCallback((row: CreativeRow) => {
+        if (!hideBranding) return true;
+
+        const u = (row.unidade || "").toLowerCase();
+        const c = (row.curso || "").toLowerCase();
+        const campName = (row.campaign_name || "").toLowerCase();
+
+        const isEad = u.includes("ead") || c.includes("ead");
+        const isBranding = u.includes("branding") || u.includes("institucional") ||
+            c.includes("branding") || campName.includes("branding") ||
+            campName.includes("institucional");
+
+        // Keep EAD even if has branding
+        if (isEad) return true;
+        return !isBranding;
+    }, [hideBranding]);
+
+    // Helper function to filter by status
+    const filterStatus = React.useCallback((row: CreativeRow) => {
+        if (statusFilter === "all") return true;
+        return row.effective_status === statusFilter;
+    }, [statusFilter]);
 
     // Toggle sort function
     const toggleSort = (column: string) => {
@@ -149,7 +175,7 @@ export default function CreativesPage() {
                 query = query.eq("curso", curso);
             }
 
-            const { data, error } = await query.limit(100);
+            const { data, error } = await query;
             if (error) throw error;
 
             return data as CreativeRow[];
@@ -167,30 +193,21 @@ export default function CreativesPage() {
         return [...new Set(data.map((r) => r.curso).filter(Boolean))];
     }, [data]);
 
-    // Aggregate KPIs
-    const kpis: KPIs = React.useMemo(() => {
-        if (!data || data.length === 0) {
-            return { totalCreatives: 0, totalConversions: 0, avgCPL: null, avgCTR: 0, totalSpend: 0 };
-        }
-
-        const uniqueAds = new Set(data.map((r) => r.ad_id)).size;
-        const totalConversions = data.reduce((acc, r) => acc + (r.conversoes || 0), 0);
-        const totalSpend = data.reduce((acc, r) => acc + (r.investimento || 0), 0);
-        const avgCPL = totalConversions > 0 ? totalSpend / totalConversions : null;
-        const totalImpressions = data.reduce((acc, r) => acc + (r.impressoes || 0), 0);
-        const totalClicks = data.reduce((acc, r) => acc + (r.cliques || 0), 0);
-        const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
-
-        return { totalCreatives: uniqueAds, totalConversions, avgCPL, avgCTR, totalSpend };
+    const statusOptions = React.useMemo(() => {
+        if (!data) return [];
+        return [...new Set(data.map((r) => r.effective_status).filter(Boolean))].sort();
     }, [data]);
 
     // Aggregate by ad_id for table (sum metrics across dates)
     const aggregatedData = React.useMemo(() => {
         if (!data) return [];
 
+        // Apply branding filter only here (status filter will be applied after aggregation)
+        const filteredData = data.filter(row => filterBranding(row));
+
         // Group daily data by ad_id for sparklines
         const dailyByAd: Record<string, { date: string; cpl: number }[]> = {};
-        data.forEach(row => {
+        filteredData.forEach(row => {
             if (!dailyByAd[row.ad_id]) {
                 dailyByAd[row.ad_id] = [];
             }
@@ -206,7 +223,7 @@ export default function CreativesPage() {
             dailyByAd[adId].sort((a, b) => a.date.localeCompare(b.date));
         });
 
-        const grouped = data.reduce((acc, row) => {
+        const grouped = filteredData.reduce((acc, row) => {
             if (!acc[row.ad_id]) {
                 acc[row.ad_id] = {
                     ...row,
@@ -251,11 +268,26 @@ export default function CreativesPage() {
                         case "conversoes": return row.conversoes || 0;
                         case "cpl": return row.cpl || 9999999;
                         case "investimento": return row.investimento || 0;
+                        case "effective_status": return row.effective_status || "";
                         default: return row.conversoes || 0;
                     }
                 };
                 const aVal = getValue(a);
                 const bVal = getValue(b);
+
+                if (sortBy === "effective_status") {
+                    const statusWeight = (s: string) => {
+                        if (s === "ACTIVE") return 1;
+                        if (s === "PAUSED") return 2;
+                        return 3;
+                    };
+                    const aWeight = statusWeight(aVal);
+                    const bWeight = statusWeight(bVal);
+                    if (aWeight !== bWeight) {
+                        return sortDir === "asc" ? aWeight - bWeight : bWeight - aWeight;
+                    }
+                    return 0;
+                }
 
                 if (typeof aVal === "string") {
                     return sortDir === "asc"
@@ -263,9 +295,27 @@ export default function CreativesPage() {
                         : bVal.localeCompare(aVal);
                 }
                 return sortDir === "asc" ? aVal - bVal : bVal - aVal;
-            });
-    }, [data, sortBy, sortDir]);
+            })
+            // Apply status filter AFTER aggregation (using consolidated effective_status)
+            .filter(row => filterStatus(row));
+    }, [data, sortBy, sortDir, filterBranding, filterStatus]);
 
+    // Aggregate KPIs - derive from aggregatedData which has proper status filtering
+    const kpis: KPIs = React.useMemo(() => {
+        if (!aggregatedData || aggregatedData.length === 0) {
+            return { totalCreatives: 0, totalConversions: 0, avgCPL: null, avgCTR: 0, totalSpend: 0 };
+        }
+
+        const totalCreatives = aggregatedData.length;
+        const totalConversions = aggregatedData.reduce((acc, r) => acc + (r.conversoes || 0), 0);
+        const totalSpend = aggregatedData.reduce((acc, r) => acc + (r.investimento || 0), 0);
+        const avgCPL = totalConversions > 0 ? totalSpend / totalConversions : null;
+        const totalImpressions = aggregatedData.reduce((acc, r) => acc + (r.impressoes || 0), 0);
+        const totalClicks = aggregatedData.reduce((acc, r) => acc + (r.cliques || 0), 0);
+        const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+
+        return { totalCreatives, totalConversions, avgCPL, avgCTR, totalSpend };
+    }, [aggregatedData]);
     // Paginated data
     const totalPages = Math.ceil(aggregatedData.length / itemsPerPage);
     const paginatedData = React.useMemo(() => {
@@ -280,11 +330,14 @@ export default function CreativesPage() {
 
 
 
-    // Daily aggregation for evolution chart
+    // Daily aggregation for evolution chart (applies branding filter)
     const evolutionData = React.useMemo(() => {
         if (!data) return [];
 
-        const byDate = data.reduce((acc, row) => {
+        // Apply branding filter (status filter not applicable for daily aggregation)
+        const filteredData = data.filter(row => filterBranding(row));
+
+        const byDate = filteredData.reduce((acc, row) => {
             const date = row.data_referencia;
             if (!acc[date]) {
                 acc[date] = { leads: 0, spend: 0 };
@@ -301,7 +354,7 @@ export default function CreativesPage() {
                 leads: values.leads,
                 cpl: values.leads > 0 ? values.spend / values.leads : 0,
             }));
-    }, [data]);
+    }, [data, filterBranding]);
 
     return (
         <div className="flex flex-col gap-6 p-6">
@@ -385,6 +438,34 @@ export default function CreativesPage() {
                         ))}
                     </SelectContent>
                 </Select>
+
+                {/* Status Filter */}
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-[160px]">
+                        <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">Todos Status</SelectItem>
+                        {statusOptions.map((s) => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+
+                {/* Branding Toggle */}
+                <div className="flex items-center gap-2 ml-auto">
+                    <Switch
+                        id="hideBranding"
+                        checked={hideBranding}
+                        onCheckedChange={setHideBranding}
+                    />
+                    <label
+                        htmlFor="hideBranding"
+                        className="text-sm text-muted-foreground cursor-pointer select-none"
+                    >
+                        Ocultar Branding
+                    </label>
+                </div>
             </div>
 
             {/* KPI Cards */}
@@ -536,7 +617,7 @@ export default function CreativesPage() {
                             <TableHeader>
                                 <TableRow>
 
-                                    <TableHead className="min-w-[300px]">
+                                    <TableHead className="w-[220px]">
                                         <div className="flex flex-col gap-2">
                                             <button
                                                 className="flex items-center hover:text-foreground transition-colors"
@@ -545,6 +626,14 @@ export default function CreativesPage() {
                                                 Criativo {getSortIcon("ad_name")}
                                             </button>
                                         </div>
+                                    </TableHead>
+                                    <TableHead className="w-[100px]">
+                                        <button
+                                            className="flex items-center hover:text-foreground transition-colors"
+                                            onClick={() => toggleSort("effective_status")}
+                                        >
+                                            Status {getSortIcon("effective_status")}
+                                        </button>
                                     </TableHead>
                                     <TableHead className="min-w-[200px]">
                                         <button
@@ -695,36 +784,38 @@ export default function CreativesPage() {
                                                         )}
                                                     </div>
                                                     <div className="flex items-center gap-2">
-                                                        {row.effective_status && (
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                    <div className="flex items-center cursor-default">
-                                                                        <div
-                                                                            className={`relative h-[12px] w-[24px] rounded-full transition-colors duration-200 ${row.effective_status === 'ACTIVE'
-                                                                                ? 'bg-[#0081C9]'
-                                                                                : 'bg-[#E9EBEE] border border-[#BEC3C9]'
-                                                                                }`}
-                                                                        >
-                                                                            <div
-                                                                                className={`absolute top-1/2 -translate-y-1/2 h-[8px] w-[8px] rounded-full transition-all duration-200 ${row.effective_status === 'ACTIVE'
-                                                                                    ? 'right-[2px] bg-white'
-                                                                                    : 'left-[2px] bg-[#4B4F56]'
-                                                                                    }`}
-                                                                            />
-                                                                        </div>
-                                                                    </div>
-                                                                </TooltipTrigger>
-                                                                <TooltipContent side="right">
-                                                                    <p className="text-[10px] uppercase font-bold">{row.effective_status}</p>
-                                                                </TooltipContent>
-                                                            </Tooltip>
-                                                        )}
                                                         <span className="text-[10px] text-muted-foreground font-mono bg-slate-100 dark:bg-slate-800 px-1 rounded">
                                                             ID: {row.ad_id}
                                                         </span>
                                                     </div>
                                                 </div>
                                             </div>
+                                        </TableCell>
+                                        <TableCell>
+                                            {row.effective_status ? (
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <div className="flex items-center cursor-default">
+                                                            <div
+                                                                className={`relative h-[12px] w-[24px] rounded-full transition-colors duration-200 ${row.effective_status === 'ACTIVE'
+                                                                    ? 'bg-[#0081C9]'
+                                                                    : 'bg-[#E9EBEE] border border-[#BEC3C9]'
+                                                                    }`}
+                                                            >
+                                                                <div
+                                                                    className={`absolute top-1/2 -translate-y-1/2 h-[8px] w-[8px] rounded-full transition-all duration-200 ${row.effective_status === 'ACTIVE'
+                                                                        ? 'right-[2px] bg-white'
+                                                                        : 'left-[2px] bg-[#4B4F56]'
+                                                                        }`}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="right">
+                                                        <p className="text-[10px] uppercase font-bold">{row.effective_status}</p>
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            ) : <span className="text-muted-foreground text-xs">-</span>}
                                         </TableCell>
                                         <TableCell className="max-w-[250px]">
                                             <span className="block truncate text-muted-foreground text-sm" title={row.campaign_name || undefined}>

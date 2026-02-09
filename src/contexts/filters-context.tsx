@@ -23,7 +23,9 @@ type FiltersContextValue = {
   setCourse: (course: string | null) => void;
   setPlatform: (platform: AdsPlatform | null) => void;
   setWeek: (week: string | null) => void;
+  excludeEad: boolean;
   setExcludeEad: (exclude: boolean) => void;
+  hideBranding: boolean;
   setHideBranding: (hide: boolean) => void;
   clear: () => void;
   isFiltersOpen: boolean;
@@ -132,7 +134,9 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
       setCourse,
       setPlatform,
       setWeek,
+      excludeEad: filters.excludeEad,
       setExcludeEad,
+      hideBranding: filters.hideBranding,
       setHideBranding,
       clear,
       isFiltersOpen,

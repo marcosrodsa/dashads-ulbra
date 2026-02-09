@@ -23,6 +23,12 @@ interface PerformanceSnapshot {
     clicks: number;
     spend: number;
     trend: "improving" | "stable" | "declining";
+    forecast?: {
+        predicted_cpl: number | null;
+        predicted_conversions: number | null;
+        trend_direction: string;
+        confidence_r2: number;
+    };
 }
 
 Deno.serve(async (req) => {
@@ -35,8 +41,12 @@ Deno.serve(async (req) => {
         const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-        if (!GEMINI_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-            throw new Error("Missing environment variables");
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+            throw new Error("Missing Supabase environment variables");
+        }
+
+        if (!GEMINI_API_KEY) {
+            throw new Error("GEMINI_API_KEY is not set in environment variables");
         }
 
         const { creativeId, periodStart, periodEnd }: AnalysisRequest = await req.json();
@@ -97,12 +107,87 @@ Deno.serve(async (req) => {
         const firstHalf = (perfData || []).slice(0, midpoint);
         const secondHalf = (perfData || []).slice(midpoint);
 
+        // Calculate trend based on CPL (lower is better) - compare first half vs second half
+        const firstHalfSpend = firstHalf.reduce((sum: number, r: any) => sum + (r.investimento || 0), 0);
+        const secondHalfSpend = secondHalf.reduce((sum: number, r: any) => sum + (r.investimento || 0), 0);
         const firstHalfConv = firstHalf.reduce((sum: number, r: any) => sum + (r.conversoes || 0), 0);
         const secondHalfConv = secondHalf.reduce((sum: number, r: any) => sum + (r.conversoes || 0), 0);
 
+        const firstHalfCPL = firstHalfConv > 0 ? firstHalfSpend / firstHalfConv : null;
+        const secondHalfCPL = secondHalfConv > 0 ? secondHalfSpend / secondHalfConv : null;
+
         let trend: "improving" | "stable" | "declining" = "stable";
-        if (secondHalfConv > firstHalfConv * 1.2) trend = "improving";
-        else if (secondHalfConv < firstHalfConv * 0.8) trend = "declining";
+
+        // If we have CPL data for both halves, compare CPL (lower = better = improving)
+        if (firstHalfCPL !== null && secondHalfCPL !== null) {
+            const cplChange = (secondHalfCPL - firstHalfCPL) / firstHalfCPL;
+            if (cplChange < -0.15) trend = "improving";  // CPL dropped 15%+ = improving
+            else if (cplChange > 0.15) trend = "declining";  // CPL rose 15%+ = declining
+        } else if (secondHalfConv > firstHalfConv * 1.2) {
+            // Fallback to conversions if no CPL data
+            trend = "improving";
+        } else if (secondHalfConv < firstHalfConv * 0.8) {
+            trend = "declining";
+        }
+
+        // Helper function for Linear Regression (Least Squares)
+        const calculateLinearRegression = (x: number[], y: number[]) => {
+            const n = x.length;
+            if (n === 0) return { slope: 0, intercept: 0, r2: 0 };
+
+            const sumX = x.reduce((a, b) => a + b, 0);
+            const sumY = y.reduce((a, b) => a + b, 0);
+            const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+            const sumXX = x.reduce((sum, xi) => sum + xi * xi, 0);
+
+            const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+            const intercept = (sumY - slope * sumX) / n;
+
+            // Calculate R2
+            const yMean = sumY / n;
+            const ssTot = y.reduce((sum, yi) => sum + Math.pow(yi - yMean, 2), 0);
+            const ssRes = y.reduce((sum, yi, i) => sum + Math.pow(yi - (slope * x[i] + intercept), 2), 0);
+            const r2 = ssTot === 0 ? 0 : 1 - (ssRes / ssTot);
+
+            return { slope, intercept, r2 };
+        };
+
+        // --- PREDICTIVE ANALYTICS (Phase 1) ---
+        // Prepare daily data series for regression
+        const dailyData = (perfData || [])
+            .filter((d: any) => d.investimento > 0) // Filter out days with 0 spend
+            .sort((a: any, b: any) => new Date(a.data_referencia).getTime() - new Date(b.data_referencia).getTime());
+
+        let forecast = {
+            predicted_cpl: null as number | null,
+            predicted_conversions: null as number | null,
+            trend_direction: "stable",
+            confidence_r2: 0
+        };
+
+        if (dailyData.length >= 5) { // Need at least 5 data points for meaningful regression
+            const days = dailyData.map((_: any, i: number) => i + 1); // x: Day 1, 2, 3...
+            const cpls = dailyData.map((d: any) => d.conversoes > 0 ? d.investimento / d.conversoes : d.investimento); // y: CPL (fallback to spend if 0 conv to analyze cost trend)
+
+            const regression = calculateLinearRegression(days, cpls);
+
+            // Forecast for 7 days ahead
+            const lastDayIndex = days.length;
+            const futureDayIndex = lastDayIndex + 7;
+            const predictedCplVal = regression.slope * futureDayIndex + regression.intercept;
+
+            forecast.predicted_cpl = Math.max(0, Number(predictedCplVal.toFixed(2))); // Clamp to 0
+            forecast.confidence_r2 = Number(regression.r2.toFixed(2));
+
+            // Determine Trend Direction from Slope
+            if (regression.slope > 0.5) forecast.trend_direction = "rising"; // CPL increasing > 0.50 per day
+            else if (regression.slope < -0.5) forecast.trend_direction = "falling"; // CPL decreasing > 0.50 per day
+            else forecast.trend_direction = "stable";
+
+            console.log(`🔮 Predictive Analysis: Slope=${regression.slope.toFixed(4)}, R2=${regression.r2}, ForecastCPL=${forecast.predicted_cpl}`);
+        } else {
+            console.log("ℹ️ Not enough data points for predictive analysis (min 5 days with spend).");
+        }
 
         const performanceSnapshot: PerformanceSnapshot = {
             ctr,
@@ -111,7 +196,8 @@ Deno.serve(async (req) => {
             impressions: totals.impressions,
             clicks: totals.clicks,
             spend: totals.spend,
-            trend
+            trend,
+            forecast // Adding forecast to snapshot for frontend use
         };
 
         console.log("Performance snapshot:", performanceSnapshot);
@@ -135,13 +221,19 @@ ${asset.hold_rate ? `- Hold Rate: ${asset.hold_rate}%` : ""}
 - Conversões: ${totals.conversions}
 - CPA: ${cpa ? `R$ ${cpa.toFixed(2)}` : "N/A (sem conversões)"}
 - Investimento: R$ ${totals.spend.toFixed(2)}
-- Tendência: ${trend === "improving" ? "📈 Melhorando" : trend === "declining" ? "📉 Caindo" : "➡️ Estável"}
+- Tendência Histórica: ${trend === "improving" ? "📈 Melhorando" : trend === "declining" ? "📉 Caindo" : "➡️ Estável"}
+
+**🔮 Previsão (Próximos 7 Dias):**
+${forecast.predicted_cpl ? `- CPA Projetado: R$ ${forecast.predicted_cpl.toFixed(2)}` : "- CPA Projetado: Dados insuficientes"}
+- Direção da Tendência: ${forecast.trend_direction === "rising" ? "⚠️ Subindo" : forecast.trend_direction === "falling" ? "✅ Caindo" : "➡️ Estável"}
+${forecast.confidence_r2 > 0.6 ? `(Alta Confiança Estatística: R²=${forecast.confidence_r2})` : "(Baixa Confiança Estatística)"}
 
 **Instruções:**
 1. Explique POR QUE este criativo está performando assim (relacione copy/visual com os KPIs)
-2. Sugira 2-3 melhorias específicas e acionáveis
-3. Identifique o risco de fadiga (low/medium/high)
-4. Recomende UMA ação: scale (escalar investimento), pause (pausar), iterate (criar variação), test (testar A/B)
+2. **COMENTE A PREVISÃO:** Se a tendência é de alta no CPA, alerte o usuário. Se é de queda, sugira aproveitar.
+3. Sugira 2-3 melhorias específicas e acionáveis
+4. Identifique o risco de fadiga (low/medium/high)
+5. Recomende UMA ação: scale (escalar investimento), pause (pausar), iterate (criar variação), test (testar A/B)
 
 **Formato de Resposta (JSON):**
 {
@@ -152,11 +244,15 @@ ${asset.hold_rate ? `- Hold Rate: ${asset.hold_rate}%` : ""}
   "confidence_score": 0.85
 }
 
+IMPORTANTE: Retorne APENAS o JSON. NÃO formate com Markdown. NÃO use \`\`\`json.
 Retorne apenas o JSON válido.`;
 
         // 5. Call Gemini API
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        console.log("DEBUG: Contextual Analysis - Target Gemini URL:", `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY ? 'HIDDEN_KEY' : 'MISSING'}`);
+
         const geminiResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`,
+            geminiUrl,
             {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -164,7 +260,7 @@ Retorne apenas o JSON válido.`;
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: {
                         temperature: 0.7,
-                        maxOutputTokens: 2048,
+                        maxOutputTokens: 8192,
                     },
                 }),
             }
@@ -172,6 +268,27 @@ Retorne apenas o JSON válido.`;
 
         if (!geminiResponse.ok) {
             const errorText = await geminiResponse.text();
+            if (geminiResponse.status === 429) {
+                console.warn("Gemini 429 Quota Exceeded for Contextual Analysis");
+                // Return a mock "Quota Exceeded" analysis result so frontend doesn't crash
+                const quotaFallback = {
+                    candidates: [{
+                        content: {
+                            parts: [{
+                                text: JSON.stringify({
+                                    why_performs: "⚠️ Cota da IA excedida temporariamente. Tente novamente em alguns minutos.",
+                                    improvement_suggestions: ["Verifique o plano no Google AI Studio", "Aguarde a renovação da cota"],
+                                    fatigue_risk: "medium",
+                                    recommended_action: "iterate",
+                                    confidence_score: 0.0
+                                })
+                            }]
+                        }
+                    }]
+                };
+                // Mock the response methods to simulate a success regarding the flow, but with specific content
+                return new Response(JSON.stringify(quotaFallback), { status: 200 }); // We'll parse this below
+            }
             throw new Error(`Gemini API error: ${geminiResponse.status} - ${errorText}`);
         }
 
@@ -179,26 +296,39 @@ Retorne apenas o JSON válido.`;
         const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
         const tokensUsed = geminiData.usageMetadata?.totalTokenCount || 0;
 
+        console.log("DEBUG: Raw Gemini Text:", rawText);
+
         // 6. Parse JSON response
         let analysis = {
-            why_performs: "Análise não disponível",
-            improvement_suggestions: [] as string[],
+            why_performs: "Análise não disponível (Erro de processamento da IA)",
+            improvement_suggestions: ["Tente gerar novamente"],
             fatigue_risk: "medium" as const,
             recommended_action: "iterate" as const,
             confidence_score: 0.5
         };
 
         try {
-            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]);
-                analysis = {
-                    why_performs: parsed.why_performs || analysis.why_performs,
-                    improvement_suggestions: parsed.improvement_suggestions || [],
-                    fatigue_risk: parsed.fatigue_risk || "medium",
-                    recommended_action: parsed.recommended_action || "iterate",
-                    confidence_score: parsed.confidence_score || 0.5
-                };
+            // Remove Markdown code blocks if present ( ```json ... ``` )
+            const cleanText = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+
+            // Try parsing the cleaned text directly first
+            try {
+                const parsed = JSON.parse(cleanText);
+                analysis = { ...analysis, ...parsed };
+            } catch (e) {
+                // Check if it looks truncated
+                if (cleanText.startsWith("{") && !cleanText.endsWith("}")) {
+                    console.warn("DEBUG: JSON appears truncated. Response length:", cleanText.length);
+                }
+
+                // If direct parse fails, try extracting with regex as fallback
+                const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    analysis = { ...analysis, ...parsed };
+                } else {
+                    console.warn("DEBUG: No JSON structure found in response.");
+                }
             }
         } catch (parseError) {
             console.error("Parse Error:", parseError, "Raw:", rawText);

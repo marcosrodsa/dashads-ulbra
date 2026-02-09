@@ -169,9 +169,10 @@ export default function BudgetPage() {
       let budgetQ = (client as SupabaseClient)
         .from("fact_ads_budget")
         .select(budgetSelectCols)
-        .gte(budgetCols.monthCol, budgetFromDate)
+        .gte(budgetCols.monthCol, budgetFromDate) // Use dynamic month col
         .lte(budgetCols.monthCol, budgetToDate);
 
+      // Fix: Use dynamic column names for filtering
       if (budgetCols.platformCol && filters.platform) {
         budgetQ = budgetQ.eq(budgetCols.platformCol, filters.platform);
       }
@@ -197,8 +198,16 @@ export default function BudgetPage() {
         budgetQ = budgetQ.in(budgetCols.unitCol, units);
       }
 
-      const { data: budgetRows, error: budgetErr } = await budgetQ;
+      const { data: budgetRowsRaw, error: budgetErr } = await budgetQ;
       if (budgetErr) throw budgetErr;
+
+      // Normalize Rows to standard format (month, planned, platform, unit)
+      const budgetRows = (budgetRowsRaw || []).map((r: any) => ({
+        month: r[budgetCols.monthCol],
+        planned: r[budgetCols.plannedCol],
+        platform: budgetCols.platformCol ? r[budgetCols.platformCol] : null,
+        unit: budgetCols.unitCol ? r[budgetCols.unitCol] : null
+      }));
 
       // --- Exact Daily Data for KPI Cards (Realized Spend & Leads) ---
 

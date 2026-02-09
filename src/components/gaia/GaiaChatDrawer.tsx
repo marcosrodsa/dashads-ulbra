@@ -2,10 +2,12 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Sparkles, Send, Loader2, MessageCircle, Trash2 } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from "@/components/ui/sheet";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Sparkles, Send, Loader2, MessageCircle, Trash2, Lightbulb } from "lucide-react";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useFilters } from "@/contexts/filters-context";
 
 const supabase = getSupabaseClient();
 
@@ -29,11 +31,13 @@ export function GaiaChatDrawer({ dateRange, unidade }: GaiaChatDrawerProps) {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const { toast } = useToast();
+    const { hideBranding, excludeEad } = useFilters();
 
     // Sugestões de perguntas rápidas
     const quickQuestions = [
         "Como está minha performance geral?",
-        "Qual criativo está convertendo melhor?",
+        "Qual a previsão de CPL para a próxima semana?",
+        "Analise a tendência de conversão",
         "Por que meu CPA subiu?",
         "Quais unidades precisam de atenção?"
     ];
@@ -69,13 +73,24 @@ export function GaiaChatDrawer({ dateRange, unidade }: GaiaChatDrawerProps) {
         setIsLoading(true);
 
         try {
+            // --- DEBUG: FRONTEND REQUEST ---
+            const session = await supabase.auth.getSession();
+            console.log("--- DEBUG: SENDING REQUEST ---");
+            console.log("Target Supabase URL:", (supabase as any)['supabaseUrl'] || "Unknown");
+            console.log("Active Session Token:", session.data.session?.access_token
+                ? `Present (starts with ${session.data.session.access_token.substring(0, 10)}...)`
+                : "MISSING (Anon?)");
+            // -------------------------------
+
             const { data, error } = await supabase.functions.invoke("gaia-chat", {
                 body: {
                     sessionId,
                     message: text,
                     context: {
                         dateRange,
-                        unidade
+                        unidade,
+                        hideBranding,
+                        excludeEad
                     }
                 }
             });
@@ -119,6 +134,32 @@ export function GaiaChatDrawer({ dateRange, unidade }: GaiaChatDrawerProps) {
         }
     };
 
+    // Debug helper
+    const stateDebugInfo = () => {
+        if (process.env.NODE_ENV === 'development') {
+            return (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-xs text-gray-300"
+                    onClick={async () => {
+                        const { data } = await supabase.auth.getSession();
+                        console.log("--- DEBUG INFO ---");
+                        console.log("Supabase URL:", (supabase as any).supabaseUrl);
+                        console.log("Session User:", data.session?.user?.id || "No User");
+                        console.log("Session Token (First 10):", data.session?.access_token?.substring(0, 10));
+                        console.log("Headers will likely use:", data.session?.access_token ? "User Token" : "Anon Key");
+                        console.log("------------------");
+                        toast({ title: "Debug", description: "Verifique o console (F12)" });
+                    }}
+                >
+                    ?
+                </Button>
+            );
+        }
+        return null;
+    };
+
     return (
         <Sheet open={isOpen} onOpenChange={handleOpenChange}>
             <SheetTrigger asChild>
@@ -141,9 +182,13 @@ export function GaiaChatDrawer({ dateRange, unidade }: GaiaChatDrawerProps) {
                             </div>
                             <div>
                                 <SheetTitle className="text-lg">Gaia</SheetTitle>
+                                <SheetDescription className="sr-only">
+                                    Assistente de inteligência artificial para análise de dados de mídia.
+                                </SheetDescription>
                                 <p className="text-xs text-muted-foreground">Especialista em análise de mídia</p>
                             </div>
                         </div>
+                        {stateDebugInfo()}
                         {messages.length > 0 && (
                             <Button variant="ghost" size="icon" onClick={clearChat} title="Limpar conversa">
                                 <Trash2 className="h-4 w-4 text-muted-foreground" />
@@ -213,6 +258,27 @@ export function GaiaChatDrawer({ dateRange, unidade }: GaiaChatDrawerProps) {
                 {/* Input */}
                 <div className="p-4 border-t bg-background">
                     <div className="flex gap-2">
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" size="icon" title="Sugestões de Perguntas">
+                                    <Lightbulb className="h-4 w-4 text-yellow-500" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80 p-2" align="start" side="top">
+                                <div className="space-y-1">
+                                    <p className="text-xs font-medium text-muted-foreground px-2 py-1">O que você gostaria de saber?</p>
+                                    {quickQuestions.map((q, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => sendMessage(q)}
+                                            className="w-full text-left text-sm p-2 rounded hover:bg-muted transition-colors"
+                                        >
+                                            {q}
+                                        </button>
+                                    ))}
+                                </div>
+                            </PopoverContent>
+                        </Popover>
                         <Input
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
