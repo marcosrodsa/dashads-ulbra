@@ -90,8 +90,8 @@ export default function CreativesPage() {
     const { businessUnit: unidade, course: curso, dateRange: globalRange, hideBranding } = filters;
 
     // Sort and pagination
-    const [sortBy, setSortBy] = React.useState<string>("conversoes");
-    const [sortDir, setSortDir] = React.useState<"asc" | "desc">("desc");
+    const [sortBy, setSortBy] = React.useState<string>("effective_status");
+    const [sortDir, setSortDir] = React.useState<"asc" | "desc">("asc");
     const [currentPage, setCurrentPage] = React.useState(1);
     const [statusFilter, setStatusFilter] = React.useState<string>("all");
     const [minConversions, setMinConversions] = React.useState<number>(0);
