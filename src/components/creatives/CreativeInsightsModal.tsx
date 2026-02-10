@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RefreshCw, History, Video as VideoIcon, BarChart3, Wand2, Sparkles, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Lightbulb, Eye } from "lucide-react";
+import { RefreshCw, History, Video as VideoIcon, BarChart3, Wand2, Sparkles, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Lightbulb, Eye, Info } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -53,7 +54,7 @@ interface CreativeVector {
 interface ContextualAnalysis {
     performance: {
         ctr: number;
-        cpa: number | null;
+        cpa: number | null; // Keep raw for API compatibility but label as CPL
         conversions: number;
         impressions: number;
         clicks: number;
@@ -603,7 +604,7 @@ export function CreativeInsightsModal({
                             {contextualAnalysis && !isContextualLoading && (
                                 <div className="space-y-4">
                                     {/* Performance Context */}
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border">
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border">
                                         <div className="text-center">
                                             <p className="text-[10px] text-muted-foreground uppercase">Impressões</p>
                                             <p className="text-lg font-bold">{contextualAnalysis.performance.impressions.toLocaleString('pt-BR')}</p>
@@ -617,7 +618,26 @@ export function CreativeInsightsModal({
                                             <p className="text-lg font-bold">{contextualAnalysis.performance.conversions}</p>
                                         </div>
                                         <div className="text-center">
-                                            <p className="text-[10px] text-muted-foreground uppercase">CPA</p>
+                                            <p className="text-[10px] text-muted-foreground uppercase">CPL Atual</p>
+                                            <p className="text-lg font-bold">
+                                                {metrics?.cpl ? `R$ ${metrics.cpl.toFixed(2)}` : 'N/A'}
+                                            </p>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-[10px] text-muted-foreground uppercase flex items-center justify-center gap-1">
+                                                CPL Projetado
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <Info className="h-3 w-3 cursor-help text-purple-400" />
+                                                        </TooltipTrigger>
+                                                        <TooltipContent className="max-w-[200px] p-2 text-[11px]">
+                                                            <p>Este é o custo futuro que o <strong>modelo estatístico de regressão</strong> prevê para este anúncio.</p>
+                                                            <p className="mt-1 text-muted-foreground italic text-[10px]"><strong>O que é regressão:</strong> Uma técnica que encontra padrões no passado para traçar uma "linha de tendência" e projetar o futuro.</p>
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            </p>
                                             <p className="text-lg font-bold">
                                                 {contextualAnalysis.performance.cpa ? `R$ ${contextualAnalysis.performance.cpa.toFixed(2)}` : 'N/A'}
                                             </p>
@@ -648,7 +668,19 @@ export function CreativeInsightsModal({
                                         </div>
                                         <div className="flex items-center justify-between text-sm">
                                             <div className="flex items-center gap-2">
-                                                <span>Tendência:</span>
+                                                <span className="flex items-center gap-1">
+                                                    Tendência:
+                                                    <TooltipProvider>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <Info className="h-3 w-3 cursor-help text-slate-400" />
+                                                            </TooltipTrigger>
+                                                            <TooltipContent className="max-w-[200px] p-2 text-[11px]">
+                                                                <p>A <strong>tendência</strong> é calculada encontrando um padrão matemático (proxy de regressão linear) nos últimos dados para saber se o desempenho está subindo ou descendo.</p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    </TooltipProvider>
+                                                </span>
                                                 {contextualAnalysis.performance.trend === 'improving' && <span className="text-emerald-600 flex items-center gap-1"><TrendingUp className="h-4 w-4" /> Melhorando</span>}
                                                 {contextualAnalysis.performance.trend === 'declining' && <span className="text-rose-600 flex items-center gap-1"><TrendingDown className="h-4 w-4" /> Caindo</span>}
                                                 {contextualAnalysis.performance.trend === 'stable' && <span className="text-amber-600">➡️ Estável</span>}

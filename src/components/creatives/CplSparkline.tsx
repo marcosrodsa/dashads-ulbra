@@ -1,13 +1,15 @@
 import * as React from "react";
 import { ComposedChart, Line, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, ReferenceLine, CartesianGrid } from "recharts";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, RefreshCw } from "lucide-react";
 
 interface CplSparklineProps {
     data: { date: string; cpl: number; conversions?: number }[];
     creativeName?: string;
     width?: number;
     height?: number;
+    avgCpl?: number | null;
 }
 
 // Format currency
@@ -20,42 +22,66 @@ const formatDate = (dateStr: string) => {
     return `${day}/${month}`;
 };
 
-export function CplSparkline({ data, creativeName, width = 80, height = 24 }: CplSparklineProps) {
-    if (!data || data.length < 2) {
+export function CplSparkline({ data, creativeName, width = 80, height = 24, avgCpl }: CplSparklineProps) {
+    // Safe data for line chart: ignore nulls AND weekends for trend/variation calculation
+    const validData = data.filter(d => {
+        const date = new Date(d.date + 'T12:00:00');
+        const day = date.getDay();
+        const isWeekend = day === 0 || day === 6;
+        return !isWeekend && d.cpl !== null && d.cpl > 0;
+    });
+
+    if (validData.length < 1) {
         return <span className="text-xs text-muted-foreground">-</span>;
     }
 
-    // Calculate trend: compare first half avg vs second half avg
-    const midpoint = Math.floor(data.length / 2);
-    const firstHalf = data.slice(0, midpoint);
-    const secondHalf = data.slice(midpoint);
+    // Weighted Window Trend: Last 2 vs Previous 4 (Momentum 3.0)
+    const WINDOW_RECENT = 2;
+    const WINDOW_PREV = 4;
+    const recentPart = validData.slice(-WINDOW_RECENT);
+    const prevPart = validData.slice(-WINDOW_RECENT - WINDOW_PREV, -WINDOW_RECENT);
 
-    const firstAvg = firstHalf.reduce((sum, d) => sum + d.cpl, 0) / firstHalf.length;
-    const secondAvg = secondHalf.reduce((sum, d) => sum + d.cpl, 0) / secondHalf.length;
-    const overallAvg = data.reduce((sum, d) => sum + d.cpl, 0) / data.length;
+    let recentAvg = 0;
+    let prevAvg = 0;
 
-    // Determine color: green if CPL is decreasing (good), red if increasing (bad)
-    const isImproving = secondAvg < firstAvg * 0.95; // 5% threshold
-    const isDeclining = secondAvg > firstAvg * 1.05;
+    if (recentPart.length > 0 && prevPart.length > 0) {
+        recentAvg = recentPart.reduce((sum, d) => sum + (d.cpl || 0), 0) / recentPart.length;
+        prevAvg = prevPart.reduce((sum, d) => sum + (d.cpl || 0), 0) / prevPart.length;
+    } else {
+        recentAvg = validData[validData.length - 1]?.cpl || 0;
+        prevAvg = validData[0]?.cpl || 0;
+    }
 
-    const lineColor = isImproving
+    const overallAvg = validData.reduce((sum, d) => sum + (d.cpl || 0), 0) / validData.length;
+
+    const firstValue = validData[0].cpl || 0;
+    const lastValue = validData[validData.length - 1].cpl || 0;
+    const variation = firstValue > 0 ? ((lastValue / firstValue) - 1) * 100 : 0;
+
+    // Determine color based on windowed trend (Harmonized with overall variation)
+    const isImproving = recentAvg < prevAvg * 0.92; // 8% improvement threshold
+
+    // Squad Tip + Sanity Lock: 
+    // Only mark as "Declining" if:
+    // 1. CPL increased significantly (>12%)
+    // 2. It's NOT extremely cheap compared to account average
+    // 3. Current Price is NOT lower than the Starting Price (Sanity Lock)
+    const isCheap = avgCpl ? (recentAvg < avgCpl * 0.85) : false;
+    const isDeclining = (recentAvg > prevAvg * 1.12) && !isCheap && (lastValue >= firstValue);
+
+    // UX Refinement: If it's overall better but recently bouncy, it's "Otimizando"
+    const isOptimizing = variation < -5 && !isImproving && !isDeclining;
+
+    const lineColor = isImproving || isOptimizing
         ? "#10b981" // emerald-500
         : isDeclining
             ? "#ef4444" // red-500
-            : "#f59e0b"; // amber-500
-
-    // Calculate min/max for chart domain
-    const minCpl = Math.min(...data.map(d => d.cpl)) * 0.9;
-    const maxCpl = Math.max(...data.map(d => d.cpl)) * 1.1;
-
-    // Calculate variation
-    const firstValue = data[0].cpl;
-    const lastValue = data[data.length - 1].cpl;
-    const variation = ((lastValue / firstValue) - 1) * 100;
+            : "#64748b"; // slate-500
 
     // Format data with formatted date for tooltip
     const chartData = data.map(d => ({
         ...d,
+        // For Recharts to connect points properly across nulls, we can use connectNulls prop
         dateFormatted: formatDate(d.date)
     }));
 
@@ -72,6 +98,7 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24 }: Cp
                                 strokeWidth={1.5}
                                 dot={false}
                                 isAnimationActive={false}
+                                connectNulls
                             />
                         </ComposedChart>
                     </ResponsiveContainer>
@@ -83,10 +110,14 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24 }: Cp
                     <span className="text-sm font-semibold truncate max-w-[200px]">
                         Evolução CPL & Leads
                     </span>
-                    <div className={`flex items-center gap-1 text-xs font-medium ${isImproving ? "text-emerald-600" : isDeclining ? "text-red-600" : "text-amber-600"
+                    <div className={`flex items-center gap-1 text-xs font-medium ${isImproving ? "text-emerald-600" :
+                        isOptimizing ? "text-blue-600" :
+                            isDeclining ? "text-red-600" : "text-slate-600"
                         }`}>
                         {isImproving ? (
                             <><TrendingDown className="h-3 w-3" /> Melhorando</>
+                        ) : isOptimizing ? (
+                            <><RefreshCw className="h-3 w-3" /> Otimizando</>
                         ) : isDeclining ? (
                             <><TrendingUp className="h-3 w-3" /> Piorando</>
                         ) : (
@@ -162,6 +193,7 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24 }: Cp
                                 dot={{ r: 3, fill: lineColor, strokeWidth: 0 }}
                                 activeDot={{ r: 4, fill: lineColor, stroke: '#fff', strokeWidth: 2 }}
                                 isAnimationActive={false}
+                                connectNulls
                             />
                         </ComposedChart>
                     </ResponsiveContainer>
@@ -178,7 +210,16 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24 }: Cp
                         <div className="font-medium">{brl(lastValue)}</div>
                     </div>
                     <div className="text-center">
-                        <div className="text-muted-foreground">Variação</div>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <div className="text-muted-foreground flex items-center justify-center gap-0.5 cursor-help">
+                                    Variação
+                                </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[200px] text-[10px]">
+                                Comparativo entre o primeiro e o último dia com leads no período.
+                            </TooltipContent>
+                        </Tooltip>
                         <div className={`font-medium ${variation > 0 ? "text-red-600" : variation < 0 ? "text-emerald-600" : ""}`}>
                             {variation > 0 ? "+" : ""}{variation.toFixed(0)}%
                         </div>

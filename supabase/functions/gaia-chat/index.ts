@@ -42,26 +42,31 @@ function predictFatigue(initialCTR: number, currentFrequency: number): any {
  * Mais estável que regressão linear simples para amostras pequenas (7-14 dias).
  */
 function calculateTrend(daily: any[]) {
-    if (daily.length < 4) return { forecast: 0, trend: "Estável" };
+    // SQUAD TIP: Skip weekends for trend analysis to avoid artificial CPL drops
+    const dailyFiltered = daily.filter(d => {
+        const date = new Date(d.data_referencia + 'T12:00:00');
+        const day = date.getDay();
+        return day !== 0 && day !== 6; // Ignore Sat/Sun
+    });
 
-    const cpls = daily.map(d => (Number(d.spend) / Math.max(1, Number(d.conversions))) || 0);
+    if (dailyFiltered.length < 3) return { forecast: 0, trend: "Estável (Sem amostragem)" };
+
+    const cpls = dailyFiltered.map(d => (Number(d.spend) / Math.max(1, Number(d.conversions))) || 0);
     const n = cpls.length;
 
-    // Média dos últimos 3 dias
-    const recent = cpls.slice(-3);
+    // Média dos últimos 2 dias úteis
+    const recent = cpls.slice(-2);
     const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
 
-    // Média do restante do período
-    const baseline = cpls.slice(0, -3);
+    // Média do restante do período útil
+    const baseline = cpls.slice(0, -2);
     const baselineAvg = baseline.reduce((a, b) => a + b, 0) / baseline.length;
 
     const diff = baselineAvg > 0 ? (recentAvg - baselineAvg) / baselineAvg : 0;
 
-    // Calcula um "forecast" conservador (limitado a +/- 30% da média atual)
+    // Calcula um "forecast" conservador
     const overallAvg = cpls.reduce((a, b) => a + b, 0) / n;
     let forecast = recentAvg;
-    if (forecast > overallAvg * 1.5) forecast = overallAvg * 1.5;
-    if (forecast < overallAvg * 0.5) forecast = overallAvg * 0.5;
 
     return {
         forecast: Number(forecast.toFixed(2)),
@@ -92,7 +97,7 @@ const TOOLS = [
             },
             {
                 name: "query_budget_comparison",
-                description: "Compara o gasto realizado vs orçamento planejado por unidade e semana.",
+                description: "Consulta EXCLUSIVAMENTE a comparação entre Gasto Real vs Orçamento Planejado por semana. Use este para perguntas de 'consumo do orçamento', 'meta de gasto' ou 'quanto foi planejado'.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -102,7 +107,7 @@ const TOOLS = [
             },
             {
                 name: "query_global_performance",
-                description: "Consulta o snapshot geral de performance (investimento, leads, CPL) E os Top 5 Criativos para o período.",
+                description: "Consulta o snapshot geral de performance (investimento, leads, CPL), Top 5 Criativos E PREDIÇÕES DE TENDÊNCIA de CPL para a próxima semana. Use este para perguntas de 'performance', 'como estamos indo', 'previsão', 'tendência' ou 'melhores criativos'.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -193,7 +198,7 @@ serve(async (req) => {
             const { data: historyData } = await supabase
                 .from("chat_messages")
                 .select("role, content")
-                .eq("session_id", currentSessionId).order("created_at", { ascending: true }).limit(10);
+                .eq("session_id", currentSessionId).order("created_at", { ascending: true }).limit(30);
             if (historyData) {
                 conversationHistory = historyData.map(m => ({
                     role: m.role === "assistant" ? "model" : "user",
@@ -208,22 +213,24 @@ serve(async (req) => {
         };
 
         const today = new Date().toISOString().split("T")[0];
-        const systemInstruction = `Você é a Gaia Elite, inteligência suprema de mídia da ULBRA. Hoje é ${today}.
-Seu objetivo é ser PRECISA e ANALÍTICA.
+        const systemInstruction = `Você é a Gaia Elite v3.0 (Otimização Proativa). HOJE É ${today} (FEVEREIRO/2026).
+Seu objetivo é ser PROATIVA, ANALÍTICA e DIRETA. NÃO FAÇA PERGUNTAS DE CLARIFICAÇÃO SE O CONTEXTO JÁ EXISTE.
 
-CONTEXTO ATUAL (Dashboard):
+DIRETRIZES DE INTELIGÊNCIA:
+1. SEM PERGUNTAS DE CLARIFICAÇÃO: Se o usuário perguntar "Como está a performance?", use os valores de Unidade: "${context?.unidade || 'Todas'}" e Curso: "${context?.curso || 'Todos'}" IMEDIATAMENTE. Nunca pergunte "Para qual unidade?" se o contexto não for nulo. Se for null, assuma "Todas".
+2. CHAMADA DE FERRAMENTA OBRIGATÓRIA: Antes de dizer "Não sei" ou pedir detalhes, você DEVE tentar chamar uma ferramenta com o contexto disponível.
+3. DIFERENCIAÇÃO DE DADOS:
+    - PERFORMANCE/PREVISÃO: Use 'query_global_performance'. Ela dá o CPL real e a PREDIÇÃO (campo forecast). Para perguntas de "Como está indo" ou "Previsão", use esta.
+    - ORÇAMENTO/CONSUMO: Use 'query_budget_comparison'. Ela dá o Planejado vs Real. Para perguntas de "Consumo" ou "Orçamento", use esta.
+4. REALIDADE TEMPORAL:
+    - Fevereiro/2026 é o mês ATUAL e OPERACIONAL.
+    - Março/2026 é PLANEJAMENTO FUTURO. Ignore Março a menos que perguntem especificamente por ele. Se a ferramenta retornar Março como "esta semana", CORRIJA e procure a semana de Fevereiro.
+5. TRANSPARÊNCIA: Informe a data do dado mais recente (campo latest_data_date) se houver delay.
+
+CONTEXTO DASHBOARD ATUAL:
 - Unidade: "${context?.unidade || 'Todas'}"
 - Curso: "${context?.curso || 'Todos'}"
-- Período Analisado: ${dateRange.start} até ${dateRange.end}
-
-MISSÃO E MODELOS:
-1. Você POSSUI um modelo de previsão estatística integrado. Se o usuário perguntar sobre "previsão", "tendência" ou "próxima semana", você DEVE usar os dados de 'forecast' retornados pela ferramenta 'query_global_performance'. NUNCA diga que não pode prever.
-2. Seja INVESTIGATIVA: Se os dados parecerem estranhos, use 'list_available_fields' para validar nomes de unidades ou cursos.
-3. MEMÓRIA: Mantenha o contexto da conversa. Se o usuário já selecionou uma unidade, não pergunte qual é. Use o "CONTEXTO ATUAL" acima como sua verdade absoluta para consultas genéricas.
-4. PRIORIDADE: Se o usuário pedir algo que conflite com o dashboard (ex: filtro diz Santarém mas usuário pede Canoas), avise que está mudando o foco para a Unidade pedida.
-5. SOBRE CRIATIVOS: A ferramenta 'query_global_performance' JÁ RETORNA os top 5 criativos. Use esses dados para responder sobre "melhores anúncios" ou "criativos campeões".
-
-VERSÃO: Gaia Elite 2.10 (Multi-Key Fallback).`;
+- Período do Filtro: ${dateRange.start} até ${dateRange.end} (Nota: Dados reais disponíveis até ontém)`;
 
         let chatContents = [...conversationHistory];
         if (chatContents.length === 0 || chatContents[chatContents.length - 1]?.parts?.[0]?.text !== message) {
@@ -305,20 +312,39 @@ VERSÃO: Gaia Elite 2.10 (Multi-Key Fallback).`;
                         const { data } = await supabase.from('vw_dashboard_semanal_detalhado2').select(args.field);
                         toolResult = { available_values: Array.from(new Set((data || []).map((r: any) => r[args.field]))) };
                     } else if (name === "query_budget_comparison") {
-                        const todayStr = new Date().toISOString();
+                        // SQUAD FIX: Fetch weeks around NOW to ensure the current week is present
+                        const now = new Date();
+                        const sixWeeksAgo = new Date(now.getTime() - 42 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                        const sixWeeksAhead = new Date(now.getTime() + 42 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
                         const { data } = await supabase
                             .from('vw_dashboard_semanal_detalhado2')
                             .select('*')
-                            .ilike('unidade', `%${args.unidade || context?.unidade || ''}%`)
-                            .lte('data_inicio_semana', todayStr)
-                            .order('data_inicio_semana', { ascending: false }).limit(8);
-                        toolResult = data;
+                            .filter('unidade', args.unidade && args.unidade !== 'Todas' ? 'ilike' : 'neq', args.unidade && args.unidade !== 'Todas' ? `%${args.unidade}%` : 'null')
+                            .gte('data_inicio_semana', sixWeeksAgo)
+                            .lte('data_inicio_semana', sixWeeksAhead)
+                            .order('data_inicio_semana', { ascending: false });
+
+                        // Tagging periods to avoid hallucination
+                        toolResult = (data || []).map((week: any) => {
+                            const weekStart = new Date(week.data_inicio_semana + 'T12:00:00');
+                            const weekEnd = new Date(week.data_fim_semana + 'T12:00:00');
+                            let periodType = "FUTURE_PLANNING";
+                            if (now >= weekStart && now <= weekEnd) periodType = "CURRENT_WEEK";
+                            else if (now > weekEnd) periodType = "PAST_WEEK";
+
+                            return { ...week, period_status: periodType };
+                        });
                     } else if (name === "query_global_performance") {
                         // Harden filtering: prioritizes dashboard context over tool's inferred arguments
                         const filter_unidade = (args.unidade && args.unidade !== 'Todas') ? args.unidade : (context?.unidade || null);
                         const filter_curso = (args.curso && args.curso !== 'Todos') ? args.curso : (context?.curso || null);
+
+                        // SQUAD HARDEN: Enforce D-1 logic (Performance data has 24h delay)
+                        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
                         const filter_start = args.start_date || dateRange.start;
-                        const filter_end = args.end_date || dateRange.end;
+                        let filter_end = args.end_date || dateRange.end;
+                        if (filter_end > yesterday) filter_end = yesterday;
 
                         const { data } = await supabase.rpc("get_gaia_data", {
                             p_start_date: filter_start,
@@ -330,11 +356,13 @@ VERSÃO: Gaia Elite 2.10 (Multi-Key Fallback).`;
                         });
 
                         // Agregar tendência conservadora (Harden check for data?.stats?.daily)
-                        if (data && data.stats && data.stats.daily && Array.isArray(data.stats.daily) && data.stats.daily.length >= 3) {
+                        if (data && data.stats && data.stats.daily && Array.isArray(data.stats.daily) && data.stats.daily.length > 0) {
+                            const latestDate = data.stats.daily[data.stats.daily.length - 1].data_referencia;
                             const { forecast, trend } = calculateTrend(data.stats.daily);
                             data.stats.forecast = {
                                 next_7_days_avg_cpl: forecast,
-                                trend: trend
+                                trend: trend,
+                                latest_data_date: latestDate // TRANSPARENCY: AI knows when data stopped
                             };
                         }
                         toolResult = data;

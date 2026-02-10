@@ -111,10 +111,10 @@ export function CreativeCPLHeatmap({ data, avgCPL }: CreativeHeatmapProps) {
                                     </span>
                                 </div>
                             </HoverCardTrigger>
-                            <HoverCardContent side="top" className="w-72 p-0 overflow-hidden">
+                            <HoverCardContent side="top" className="w-[350px] p-0 overflow-hidden shadow-2xl border-primary/10">
                                 {/* Image Preview */}
                                 {item.image_url ? (
-                                    <div className="relative h-36 w-full bg-white dark:bg-slate-800">
+                                    <div className="relative h-[350px] w-full bg-white dark:bg-slate-800 border-b">
                                         <img
                                             src={item.image_url}
                                             alt={item.ad_name || "Criativo"}
@@ -125,19 +125,19 @@ export function CreativeCPLHeatmap({ data, avgCPL }: CreativeHeatmapProps) {
                                         />
                                     </div>
                                 ) : (
-                                    <div className="relative h-24 w-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                                        <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                                    <div className="relative h-32 w-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center border-b">
+                                        <ImageIcon className="h-10 w-10 text-muted-foreground" />
                                     </div>
                                 )}
                                 {/* Info */}
-                                <div className="p-3 space-y-1">
-                                    <p className="font-bold text-sm line-clamp-1">{item.ad_name || item.ad_id}</p>
-                                    <p className="text-[10px] text-muted-foreground font-mono bg-slate-100 dark:bg-slate-800 px-1 rounded w-fit">
+                                <div className="p-4 space-y-2">
+                                    <p className="font-bold text-base line-clamp-2 leading-tight">{item.ad_name || item.ad_id}</p>
+                                    <p className="text-[10px] text-muted-foreground font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded w-fit">
                                         ID: {item.ad_id}
                                     </p>
                                     {item.campaign_name && (
-                                        <p className="text-[10px] text-muted-foreground italic line-clamp-1">
-                                            campanha: {item.campaign_name}
+                                        <p className="text-xs text-muted-foreground italic line-clamp-1 border-l-2 border-primary/20 pl-2">
+                                            {item.campaign_name}
                                         </p>
                                     )}
                                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs pt-1">

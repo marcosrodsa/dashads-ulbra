@@ -51,7 +51,7 @@ BEGIN
   EXECUTE format('
     WITH mapping AS (
       SELECT DISTINCT ON (platform, campaign_id) 
-        platform, campaign_id, unidadE_nome, curso_nome, unit_id, course_id, is_ignored
+        platform, campaign_id, unidade_nome, curso_nome, unit_id, course_id, is_ignored
       FROM vw_campaign_mapping_readable
     )
     SELECT jsonb_build_object(
@@ -83,7 +83,7 @@ BEGIN
   EXECUTE format('
     WITH mapping AS (
       SELECT DISTINCT ON (platform, campaign_id) 
-        platform, campaign_id, unidadE_nome, curso_nome, unit_id, course_id, is_ignored
+        platform, campaign_id, unidade_nome, curso_nome, unit_id, course_id, is_ignored
       FROM vw_campaign_mapping_readable
     )
     SELECT COALESCE(jsonb_agg(sub), ''[]''::jsonb)

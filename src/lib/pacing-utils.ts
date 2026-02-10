@@ -1,4 +1,4 @@
-import { endOfMonth, startOfDay, differenceInDays } from "date-fns";
+import { endOfMonth, startOfDay, differenceInDays, isWeekend, eachDayOfInterval } from "date-fns";
 
 export type PacingStatus = "success" | "warning" | "error";
 
@@ -12,16 +12,39 @@ export interface DynamicThresholds {
 }
 
 /**
+ * Check if a date is a business day (Monday-Friday)
+ */
+export function isBusinessDay(date: Date): boolean {
+    return !isWeekend(date);
+}
+
+/**
+ * Count business days in a range (inclusive)
+ */
+export function countBusinessDays(start: Date, end: Date): number {
+    if (start > end) return 0;
+    const days = eachDayOfInterval({ start, end });
+    return days.filter(isBusinessDay).length;
+}
+
+/**
  * Calculate dynamic pacing thresholds based on current day of month
  * Tolerance decreases as month progresses:
  * - Early month: ±20% tolerance
  * - Mid month: ±10% tolerance  
  * - Late month: ±2% tolerance
  */
-export function getDynamicThresholds(currentDate: Date, monthDate: Date, customRange?: { from: Date; to: Date }): DynamicThresholds {
+export function getDynamicThresholds(
+    currentDate: Date,
+    monthDate: Date,
+    customRange?: { from: Date; to: Date },
+    options?: { excludeWeekends?: boolean }
+): DynamicThresholds {
     let totalDays: number;
     let currentDay: number;
     let progress: number;
+
+    const useBusinessDays = options?.excludeWeekends ?? true; // Default to TRUE for DashAds (Conversion campaigns paused on weekends)
 
     if (customRange) {
         // Pacing relative to a specific range (e.g. a week)
@@ -29,32 +52,59 @@ export function getDynamicThresholds(currentDate: Date, monthDate: Date, customR
         const dTo = startOfDay(customRange.to);
         const dCurrent = startOfDay(currentDate);
 
-        const total = Math.max(1, differenceInDays(dTo, dFrom) + 1);
+        let total: number;
+        let elapsed: number;
 
-        if (dCurrent < dFrom) {
-            progress = 0;
-            currentDay = 0;
-        } else if (dCurrent > dTo) {
-            progress = 1;
-            currentDay = total;
+        if (useBusinessDays) {
+            total = Math.max(1, countBusinessDays(dFrom, dTo));
+            if (dCurrent < dFrom) {
+                elapsed = 0;
+            } else if (dCurrent > dTo) {
+                elapsed = total;
+            } else {
+                // Elapsed business days up to current date
+                const effectiveCurrent = dCurrent > dTo ? dTo : dCurrent;
+                elapsed = countBusinessDays(dFrom, effectiveCurrent);
+            }
         } else {
-            currentDay = differenceInDays(dCurrent, dFrom) + 1;
-            progress = currentDay / total;
+            total = Math.max(1, differenceInDays(dTo, dFrom) + 1);
+            if (dCurrent < dFrom) {
+                elapsed = 0;
+            } else if (dCurrent > dTo) {
+                elapsed = total;
+            } else {
+                elapsed = differenceInDays(dCurrent, dFrom) + 1;
+            }
         }
+
         totalDays = total;
+        currentDay = elapsed;
+        progress = currentDay / totalDays;
+
     } else {
         // Default: Pacing relative to month
         const dCurrent = startOfDay(currentDate);
         const dStart = startOfDay(monthDate);
-        totalDays = endOfMonth(monthDate).getDate();
-        currentDay = dCurrent.getDate();
-        progress = currentDay / totalDays;
-    }
+        const dEnd = endOfMonth(monthDate);
 
-    const daysRemaining = Math.max(0, totalDays - currentDay);
+        if (useBusinessDays) {
+            totalDays = countBusinessDays(dStart, dEnd);
+            const effectiveCurrent = dCurrent > dEnd ? dEnd : dCurrent;
+            currentDay = countBusinessDays(dStart, effectiveCurrent);
+        } else {
+            totalDays = dEnd.getDate();
+            currentDay = dCurrent.getDate();
+        }
+
+        progress = totalDays > 0 ? currentDay / totalDays : 0;
+    }
 
     // Tolerance decreases as we approach the end of the range
     const baseTolerance = 0.20;
+
+    // For business days, "days remaining" is also business days
+    const daysRemaining = Math.max(0, totalDays - currentDay);
+
     const progressFactor = totalDays > 0 ? daysRemaining / totalDays : 0;
     const tolerance = baseTolerance * progressFactor;
 
@@ -64,9 +114,9 @@ export function getDynamicThresholds(currentDate: Date, monthDate: Date, customR
     return {
         expectedProgress: progress,
         idealMin: Math.max(0, progress - effectiveTolerance),
-        idealMax: Math.min(1.2, progress + effectiveTolerance), // Allow some overspend budget padding
+        idealMax: Math.min(1.5, progress + effectiveTolerance), // Allow some overspend budget padding
         warningMin: Math.max(0, progress - (effectiveTolerance * 1.5)),
-        warningMax: Math.min(1.5, progress + (effectiveTolerance * 1.5)),
+        warningMax: Math.min(2.0, progress + (effectiveTolerance * 1.5)),
         tolerance: effectiveTolerance,
     };
 }
@@ -81,9 +131,10 @@ export function getDynamicPacingStatus(
     utilization: number,
     currentDate: Date,
     monthDate: Date,
-    customRange?: { from: Date; to: Date }
+    customRange?: { from: Date; to: Date },
+    options?: { excludeWeekends?: boolean }
 ): PacingStatus {
-    const thresholds = getDynamicThresholds(currentDate, monthDate, customRange);
+    const thresholds = getDynamicThresholds(currentDate, monthDate, customRange, options);
 
     // Critical: Outside warning range
     if (utilization < thresholds.warningMin || utilization > thresholds.warningMax) {
