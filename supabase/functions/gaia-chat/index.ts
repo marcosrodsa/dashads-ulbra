@@ -37,16 +37,36 @@ function predictFatigue(initialCTR: number, currentFrequency: number): any {
     };
 }
 
-function calculateRegression(days: number[], values: number[]) {
-    const n = days.length;
-    if (n < 2) return { slope: 0, intercept: values[0] || 0 };
-    const sumX = days.reduce((a, b) => a + b, 0);
-    const sumY = values.reduce((a, b) => a + b, 0);
-    const sumXY = days.reduce((sum, x, i) => sum + x * values[i], 0);
-    const sumXX = days.reduce((sum, x) => sum + x * x, 0);
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
-    return { slope, intercept };
+/**
+ * Estima a tendência comparando a média recente vs média do período.
+ * Mais estável que regressão linear simples para amostras pequenas (7-14 dias).
+ */
+function calculateTrend(daily: any[]) {
+    if (daily.length < 4) return { forecast: 0, trend: "Estável" };
+
+    const cpls = daily.map(d => (Number(d.spend) / Math.max(1, Number(d.conversions))) || 0);
+    const n = cpls.length;
+
+    // Média dos últimos 3 dias
+    const recent = cpls.slice(-3);
+    const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+
+    // Média do restante do período
+    const baseline = cpls.slice(0, -3);
+    const baselineAvg = baseline.reduce((a, b) => a + b, 0) / baseline.length;
+
+    const diff = baselineAvg > 0 ? (recentAvg - baselineAvg) / baselineAvg : 0;
+
+    // Calcula um "forecast" conservador (limitado a +/- 30% da média atual)
+    const overallAvg = cpls.reduce((a, b) => a + b, 0) / n;
+    let forecast = recentAvg;
+    if (forecast > overallAvg * 1.5) forecast = overallAvg * 1.5;
+    if (forecast < overallAvg * 0.5) forecast = overallAvg * 0.5;
+
+    return {
+        forecast: Number(forecast.toFixed(2)),
+        trend: diff > 0.1 ? "Alta" : diff < -0.1 ? "Queda" : "Estável"
+    };
 }
 
 /**
@@ -86,7 +106,8 @@ const TOOLS = [
                 parameters: {
                     type: "object",
                     properties: {
-                        unidade: { type: "string", description: "Filtrar por unidade." },
+                        unidade: { type: "string", description: "Opcional: Filtrar por unidade (ex: Santarém)." },
+                        curso: { type: "string", description: "Opcional: Filtrar por curso." },
                         start_date: { type: "string", description: "Opcional: Data de início (YYYY-MM-DD)." },
                         end_date: { type: "string", description: "Opcional: Data de fim (YYYY-MM-DD)." }
                     }
@@ -127,6 +148,8 @@ serve(async (req) => {
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
         const body = await req.json();
         const { sessionId, message, context } = body;
+
+        console.log("Gaia Elite: Context recebido:", JSON.stringify(context));
 
         let userId: string | null = null;
         const authHeader = req.headers.get("Authorization");
@@ -171,13 +194,21 @@ serve(async (req) => {
         };
 
         const today = new Date().toISOString().split("T")[0];
-        const systemInstruction = `Você é a Gaia Elite, a inteligência suprema de mídia da ULBRA. Hoje é ${today}.
-Você é INVESTIGATIVA. NUNCA diga que não tem dados sem antes usar 'list_available_fields'.
-Se o usuário pedir um período como "últimos 7 dias", CALCULE as datas com base em hoje (${today}) e use nos parâmetros das ferramentas.
-ATENÇÃO: Criativos podem ter o mesmo nome (ex: "Card 3") mas IDs e desempenhos diferentes por curso/unidade. TRATE-OS como itens distintos se os leads/CPL forem diferentes.
-Contexto do Dashboard: Unidade=${context?.unidade || 'Todas'}, Curso=${context?.curso || 'Todos'}, Período=${dateRange.start} até ${dateRange.end}.
-PRIORIZE os filtros do Dashboard a menos que o usuário peça explicitamente outra coisa.
-VERSÃO ATUAL: Gaia Elite 2.6 (Context & Date Aware).`;
+        const systemInstruction = `Você é a Gaia Elite, inteligência suprema de mídia da ULBRA. Hoje é ${today}.
+Seu objetivo é ser PRECISA e ANALÍTICA.
+
+CONTEXTO ATUAL (Dashboard):
+- Unidade: "${context?.unidade || 'Todas'}"
+- Curso: "${context?.curso || 'Todos'}"
+- Período Analisado: ${dateRange.start} até ${dateRange.end}
+
+MISSÃO E MODELOS:
+1. Você POSSUI um modelo de previsão estatística integrado. Se o usuário perguntar sobre "previsão", "tendência" ou "próxima semana", você DEVE usar os dados de 'forecast' retornados pela ferramenta 'query_global_performance'. NUNCA diga que não pode prever.
+2. Seja INVESTIGATIVA: Se os dados parecerem estranhos, use 'list_available_fields' para validar nomes de unidades ou cursos.
+3. MEMÓRIA: Mantenha o contexto da conversa. Se o usuário já selecionou uma unidade, não pergunte qual é. Use o "CONTEXTO ATUAL" acima como sua verdade absoluta para consultas genéricas.
+4. PRIORIDADE: Se o usuário pedir algo que conflite com o dashboard (ex: filtro diz Santarém mas usuário pede Canoas), avise que está mudando o foco para a Unidade pedida.
+
+VERSÃO: Gaia Elite 2.8 (Predictive & Context Fixed).`;
 
         let chatContents = [...conversationHistory];
         if (chatContents.length === 0 || chatContents[chatContents.length - 1].parts[0].text !== message) {
@@ -262,17 +293,16 @@ VERSÃO ATUAL: Gaia Elite 2.6 (Context & Date Aware).`;
                         const { data } = await supabase.rpc('get_gaia_data', {
                             p_start_date: args.start_date || dateRange.start,
                             p_end_date: args.end_date || dateRange.end,
-                            p_unidade: args.unidade || context?.unidade || null
+                            p_unidade: args.unidade || context?.unidade || null,
+                            p_curso: args.curso || context?.curso || null
                         });
 
-                        // Agregar forecast automático
-                        if (data?.stats?.daily?.length >= 5) {
-                            const days = data.stats.daily.map((_: any, i: number) => i + 1);
-                            const cpls = data.stats.daily.map((d: any) => (Number(d.spend) / Math.max(1, Number(d.conversions))) || 0);
-                            const { slope, intercept } = calculateRegression(days, cpls);
+                        // Agregar tendência conservadora
+                        if (data?.stats?.daily?.length >= 3) {
+                            const { forecast, trend } = calculateTrend(data.stats.daily);
                             data.stats.forecast = {
-                                next_7_days_avg_cpl: (slope * (days.length + 7) + intercept).toFixed(2),
-                                trend: slope > 0.05 ? "Alta" : slope < -0.05 ? "Queda" : "Estável"
+                                next_7_days_avg_cpl: forecast,
+                                trend: trend
                             };
                         }
                         toolResult = data;

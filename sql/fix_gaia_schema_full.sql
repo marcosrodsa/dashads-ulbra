@@ -4,11 +4,13 @@
 -- ============================================================================
 
 DROP FUNCTION IF EXISTS get_gaia_data(DATE, DATE, TEXT, BOOLEAN, BOOLEAN);
+DROP FUNCTION IF EXISTS get_gaia_data(DATE, DATE, TEXT, TEXT, BOOLEAN, BOOLEAN);
 
 CREATE OR REPLACE FUNCTION get_gaia_data(
   p_start_date DATE, 
   p_end_date DATE,
   p_unidade TEXT DEFAULT NULL,
+  p_curso TEXT DEFAULT NULL,
   p_hide_branding BOOLEAN DEFAULT FALSE,
   p_exclude_ead BOOLEAN DEFAULT FALSE
 )
@@ -22,10 +24,16 @@ DECLARE
   v_where TEXT;
 BEGIN
   -- 1. Construir Cláusula WHERE Dinâmica
+  -- Note: p.date is expected in fact_ads_performance_daily
   v_where := format('p.date BETWEEN %L AND %L', p_start_date, p_end_date);
   
-  IF p_unidade IS NOT NULL AND p_unidade <> '' THEN
-    v_where := v_where || format(' AND m.unidade_nome = %L', p_unidade);
+  -- Use ILIKE with wildcards for flexible matching (handles 'Santarém' vs 'Ulbra Santarém')
+  IF p_unidade IS NOT NULL AND p_unidade <> '' AND p_unidade <> 'Todas' THEN
+    v_where := v_where || format(' AND (m.unidade_nome ILIKE %1$L OR m.unit_id::text = %2$L)', '%' || p_unidade || '%', p_unidade);
+  END IF;
+
+  IF p_curso IS NOT NULL AND p_curso <> '' AND p_curso <> 'Todos' THEN
+    v_where := v_where || format(' AND (m.curso_nome ILIKE %1$L OR m.course_id::text = %2$L)', '%' || p_curso || '%', p_curso);
   END IF;
   
   IF p_hide_branding THEN
@@ -38,9 +46,14 @@ BEGIN
 
   v_where := v_where || ' AND p.platform = ''META'' AND (m.is_ignored IS NULL OR m.is_ignored = false) AND p.campaign_name NOT ILIKE ''%Ultec%''';
 
-  -- 2. Buscar Dados Diários Aggregados (Forecast)
-  -- CORREÇÃO: Incluir impressions e clicks na subquery!
+  -- 2. Buscar Dados Diários Aggregados
+  -- Crucial: Use a subquery with DISTINCT to avoid duplicating performance data due to multiple mappings
   EXECUTE format('
+    WITH mapping AS (
+      SELECT DISTINCT ON (platform, campaign_id) 
+        platform, campaign_id, unidadE_nome, curso_nome, unit_id, course_id, is_ignored
+      FROM vw_campaign_mapping_readable
+    )
     SELECT jsonb_build_object(
       ''totals'', jsonb_build_object(
           ''spend'', COALESCE(SUM(spend), 0),
@@ -55,10 +68,10 @@ BEGIN
         p.date as data_referencia, 
         SUM(p.spend) as spend, 
         SUM(p.conversions) as conversions,
-        SUM(p.impressions) as impressions,  -- ADICIONADO
-        SUM(p.clicks) as clicks            -- ADICIONADO
+        SUM(p.impressions) as impressions,
+        SUM(p.clicks) as clicks
       FROM fact_ads_performance_daily p
-      LEFT JOIN vw_campaign_mapping_readable m 
+      LEFT JOIN mapping m 
         ON p.platform = m.platform AND p.campaign_id = m.campaign_id
       WHERE %s
       GROUP BY p.date
@@ -66,8 +79,13 @@ BEGIN
     ) sub', v_where)
   INTO v_daily;
 
-  -- 3. Buscar Top Creatives (Top 5)
+  -- 3. Buscar Top Creatives
   EXECUTE format('
+    WITH mapping AS (
+      SELECT DISTINCT ON (platform, campaign_id) 
+        platform, campaign_id, unidadE_nome, curso_nome, unit_id, course_id, is_ignored
+      FROM vw_campaign_mapping_readable
+    )
     SELECT COALESCE(jsonb_agg(sub), ''[]''::jsonb)
     FROM (
       SELECT 
@@ -76,32 +94,31 @@ BEGIN
         COALESCE(m.curso_nome, ''Geral'') as curso,
         SUM(p.conversions) as conversions,
         SUM(p.spend) as spend,
-        CASE WHEN SUM(p.conversions) > 0 THEN SUM(p.spend)/SUM(p.conversions) ELSE 0 END as cpl,
-        CASE WHEN SUM(p.impressions) > 0 THEN (SUM(p.clicks)::numeric/SUM(p.impressions))*100 ELSE 0 END as ctr
+        CASE WHEN SUM(p.conversions) > 0 THEN SUM(p.spend)/SUM(p.conversions) ELSE 0 END as cpl
       FROM fact_ads_performance_daily p
-      LEFT JOIN vw_campaign_mapping_readable m 
+      LEFT JOIN mapping m 
         ON p.platform = m.platform AND p.campaign_id = m.campaign_id
       WHERE %s
-      GROUP BY 
-        COALESCE(p.entity_name, p.campaign_name),
-        m.unidade_nome,
-        m.curso_nome,
-        p.campaign_id
-      ORDER BY conversions DESC
+      GROUP BY 1, 2, 3
+      ORDER BY conversions DESC, spend DESC
       LIMIT 10
     ) sub', v_where)
   INTO v_creatives;
 
-  -- 4. Retornar JSON
   RETURN jsonb_build_object(
     'stats', v_daily,
-    'top_creatives', v_creatives
+    'top_creatives', v_creatives,
+    'context_applied', jsonb_build_object(
+        'unidade', p_unidade,
+        'curso', p_curso,
+        'period', p_start_date || ' a ' || p_end_date
+    )
   );
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION get_gaia_data(DATE, DATE, TEXT, BOOLEAN, BOOLEAN) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_gaia_data(DATE, DATE, TEXT, BOOLEAN, BOOLEAN) TO service_role;
-GRANT EXECUTE ON FUNCTION get_gaia_data(DATE, DATE, TEXT, BOOLEAN, BOOLEAN) TO anon;
+GRANT EXECUTE ON FUNCTION get_gaia_data(DATE, DATE, TEXT, TEXT, BOOLEAN, BOOLEAN) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_gaia_data(DATE, DATE, TEXT, TEXT, BOOLEAN, BOOLEAN) TO service_role;
+GRANT EXECUTE ON FUNCTION get_gaia_data(DATE, DATE, TEXT, TEXT, BOOLEAN, BOOLEAN) TO anon;
 
 COMMENT ON FUNCTION get_gaia_data IS 'Retorna dados agregados para Gaia Chat direto da tabela base (Fixed Impressions)';
