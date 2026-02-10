@@ -296,22 +296,30 @@ export default function CreativesPage() {
         const supabase = getSupabaseClient();
 
         const handleMouseEnter = async () => {
-            if (analysis || loading) return;
+            // Allow re-fetch if currently showing the "placeholder" text or error
+            const isPlaceholder = analysis === "Nenhuma análise encontrada. Clique para gerar." ||
+                analysis === "Erro ao carregar análise." ||
+                analysis === "Nenhuma análise detalhada encontrada.";
+
+            if ((analysis && !isPlaceholder) || loading) return;
+
             setLoading(true);
+            console.log(`[GaiaHover] Buscando análise para ad_id: ${row.ad_id}`);
+
             try {
                 // Fetch from both tables in parallel
                 const [quickPromise, contextPromise] = await Promise.all([
                     supabase
                         .from("fact_creative_insights")
                         .select("analyzed_at, diagnostico, visual_description")
-                        .eq("ad_id", row.ad_id)
+                        .eq("ad_id", String(row.ad_id))
                         .order("analyzed_at", { ascending: false })
                         .limit(1)
                         .maybeSingle(),
                     supabase
                         .from("creative_contextual_insights")
                         .select("analyzed_at, why_performs, visual_description")
-                        .eq("ad_id", row.ad_id)
+                        .eq("ad_id", String(row.ad_id))
                         .order("analyzed_at", { ascending: false })
                         .limit(1)
                         .maybeSingle()
@@ -320,24 +328,27 @@ export default function CreativesPage() {
                 const quickData = quickPromise.data;
                 const contextData = contextPromise.data;
 
+                console.log(`[GaiaHover] Resultados para ${row.ad_id}:`, {
+                    quick: quickData ? "Encontrado" : "Nulo",
+                    context: contextData ? "Encontrado" : "Nulo"
+                });
+
                 // Determine effective latest analysis
                 let bestContent = "Nenhuma análise detalhada encontrada.";
                 let latestDate = 0;
 
                 if (quickData?.analyzed_at) {
                     const date = new Date(quickData.analyzed_at).getTime();
-                    if (date > latestDate) {
+                    if (!isNaN(date) && date > latestDate) {
                         latestDate = date;
                         // Parse Quick Analysis
                         try {
-                            // If diagnostico is JSON, parse it.
-                            if (quickData.diagnostico && (quickData.diagnostico.startsWith('[') || quickData.diagnostico.startsWith('{'))) {
+                            if (quickData.diagnostico && (quickData.diagnostico.includes('[') || quickData.diagnostico.includes('{'))) {
                                 const parsed = JSON.parse(quickData.diagnostico);
                                 const insights = Array.isArray(parsed) ? parsed : (parsed.insights || []);
                                 const text = insights.map((i: any) => i.description).join(" ");
                                 bestContent = text || quickData.visual_description || "Análise sem texto.";
                             } else {
-                                // If diagnostico is text or empty, prefer visual_description if available
                                 bestContent = quickData.diagnostico || quickData.visual_description || "Análise visual concluída.";
                             }
                         } catch {
@@ -348,7 +359,7 @@ export default function CreativesPage() {
 
                 if (contextData?.analyzed_at) {
                     const date = new Date(contextData.analyzed_at).getTime();
-                    if (date > latestDate) {
+                    if (!isNaN(date) && date > latestDate) {
                         // Prefer Contextual Analysis
                         bestContent = contextData.why_performs || contextData.visual_description || "Análise contextual sem resumo textual.";
                     }
