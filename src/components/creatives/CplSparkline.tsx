@@ -1,10 +1,10 @@
 import * as React from "react";
-import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, ReferenceLine } from "recharts";
+import { ComposedChart, Line, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, ReferenceLine, CartesianGrid } from "recharts";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 interface CplSparklineProps {
-    data: { date: string; cpl: number }[];
+    data: { date: string; cpl: number; conversions?: number }[];
     creativeName?: string;
     width?: number;
     height?: number;
@@ -64,7 +64,7 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24 }: Cp
             <HoverCardTrigger asChild>
                 <div style={{ width, height }} className="inline-block cursor-pointer">
                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={data}>
+                        <ComposedChart data={data}>
                             <Line
                                 type="monotone"
                                 dataKey="cpl"
@@ -73,15 +73,15 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24 }: Cp
                                 dot={false}
                                 isAnimationActive={false}
                             />
-                        </LineChart>
+                        </ComposedChart>
                     </ResponsiveContainer>
                 </div>
             </HoverCardTrigger>
-            <HoverCardContent side="left" className="w-80 p-3">
+            <HoverCardContent side="left" className="w-80 p-3 shadow-xl border-purple-100 dark:border-purple-900">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-semibold truncate max-w-[200px]">
-                        Evolução CPL
+                        Evolução CPL & Leads
                     </span>
                     <div className={`flex items-center gap-1 text-xs font-medium ${isImproving ? "text-emerald-600" : isDeclining ? "text-red-600" : "text-amber-600"
                         }`}>
@@ -96,50 +96,74 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24 }: Cp
                 </div>
 
                 {/* Chart */}
-                <div className="h-32 w-full">
+                <div className="h-36 w-full mt-2">
                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+                        <ComposedChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis
                                 dataKey="dateFormatted"
-                                tick={{ fontSize: 10 }}
+                                tick={{ fontSize: 9 }}
                                 tickLine={false}
-                                axisLine={{ stroke: '#e5e7eb' }}
+                                axisLine={{ stroke: '#e2e8f0' }}
                                 interval="preserveStartEnd"
                             />
                             <YAxis
-                                domain={[minCpl, maxCpl]}
-                                tick={{ fontSize: 10 }}
+                                yAxisId="left"
+                                domain={[0, 'auto']}
+                                tick={{ fontSize: 9, fill: lineColor }}
                                 tickLine={false}
                                 axisLine={false}
                                 tickFormatter={(v) => `R$${v.toFixed(0)}`}
-                                width={45}
+                                width={35}
+                            />
+                            <YAxis
+                                yAxisId="right"
+                                orientation="right"
+                                domain={[0, 'auto']}
+                                tick={{ fontSize: 9, fill: '#64748b' }}
+                                tickLine={false}
+                                axisLine={false}
+                                width={20}
                             />
                             <RechartsTooltip
                                 contentStyle={{
-                                    fontSize: 12,
+                                    fontSize: 11,
                                     borderRadius: 8,
-                                    border: '1px solid #e5e7eb',
-                                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                                    border: '1px solid #e2e8f0',
+                                    boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
                                 }}
-                                formatter={(value: number) => [brl(value), 'CPL']}
+                                formatter={(value: number, name: string) => {
+                                    if (name === "cpl") return [brl(value), 'CPL'];
+                                    return [value, 'Leads'];
+                                }}
                                 labelFormatter={(label) => `Data: ${label}`}
                             />
                             <ReferenceLine
+                                yAxisId="left"
                                 y={overallAvg}
                                 stroke="#94a3b8"
-                                strokeDasharray="3 3"
-                                label={{ value: 'Média', fontSize: 10, fill: '#94a3b8', position: 'right' }}
+                                strokeDasharray="2 2"
+                                label={{ value: 'Média', fontSize: 8, fill: '#94a3b8', position: 'insideRight' }}
+                            />
+                            <Bar
+                                yAxisId="right"
+                                dataKey="conversions"
+                                fill="#e2e8f0"
+                                radius={[2, 2, 0, 0]}
+                                barSize={12}
+                                isAnimationActive={false}
                             />
                             <Line
+                                yAxisId="left"
                                 type="monotone"
                                 dataKey="cpl"
                                 stroke={lineColor}
-                                strokeWidth={2}
-                                dot={{ r: 3, fill: lineColor }}
-                                activeDot={{ r: 5, fill: lineColor }}
+                                strokeWidth={2.5}
+                                dot={{ r: 3, fill: lineColor, strokeWidth: 0 }}
+                                activeDot={{ r: 4, fill: lineColor, stroke: '#fff', strokeWidth: 2 }}
                                 isAnimationActive={false}
                             />
-                        </LineChart>
+                        </ComposedChart>
                     </ResponsiveContainer>
                 </div>
 

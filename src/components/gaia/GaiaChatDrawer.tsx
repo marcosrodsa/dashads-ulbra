@@ -1,3 +1,4 @@
+import { format } from "date-fns";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,12 +19,7 @@ interface ChatMessage {
     createdAt: Date;
 }
 
-interface GaiaChatDrawerProps {
-    dateRange?: { start: string; end: string };
-    unidade?: string;
-}
-
-export function GaiaChatDrawer({ dateRange, unidade }: GaiaChatDrawerProps) {
+export function GaiaChatDrawer() {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState("");
@@ -31,7 +27,8 @@ export function GaiaChatDrawer({ dateRange, unidade }: GaiaChatDrawerProps) {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const { toast } = useToast();
-    const { hideBranding, excludeEad } = useFilters();
+    const { filters } = useFilters();
+    const { businessUnit, course, dateRange, hideBranding, excludeEad } = filters;
 
     // Sugestões de perguntas rápidas
     const quickQuestions = [
@@ -87,8 +84,12 @@ export function GaiaChatDrawer({ dateRange, unidade }: GaiaChatDrawerProps) {
                     sessionId,
                     message: text,
                     context: {
-                        dateRange,
-                        unidade,
+                        dateRange: dateRange?.from && dateRange?.to ? {
+                            start: format(dateRange.from, "yyyy-MM-dd"),
+                            end: format(dateRange.to, "yyyy-MM-dd")
+                        } : undefined,
+                        unidade: businessUnit,
+                        curso: course,
                         hideBranding,
                         excludeEad
                     }

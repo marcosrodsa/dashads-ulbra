@@ -206,17 +206,16 @@ export default function CreativesPage() {
         const filteredData = data.filter(row => filterBranding(row));
 
         // Group daily data by ad_id for sparklines
-        const dailyByAd: Record<string, { date: string; cpl: number }[]> = {};
+        const dailyByAd: Record<string, { date: string; cpl: number; conversions: number }[]> = {};
         filteredData.forEach(row => {
             if (!dailyByAd[row.ad_id]) {
                 dailyByAd[row.ad_id] = [];
             }
-            if (row.conversoes > 0 && row.investimento > 0) {
-                dailyByAd[row.ad_id].push({
-                    date: row.data_referencia,
-                    cpl: row.investimento / row.conversoes
-                });
-            }
+            dailyByAd[row.ad_id].push({
+                date: row.data_referencia,
+                cpl: row.conversoes > 0 ? row.investimento / row.conversoes : 0,
+                conversions: row.conversoes || 0
+            });
         });
         // Sort daily data by date
         Object.keys(dailyByAd).forEach(adId => {

@@ -86,7 +86,9 @@ const TOOLS = [
                 parameters: {
                     type: "object",
                     properties: {
-                        unidade: { type: "string", description: "Filtrar por unidade." }
+                        unidade: { type: "string", description: "Filtrar por unidade." },
+                        start_date: { type: "string", description: "Opcional: Data de início (YYYY-MM-DD)." },
+                        end_date: { type: "string", description: "Opcional: Data de fim (YYYY-MM-DD)." }
                     }
                 }
             },
@@ -100,7 +102,9 @@ const TOOLS = [
                             type: "string",
                             enum: ["age_range", "gender", "region"],
                             description: "A dimensão para agrupar os dados."
-                        }
+                        },
+                        start_date: { type: "string", description: "Opcional: Data de início (YYYY-MM-DD)." },
+                        end_date: { type: "string", description: "Opcional: Data de fim (YYYY-MM-DD)." }
                     },
                     required: ["dimension"]
                 }
@@ -166,12 +170,14 @@ serve(async (req) => {
             end: new Date().toISOString().split("T")[0]
         };
 
-        const systemInstruction = `Você é a Gaia Elite, a inteligência suprema de mídia da ULBRA.
+        const today = new Date().toISOString().split("T")[0];
+        const systemInstruction = `Você é a Gaia Elite, a inteligência suprema de mídia da ULBRA. Hoje é ${today}.
 Você é INVESTIGATIVA. NUNCA diga que não tem dados sem antes usar 'list_available_fields'.
-Se o usuário perguntar de uma cidade (ex: Canoas), primeiro liste as unidades para achar o nome correto.
+Se o usuário pedir um período como "últimos 7 dias", CALCULE as datas com base em hoje (${today}) e use nos parâmetros das ferramentas.
 ATENÇÃO: Criativos podem ter o mesmo nome (ex: "Card 3") mas IDs e desempenhos diferentes por curso/unidade. TRATE-OS como itens distintos se os leads/CPL forem diferentes.
-Contexto: Unidade=${context?.unidade || 'Todas'}, Período=${dateRange.start} até ${dateRange.end}.
-VERSÃO ATUAL: Gaia Elite 2.5 (Resilient Multi-LLM).`;
+Contexto do Dashboard: Unidade=${context?.unidade || 'Todas'}, Curso=${context?.curso || 'Todos'}, Período=${dateRange.start} até ${dateRange.end}.
+PRIORIZE os filtros do Dashboard a menos que o usuário peça explicitamente outra coisa.
+VERSÃO ATUAL: Gaia Elite 2.6 (Context & Date Aware).`;
 
         let chatContents = [...conversationHistory];
         if (chatContents.length === 0 || chatContents[chatContents.length - 1].parts[0].text !== message) {
@@ -254,8 +260,8 @@ VERSÃO ATUAL: Gaia Elite 2.5 (Resilient Multi-LLM).`;
                         toolResult = data;
                     } else if (name === "query_global_performance") {
                         const { data } = await supabase.rpc('get_gaia_data', {
-                            p_start_date: dateRange.start,
-                            p_end_date: dateRange.end,
+                            p_start_date: args.start_date || dateRange.start,
+                            p_end_date: args.end_date || dateRange.end,
                             p_unidade: args.unidade || context?.unidade || null
                         });
 
@@ -273,8 +279,8 @@ VERSÃO ATUAL: Gaia Elite 2.5 (Resilient Multi-LLM).`;
                     } else if (name === "query_performance_breakdowns") {
                         const { data } = await supabase.rpc('get_breakdown_data', {
                             p_dimension: args.dimension,
-                            p_start_date: dateRange.start,
-                            p_end_date: dateRange.end
+                            p_start_date: args.start_date || dateRange.start,
+                            p_end_date: args.end_date || dateRange.end
                         });
                         toolResult = data;
                     }
