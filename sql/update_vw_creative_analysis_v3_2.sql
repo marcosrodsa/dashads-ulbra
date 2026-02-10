@@ -1,6 +1,6 @@
 -- ============================================================================
--- UPDATE: vw_creative_analysis_complete (v3.2)
--- Prioritize preview_shareable_link for creative visualization
+-- UPDATE: vw_creative_analysis_complete (v3.2) - CORRIGIDA
+-- Prioritize preview_shareable_link + effective_status
 -- ============================================================================
 
 -- DROP the view first to allow column reordering
@@ -57,11 +57,13 @@ SELECT
         ELSE 'Imagem'
     END as creative_type,
     
-    -- Assets reais (Agora incluindo preview_shareable_link)
+    -- Assets reais
     a.title,
     a.body,
     a.image_url,
-    a.preview_shareable_link,
+    a.preview_shareable_link,  -- Link do preview
+    a.effective_status,        -- Status (ACTIVE/PAUSED)
+
     (a.ad_id IS NOT NULL) as has_assets,
     (lq.id IS NOT NULL OR lc.id IS NOT NULL) as has_insights
 
@@ -95,6 +97,7 @@ GROUP BY
     a.body,
     a.image_url,
     a.preview_shareable_link,
+    a.effective_status,  -- Agrupando também pelo status
     a.ad_id,
     lq.id,
     lc.id
