@@ -38,12 +38,12 @@ interface CreativeRow {
     conversoes: number;
     ctr: number;
     cpl: number | null;
-    creative_type: string | null;
+    creative_type?: string | null;
     title: string | null;
     body: string | null;
-    image_url: string | null;
+    image_url?: string | null;
     thumbnail_url?: string;
-    preview_shareable_link: string | null;
+    preview_shareable_link?: string | null;
     effective_status: string | null;
     status?: string;
     has_assets: boolean;
