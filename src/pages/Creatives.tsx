@@ -18,6 +18,7 @@ import { CreativeCPLHeatmap } from "@/components/creatives/CreativeCPLHeatmap";
 import { Switch } from "@/components/ui/switch";
 import { CreativeInsightsModal } from "@/components/creatives/CreativeInsightsModal";
 import { CplSparkline } from "@/components/creatives/CplSparkline";
+import { useFilters } from "@/contexts/filters-context";
 
 // Types
 interface CreativeRow {
@@ -79,20 +80,17 @@ const getCreativeIcon = (type: string | null) => {
 export default function CreativesPage() {
     const supabase = getSupabaseClient();
 
-    // Filters
-    const [period, setPeriod] = React.useState<string>("30");
-    const [customRange, setCustomRange] = React.useState<{ from: Date | undefined; to: Date | undefined }>({
-        from: undefined,
-        to: undefined,
-    });
-    const [unidade, setUnidade] = React.useState<string>("all");
-    const [curso, setCurso] = React.useState<string>("all");
+    const { filters, setBusinessUnit, setCourse, setDateRange, setHideBranding } = useFilters();
+    const { businessUnit: unidade, course: curso, dateRange: globalRange, hideBranding } = filters;
+
+    // Sort and pagination
     const [sortBy, setSortBy] = React.useState<string>("conversoes");
     const [sortDir, setSortDir] = React.useState<"asc" | "desc">("desc");
     const [currentPage, setCurrentPage] = React.useState(1);
-    const [hideBranding, setHideBranding] = React.useState(true);
     const [statusFilter, setStatusFilter] = React.useState<string>("all");
     const itemsPerPage = 50;
+
+    const [period, setPeriod] = React.useState<string>("30");
 
     // Helper function to filter branding
     const filterBranding = React.useCallback((row: CreativeRow) => {
@@ -147,19 +145,37 @@ export default function CreativesPage() {
 
 
 
-    // Calculate date range
+    // Calculate date range (Local period selection updates global range)
     const dateRange = React.useMemo(() => {
-        if (period === "custom" && customRange.from && customRange.to) {
-            return { start: customRange.from, end: customRange.to };
+        return {
+            start: globalRange?.from || startOfMonth(new Date()),
+            end: globalRange?.to || endOfMonth(new Date())
+        };
+    }, [globalRange]);
+
+    // Helper to get formatted range label
+    const getPresetRangeLabel = (days: number) => {
+        const end = subDays(new Date(), 1);
+        const start = subDays(end, days - 1);
+        return `(${format(start, "dd/MM")} - ${format(end, "dd/MM")})`;
+    };
+
+    // Handle period change (Sync with globalRange)
+    React.useEffect(() => {
+        if (period !== "custom") {
+            const today = new Date();
+            const end = subDays(today, 1); // D-1 (Yesterday)
+            // Calculate start based on period length relative to end date
+            // e.g. for 30 days: [End - 29 days, End] = 30 days total
+            const start = subDays(end, (parseInt(period) || 30) - 1);
+            setDateRange({ from: start, to: end });
         }
-        const end = new Date();
-        const start = subDays(end, parseInt(period) || 30);
-        return { start, end };
-    }, [period, customRange]);
+    }, [period, setDateRange]);
+
 
     // Fetch creatives
     const { data, isLoading, refetch } = useQuery({
-        queryKey: ["creatives", period, customRange.from?.toISOString(), customRange.to?.toISOString(), unidade, curso],
+        queryKey: ["creatives", dateRange.start.toISOString(), dateRange.end.toISOString(), unidade, curso],
         queryFn: async () => {
             let query = supabase
                 .from("vw_creative_analysis_complete")
@@ -168,10 +184,10 @@ export default function CreativesPage() {
                 .lte("data_referencia", format(dateRange.end, "yyyy-MM-dd"))
                 .order("conversoes", { ascending: false });
 
-            if (unidade !== "all") {
+            if (unidade && unidade !== "all") {
                 query = query.eq("unidade", unidade);
             }
-            if (curso !== "all") {
+            if (curso && curso !== "all") {
                 query = query.eq("curso", curso);
             }
 
@@ -375,13 +391,19 @@ export default function CreativesPage() {
             {/* Filters */}
             <div className="flex flex-wrap gap-4 items-center">
                 <Select value={period} onValueChange={setPeriod}>
-                    <SelectTrigger className="w-[180px]">
+                    <SelectTrigger className="w-[260px]">
                         <SelectValue placeholder="Período" />
                     </SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="7">Últimos 7 dias</SelectItem>
-                        <SelectItem value="30">Últimos 30 dias</SelectItem>
-                        <SelectItem value="90">Últimos 90 dias</SelectItem>
+                        <SelectItem value="7">
+                            Últimos 7 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(7)}</span>
+                        </SelectItem>
+                        <SelectItem value="30">
+                            Últimos 30 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(30)}</span>
+                        </SelectItem>
+                        <SelectItem value="90">
+                            Últimos 90 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(90)}</span>
+                        </SelectItem>
                         <SelectItem value="custom">Personalizado</SelectItem>
                     </SelectContent>
                 </Select>
@@ -391,11 +413,11 @@ export default function CreativesPage() {
                         <PopoverTrigger asChild>
                             <Button variant="outline" className="w-[240px] justify-start text-left font-normal">
                                 <CalendarIcon className="mr-2 h-4 w-4" />
-                                {customRange.from ? (
-                                    customRange.to ? (
-                                        <>{format(customRange.from, "dd/MM/yy", { locale: ptBR })} - {format(customRange.to, "dd/MM/yy", { locale: ptBR })}</>
+                                {globalRange?.from ? (
+                                    globalRange.to ? (
+                                        <>{format(globalRange.from, "dd/MM/yy", { locale: ptBR })} - {format(globalRange.to, "dd/MM/yy", { locale: ptBR })}</>
                                     ) : (
-                                        format(customRange.from, "dd/MM/yyyy", { locale: ptBR })
+                                        format(globalRange.from, "dd/MM/yyyy", { locale: ptBR })
                                     )
                                 ) : (
                                     <span>Selecione o período</span>
@@ -405,8 +427,8 @@ export default function CreativesPage() {
                         <PopoverContent className="w-auto p-0" align="start">
                             <Calendar
                                 mode="range"
-                                selected={{ from: customRange.from, to: customRange.to }}
-                                onSelect={(range) => setCustomRange({ from: range?.from, to: range?.to })}
+                                selected={globalRange}
+                                onSelect={(range) => setDateRange(range)}
                                 numberOfMonths={2}
                                 locale={ptBR}
                             />
@@ -414,7 +436,7 @@ export default function CreativesPage() {
                     </Popover>
                 )}
 
-                <Select value={unidade} onValueChange={setUnidade}>
+                <Select value={unidade || "all"} onValueChange={(val) => setBusinessUnit(val === "all" ? null : val)}>
                     <SelectTrigger className="w-[200px]">
                         <SelectValue placeholder="Unidade" />
                     </SelectTrigger>
@@ -426,7 +448,7 @@ export default function CreativesPage() {
                     </SelectContent>
                 </Select>
 
-                <Select value={curso} onValueChange={setCurso}>
+                <Select value={curso || "all"} onValueChange={(val) => setCourse(val === "all" ? null : val)}>
                     <SelectTrigger className="w-[200px]">
                         <SelectValue placeholder="Curso" />
                     </SelectTrigger>

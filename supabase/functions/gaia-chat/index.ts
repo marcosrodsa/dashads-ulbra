@@ -102,7 +102,7 @@ const TOOLS = [
             },
             {
                 name: "query_global_performance",
-                description: "Consulta o snapshot geral de performance (investimento, leads, CPL) para o período.",
+                description: "Consulta o snapshot geral de performance (investimento, leads, CPL) E os Top 5 Criativos para o período.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -207,18 +207,19 @@ MISSÃO E MODELOS:
 2. Seja INVESTIGATIVA: Se os dados parecerem estranhos, use 'list_available_fields' para validar nomes de unidades ou cursos.
 3. MEMÓRIA: Mantenha o contexto da conversa. Se o usuário já selecionou uma unidade, não pergunte qual é. Use o "CONTEXTO ATUAL" acima como sua verdade absoluta para consultas genéricas.
 4. PRIORIDADE: Se o usuário pedir algo que conflite com o dashboard (ex: filtro diz Santarém mas usuário pede Canoas), avise que está mudando o foco para a Unidade pedida.
+5. SOBRE CRIATIVOS: A ferramenta 'query_global_performance' JÁ RETORNA os top 5 criativos. Use esses dados para responder sobre "melhores anúncios" ou "criativos campeões".
 
-VERSÃO: Gaia Elite 2.8 (Predictive & Context Fixed).`;
+VERSÃO: Gaia Elite 2.9 (Fixed Dates & Creative Access).`;
 
         let chatContents = [...conversationHistory];
-        if (chatContents.length === 0 || chatContents[chatContents.length - 1].parts[0].text !== message) {
+        if (chatContents.length === 0 || chatContents[chatContents.length - 1]?.parts?.[0]?.text !== message) {
             chatContents.push({ role: "user", parts: [{ text: message }] });
         }
 
         const MODELS = [
-            "gemini-3-flash-preview",
+            "gemini-2.5-flash-lite",
             "gemini-2.5-flash",
-            "gemini-2.5-flash-lite"
+            "gemini-3-flash"
         ];
 
         let toolExecutionCount = 0;
@@ -268,10 +269,11 @@ VERSÃO: Gaia Elite 2.8 (Predictive & Context Fixed).`;
 
         while (toolExecutionCount < maxToolExecutions) {
             const responseData = await fetchGeminiWithFallback(chatContents, TOOLS, systemInstruction);
-            const candidate = responseData.candidates?.[0];
-            if (!candidate) throw new Error("Nenhuma resposta do Gemini.");
+            const candidate = responseData?.candidates?.[0];
+            if (!candidate) break; // Graceful exit if no candidate
 
-            const part = candidate.content.parts[0];
+            const part = candidate?.content?.parts?.[0];
+            if (!part) break; // Graceful exit if no part
 
             if (part.functionCall) {
                 const { name, args } = part.functionCall;
@@ -283,22 +285,32 @@ VERSÃO: Gaia Elite 2.8 (Predictive & Context Fixed).`;
                         const { data } = await supabase.from('vw_dashboard_semanal_detalhado2').select(args.field);
                         toolResult = { available_values: Array.from(new Set((data || []).map((r: any) => r[args.field]))) };
                     } else if (name === "query_budget_comparison") {
+                        const todayStr = new Date().toISOString();
                         const { data } = await supabase
                             .from('vw_dashboard_semanal_detalhado2')
                             .select('*')
                             .ilike('unidade', `%${args.unidade || context?.unidade || ''}%`)
+                            .lte('data_inicio_semana', todayStr)
                             .order('data_inicio_semana', { ascending: false }).limit(8);
                         toolResult = data;
                     } else if (name === "query_global_performance") {
-                        const { data } = await supabase.rpc('get_gaia_data', {
-                            p_start_date: args.start_date || dateRange.start,
-                            p_end_date: args.end_date || dateRange.end,
-                            p_unidade: args.unidade || context?.unidade || null,
-                            p_curso: args.curso || context?.curso || null
+                        // Harden filtering: prioritizes dashboard context over tool's inferred arguments
+                        const filter_unidade = (args.unidade && args.unidade !== 'Todas') ? args.unidade : (context?.unidade || null);
+                        const filter_curso = (args.curso && args.curso !== 'Todos') ? args.curso : (context?.curso || null);
+                        const filter_start = args.start_date || dateRange.start;
+                        const filter_end = args.end_date || dateRange.end;
+
+                        const { data } = await supabase.rpc("get_gaia_data", {
+                            p_start_date: filter_start,
+                            p_end_date: filter_end,
+                            p_unidade: filter_unidade,
+                            p_curso: filter_curso,
+                            p_hide_branding: context?.hideBranding ?? true,
+                            p_exclude_ead: context?.excludeEad ?? false
                         });
 
-                        // Agregar tendência conservadora
-                        if (data?.stats?.daily?.length >= 3) {
+                        // Agregar tendência conservadora (Harden check for data?.stats?.daily)
+                        if (data && data.stats && data.stats.daily && Array.isArray(data.stats.daily) && data.stats.daily.length >= 3) {
                             const { forecast, trend } = calculateTrend(data.stats.daily);
                             data.stats.forecast = {
                                 next_7_days_avg_cpl: forecast,
@@ -326,7 +338,7 @@ VERSÃO: Gaia Elite 2.8 (Predictive & Context Fixed).`;
                 });
                 toolExecutionCount++;
             } else {
-                finalMessage = part.text || "Sem conteúdo.";
+                finalMessage = part?.text || "Sem conteúdo.";
                 break;
             }
         }

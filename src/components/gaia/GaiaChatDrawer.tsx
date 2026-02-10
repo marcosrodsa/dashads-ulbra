@@ -31,12 +31,15 @@ export function GaiaChatDrawer() {
     const { businessUnit, course, dateRange, hideBranding, excludeEad } = filters;
 
     // Sugestões de perguntas rápidas
+    // Sugestões de perguntas estratégicas
     const quickQuestions = [
-        "Como está minha performance geral?",
-        "Qual a previsão de CPL para a próxima semana?",
-        "Analise a tendência de conversão",
-        "Por que meu CPA subiu?",
-        "Quais unidades precisam de atenção?"
+        "Como está a performance dos últimos 7 dias?",
+        "Qual a previsão de tendências para a próxima semana?",
+        "Quais criativos estão performando acima da média?",
+        "Existe alguma anomalia de custo ou conversão hoje?",
+        "Como está o consumo do orçamento desta semana?",
+        "Qual o melhor dia e horário para conversões?",
+        "Onde devo investir mais para reduzir o CPL?"
     ];
 
     // Scroll para última mensagem
