@@ -141,9 +141,22 @@ serve(async (req) => {
         console.log("Gaia Elite: Processando requisição...");
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        const geminiApiKey = Deno.env.get("GEMINI_API_KEY")!;
+        // 1. Coleta todas as chaves disponíveis (GEMINI_API_KEY, GEMINI_API_KEY_2, etc.)
+        const apiKeys: string[] = [];
+        const env = Deno.env.toObject();
 
-        if (!geminiApiKey) throw new Error("GEMINI_API_KEY não configurada.");
+        // Adiciona a chave principal
+        if (env.GEMINI_API_KEY) apiKeys.push(env.GEMINI_API_KEY);
+
+        // Procura por outras chaves no padrão GEMINI_API_KEY_XX
+        Object.keys(env).forEach(key => {
+            if (key.startsWith("GEMINI_API_KEY_") && env[key]) {
+                apiKeys.push(env[key]);
+            }
+        });
+
+        if (apiKeys.length === 0) throw new Error("Nenhuma GEMINI_API_KEY configurada.");
+        console.log(`Gaia Elite: ${apiKeys.length} chaves de API encontradas.`);
 
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
         const body = await req.json();
@@ -151,6 +164,7 @@ serve(async (req) => {
 
         console.log("Gaia Elite: Context recebido:", JSON.stringify(context));
 
+        // ... (User auth & Session logic remains same - simplified for brevity of replacement scope if needed, but keeping flow) ...
         let userId: string | null = null;
         const authHeader = req.headers.get("Authorization");
         if (authHeader) {
@@ -209,7 +223,7 @@ MISSÃO E MODELOS:
 4. PRIORIDADE: Se o usuário pedir algo que conflite com o dashboard (ex: filtro diz Santarém mas usuário pede Canoas), avise que está mudando o foco para a Unidade pedida.
 5. SOBRE CRIATIVOS: A ferramenta 'query_global_performance' JÁ RETORNA os top 5 criativos. Use esses dados para responder sobre "melhores anúncios" ou "criativos campeões".
 
-VERSÃO: Gaia Elite 2.9 (Fixed Dates & Creative Access).`;
+VERSÃO: Gaia Elite 2.10 (Multi-Key Fallback).`;
 
         let chatContents = [...conversationHistory];
         if (chatContents.length === 0 || chatContents[chatContents.length - 1]?.parts?.[0]?.text !== message) {
@@ -227,44 +241,50 @@ VERSÃO: Gaia Elite 2.9 (Fixed Dates & Creative Access).`;
         let finalMessage = "Desculpe, ocorreu um erro no processamento após múltiplas tentativas.";
 
         /**
-         * Helper para chamar Geimini com Fallback
+         * Helper para chamar Gemini com Fallback de Chaves e Modelos
          */
         async function fetchGeminiWithFallback(contents: any[], tools: any[], systemInstruction: string) {
             let lastError = null;
 
-            for (const modelId of MODELS) {
-                try {
-                    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${geminiApiKey}`;
-                    console.log(`Gaia Elite: Tentando modelo ${modelId}...`);
+            // Loop Externo: Chaves de API
+            for (const apiKey of apiKeys) {
+                // Loop Interno: Modelos
+                for (const modelId of MODELS) {
+                    try {
+                        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+                        console.log(`Gaia Elite: Tentando modelo ${modelId} com chave ...${apiKey.slice(-4)}`);
 
-                    const response = await fetch(geminiUrl, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            system_instruction: { parts: [{ text: systemInstruction }] },
-                            contents,
-                            tools,
-                            generationConfig: { temperature: 0.1 }
-                        })
-                    });
+                        const response = await fetch(geminiUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                system_instruction: { parts: [{ text: systemInstruction }] },
+                                contents,
+                                tools,
+                                generationConfig: { temperature: 0.1 }
+                            })
+                        });
 
-                    if (response.status === 429) {
-                        console.warn(`Gaia Elite: Quota excedida para ${modelId}. Tentando fallback...`);
-                        continue;
+                        // Se quota excedida (429), tenta próximo modelo/chave
+                        if (response.status === 429) {
+                            console.warn(`Gaia Elite: Quota excedida (429) para ${modelId}. Tentando próximo...`);
+                            continue;
+                        }
+
+                        if (!response.ok) {
+                            const err = await response.text();
+                            throw new Error(`Gemini API (${modelId}) Error: ${err}`);
+                        }
+
+                        return await response.json();
+                    } catch (e: any) {
+                        console.error(`Erro com modelo ${modelId}:`, e.message);
+                        lastError = e;
+                        // Se for erro de rede ou outro, também continua tentando outros modelos/chaves
                     }
-
-                    if (!response.ok) {
-                        const err = await response.text();
-                        throw new Error(`Gemini API (${modelId}) Error: ${err}`);
-                    }
-
-                    return await response.json();
-                } catch (e: any) {
-                    console.error(`Erro com modelo ${modelId}:`, e.message);
-                    lastError = e;
                 }
             }
-            throw lastError || new Error("Falha total em todos os modelos Gemini.");
+            throw lastError || new Error("Falha total: Todas as chaves e modelos falharam.");
         }
 
         while (toolExecutionCount < maxToolExecutions) {
