@@ -1077,8 +1077,11 @@ export default function CreativesPage() {
                                     <TableHead className="text-right cursor-pointer" onClick={() => toggleSort("investimento")}>
                                         <span className="flex items-center justify-end">Investimento {getSortIcon("investimento")}</span>
                                     </TableHead>
-                                    <TableHead className="w-[120px] text-center cursor-pointer" onClick={() => toggleSort("status")}>
-                                        <span className="flex items-center justify-center">Status {getSortIcon("status")}</span>
+                                    <TableHead className="w-[100px] text-center cursor-pointer" onClick={() => toggleSort("effective_status")}>
+                                        <div className="flex flex-col items-center justify-center gap-0.5">
+                                            <span className="text-[10px] text-muted-foreground font-normal">Status</span>
+                                            {getSortIcon("effective_status")}
+                                        </div>
                                     </TableHead>
                                     <TableHead className="w-[60px] text-center">IA</TableHead>
                                 </TableRow>
@@ -1221,7 +1224,30 @@ export default function CreativesPage() {
                                                 {brl(row.investimento)}
                                             </TableCell>
                                             <TableCell className="text-center">
-                                                {getStatusBadge(row.computedStatus)}
+                                                <div className="flex flex-col items-center gap-1.5">
+                                                    <TooltipProvider>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <div className="flex items-center">
+                                                                    <Switch
+                                                                        checked={row.effective_status === 'ACTIVE'}
+                                                                        className="data-[state=checked]:bg-blue-600 h-5 w-9"
+                                                                        disabled
+                                                                    />
+                                                                </div>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent className="text-[10px]">
+                                                                <p>{row.effective_status === 'ACTIVE' ? 'Ativo (Rodando)' : 'Pausado'}</p>
+                                                                <p className="opacity-70">Atualizado via rotina diária</p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    </TooltipProvider>
+
+                                                    {/* Badge do Status Calculado (Performance) logo abaixo */}
+                                                    <div className="scale-90 origin-top">
+                                                        {getStatusBadge(row.computedStatus)}
+                                                    </div>
+                                                </div>
                                             </TableCell>
                                             <TableCell className="text-center">
                                                 <CreativeAnalysisHover row={row} />
