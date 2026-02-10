@@ -395,6 +395,9 @@ export default function CreativesPage() {
                         <SelectValue placeholder="Período" />
                     </SelectTrigger>
                     <SelectContent>
+                        <SelectItem value="1">
+                            Ontem <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(1)}</span>
+                        </SelectItem>
                         <SelectItem value="7">
                             Últimos 7 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(7)}</span>
                         </SelectItem>
