@@ -308,25 +308,23 @@ export default function CreativesPage() {
 
             try {
                 // Fetch from both tables in parallel
-                const [quickPromise, contextPromise] = await Promise.all([
+                const [quickRes, contextRes] = await Promise.all([
                     supabase
                         .from("fact_creative_insights")
                         .select("analyzed_at, diagnostico, visual_description")
                         .eq("ad_id", String(row.ad_id))
                         .order("analyzed_at", { ascending: false })
-                        .limit(1)
-                        .maybeSingle(),
+                        .limit(1),
                     supabase
                         .from("creative_contextual_insights")
                         .select("analyzed_at, why_performs, visual_description")
                         .eq("ad_id", String(row.ad_id))
                         .order("analyzed_at", { ascending: false })
                         .limit(1)
-                        .maybeSingle()
                 ]);
 
-                const quickData = quickPromise.data;
-                const contextData = contextPromise.data;
+                const quickData = quickRes.data?.[0];
+                const contextData = contextRes.data?.[0];
 
                 console.log(`[GaiaHover] Resultados para ${row.ad_id}:`, {
                     quick: quickData ? "Encontrado" : "Nulo",
@@ -360,6 +358,7 @@ export default function CreativesPage() {
                 if (contextData?.analyzed_at) {
                     const date = new Date(contextData.analyzed_at).getTime();
                     if (!isNaN(date) && date > latestDate) {
+                        latestDate = date; // CRUCIAL: Update latestDate so the check below doesn't override bestContent
                         // Prefer Contextual Analysis
                         bestContent = contextData.why_performs || contextData.visual_description || "Análise contextual sem resumo textual.";
                     }
