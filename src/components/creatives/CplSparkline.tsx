@@ -69,24 +69,20 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
     const isCheap = avgCpl ? (recentAvg < avgCpl * 0.85) : false;
     const isDeclining = (recentAvg > prevAvg * 1.12) && !isCheap && (lastValue >= firstValue);
 
+    // UX Refinement: Long-term sanity check
+    const isOverallBetter = variation < -10; // Significant improvement from start
+
     // UX Refinement: If it's overall better but recently bouncy, it's "Otimizando"
-    const isOptimizing = variation < -5 && !isImproving && !isDeclining;
-
-    // New refined logic: 
-    // - If Improving (> 2x Avg CPL) -> "Crítico (Melhorando)" (Red/Amber)
-    // - If Improving (> Avg CPL) -> "Em Recuperação" (Blue)
-
-    const isHighCost = avgCpl ? (recentAvg > avgCpl * 2.0) : false;
-    const isOverCost = avgCpl ? (recentAvg > avgCpl * 1.15) : false; // 15% margin
+    const isOptimizing = (variation < -5 || isOverallBetter) && !isImproving && !isDeclining && !isOverCost;
 
     // Critical: Ultra High Cost
     const isCriticalRecovery = isImproving && isHighCost;
 
-    // Fatigued: High Cost & Not Improving
-    const isFatigued = isOverCost && !isImproving;
+    // Fatigued: High Cost & Not Improving & NOT Overall better (New Safety)
+    const isFatigued = isOverCost && !isImproving && !isOverallBetter;
 
-    // Recovering: Improving & High Cost (but not Critical)
-    const isRecovering = isImproving && avgCpl && (recentAvg > avgCpl) && !isCriticalRecovery;
+    // Recovering: Improving OR Overall Better but still High Cost (but not Critical)
+    const isRecovering = (isImproving || isOverallBetter) && avgCpl && (recentAvg > avgCpl) && !isCriticalRecovery;
 
     const lineColor = isCriticalRecovery
         ? "#f97316" // orange-500 (Alerta)
@@ -131,10 +127,10 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                         Evolução CPL & Leads
                     </span>
                     <div className={`flex items-center gap-1 text-xs font-medium ${isCriticalRecovery ? "text-orange-600" :
-                            isFatigued || isDeclining ? "text-red-600" :
-                                isRecovering ? "text-blue-600" :
-                                    isImproving || isOptimizing ? "text-emerald-600" :
-                                        "text-blue-600"
+                        isFatigued || isDeclining ? "text-red-600" :
+                            isRecovering ? "text-blue-600" :
+                                isImproving || isOptimizing ? "text-emerald-600" :
+                                    "text-blue-600"
                         }`}>
                         {isCriticalRecovery ? (
                             <><TrendingDown className="h-3 w-3" /> Crítico (Melhorando)</>
