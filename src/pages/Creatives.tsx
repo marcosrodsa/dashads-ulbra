@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
-import { Sparkles, TrendingUp, TrendingDown, Eye, MousePointer, DollarSign, Users, Image, Video, LayoutGrid, RefreshCw, CalendarIcon, Info, ArrowUpDown, ArrowUp, ArrowDown, Wand2, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
+import { Sparkles, TrendingUp, TrendingDown, Eye, MousePointer, DollarSign, Users, Image, Video, LayoutGrid, RefreshCw, CalendarIcon, Info, ArrowUpDown, ArrowUp, ArrowDown, Wand2, ExternalLink, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { CplEvolutionChart } from "@/components/performance/PerformanceCharts";
 import { CreativeCPLHeatmap } from "@/components/creatives/CreativeCPLHeatmap";
@@ -83,6 +83,136 @@ const getCreativeIcon = (type: string | null) => {
     }
 };
 
+const CreativeAnalysisHover = ({ row, onOpenInsights }: { row: CreativeRow, onOpenInsights: () => void }) => {
+    const [analysis, setAnalysis] = React.useState<string | null>(null);
+    const [loading, setLoading] = React.useState(false);
+    const supabase = getSupabaseClient();
+
+    const handleMouseEnter = async () => {
+        // Allow re-fetch if currently showing the "placeholder" text or error
+        const isPlaceholder = analysis === "Nenhuma análise encontrada. Clique para gerar." ||
+            analysis === "Erro ao carregar análise." ||
+            analysis === "Nenhuma análise detalhada encontrada.";
+
+        if ((analysis && !isPlaceholder) || loading) return;
+
+        setLoading(true);
+        console.log(`[GaiaHover] Buscando análise para ad_id: ${row.ad_id}`);
+
+        try {
+            // Fetch from both tables in parallel
+            const [quickRes, contextRes] = await Promise.all([
+                supabase
+                    .from("fact_creative_insights")
+                    .select("analyzed_at, diagnostico, visual_description")
+                    .eq("ad_id", String(row.ad_id))
+                    .order("analyzed_at", { ascending: false })
+                    .limit(1),
+                supabase
+                    .from("creative_contextual_insights")
+                    .select("analyzed_at, why_performs, visual_description")
+                    .eq("ad_id", String(row.ad_id))
+                    .order("analyzed_at", { ascending: false })
+                    .limit(1)
+            ]);
+
+            const quickData = quickRes.data?.[0];
+            const contextData = contextRes.data?.[0];
+
+            console.log(`[GaiaHover] Resultados para ${row.ad_id}:`, {
+                quick: quickData ? "Encontrado" : "Nulo",
+                context: contextData ? "Encontrado" : "Nulo"
+            });
+
+            // Determine effective latest analysis
+            let bestContent = "Nenhuma análise detalhada encontrada.";
+            let latestDate = 0;
+
+            if (quickData?.analyzed_at) {
+                const date = new Date(quickData.analyzed_at).getTime();
+                if (!isNaN(date) && date > latestDate) {
+                    latestDate = date;
+                    // Parse Quick Analysis
+                    try {
+                        if (quickData.diagnostico && (quickData.diagnostico.includes('[') || quickData.diagnostico.includes('{'))) {
+                            const parsed = JSON.parse(quickData.diagnostico);
+                            const insights = Array.isArray(parsed) ? parsed : (parsed.insights || []);
+                            const text = insights.map((i: { description: string }) => i.description).join(" ");
+                            bestContent = text || quickData.visual_description || "Análise sem texto.";
+                        } else {
+                            bestContent = quickData.diagnostico || quickData.visual_description || "Análise visual concluída.";
+                        }
+                    } catch {
+                        bestContent = quickData.diagnostico || quickData.visual_description || "Erro ao ler análise.";
+                    }
+                }
+            }
+
+            if (contextData?.analyzed_at) {
+                const date = new Date(contextData.analyzed_at).getTime();
+                if (!isNaN(date) && date > latestDate) {
+                    latestDate = date; // CRUCIAL: Update latestDate so the check below doesn't override bestContent
+                    // Prefer Contextual Analysis
+                    bestContent = contextData.why_performs || contextData.visual_description || "Análise contextual sem resumo textual.";
+                }
+            }
+
+            // If neither returned data
+            if (latestDate === 0) {
+                bestContent = "Nenhuma análise encontrada. Clique para gerar.";
+            }
+
+            setAnalysis(bestContent);
+
+        } catch (e) {
+            console.error(e);
+            setAnalysis("Erro ao carregar análise.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <HoverCard onOpenChange={(open) => { if (open) handleMouseEnter(); }}>
+            <HoverCardTrigger asChild>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={(e) => { e.stopPropagation(); onOpenInsights(); }}
+                >
+                    <Wand2 className={cn("h-4 w-4", row.has_insights ? "text-purple-600" : "text-muted-foreground/30")} />
+                </Button>
+            </HoverCardTrigger>
+            <HoverCardContent className="w-80 p-3">
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-purple-500" />
+                        <h4 className="text-sm font-semibold">Última Análise IA</h4>
+                    </div>
+                    {loading ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-full" />
+                            <Skeleton className="h-4 w-3/4" />
+                        </div>
+                    ) : analysis ? (
+                        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-6">
+                            {analysis}
+                        </p>
+                    ) : (
+                        <p className="text-xs text-muted-foreground italic">
+                            {row.has_insights ? "Carregando..." : "Nenhuma análise disponível. Clique para gerar."}
+                        </p>
+                    )}
+                    <p className="text-[10px] text-purple-600 pt-2 border-t mt-2">
+                        Clique no ícone para ver detalhes completos
+                    </p>
+                </div>
+            </HoverCardContent>
+        </HoverCard>
+    );
+};
+
 export default function CreativesPage() {
     const supabase = getSupabaseClient();
 
@@ -90,14 +220,15 @@ export default function CreativesPage() {
     const { businessUnit: unidade, course: curso, dateRange: globalRange, hideBranding } = filters;
 
     // Sort and pagination
-    const [sortBy, setSortBy] = React.useState<string>("effective_status");
+    const [sortBy, setSortBy] = React.useState<string>("status");
     const [sortDir, setSortDir] = React.useState<"asc" | "desc">("asc");
     const [currentPage, setCurrentPage] = React.useState(1);
     const [statusFilter, setStatusFilter] = React.useState<string>("all");
     const [minConversions, setMinConversions] = React.useState<number>(0);
     const [minInvestment, setMinInvestment] = React.useState<number>(0);
     const [viewMode, setViewMode] = React.useState<"list" | "grid">("list");
-    const itemsPerPage = 50;
+    const [onlyActive, setOnlyActive] = React.useState(false);
+    const itemsPerPage = 100;
 
     const [period, setPeriod] = React.useState<string>("30");
 
@@ -119,11 +250,11 @@ export default function CreativesPage() {
         return !isBranding;
     }, [hideBranding]);
 
-    const getCreativeStatus = (cpl: number | null, avgCpl: number | null, dailyHistory: { date: string, cpl: number | null }[] = []) => {
+    const getCreativeStatus = (cpl: number | null, avgCpl: number | null, dailyHistory: { date: string, cpl: number | null }[] = [], predictedCpl: number | null = null) => {
         if (!cpl || !avgCpl || dailyHistory.length < 2) return "Em Aprendizado";
 
         const cleanHistory = dailyHistory.filter(d => {
-            const date = new Date((d as any).date + 'T12:00:00');
+            const date = new Date(d.date + 'T12:00:00');
             const day = date.getDay();
             const isWeekend = day === 0 || day === 6;
             return !isWeekend && d.cpl !== null && d.cpl > 0;
@@ -131,6 +262,9 @@ export default function CreativesPage() {
 
         // SAMPLE GUARD: If history is too short (< 7 active days), we are still testing
         if (cleanHistory.length < 7) return "Testando";
+
+        // PREDICTION SAFETY BRAKE: If forecast is very high, avoid scaling status
+        const isForecastBad = predictedCpl && avgCpl && predictedCpl > avgCpl * 1.3;
 
         // PERFORMANCE GUARD: Check last active day
         const lastDayPerformance = cleanHistory[cleanHistory.length - 1];
@@ -159,20 +293,37 @@ export default function CreativesPage() {
         const lastValue = cleanHistory[cleanHistory.length - 1]?.cpl || 0;
         const isOverallBetter = lastValue < firstValue && firstValue > 0;
 
+        const ownAvgCpl = cleanHistory.reduce((sum, d) => sum + (d.cpl || 0), 0) / cleanHistory.length;
+        const isOwnSpike = lastCpl > ownAvgCpl * 1.4; // Safety Brake: recent CPL > 40% of its own average
+
         const isLowCPL = cpl <= avgCpl * 0.85;
         const isHighCPL = cpl >= avgCpl * 1.15;
 
         // STATUS LOGIC (Prioritize Trend over Absolute Value when recovering)
         if (trend < 0.92 || isOverallBetter) {
-            return isHighCPL ? "Em Recuperação" : "Em Otimização";
+            // Even if trend is good, if forecast is bad, it's not a star/scaling candidate
+            if (isForecastBad) {
+                if (isHighCPL) return "Crítico";
+                return "Curva de Fadiga";
+            }
+
+            if (isHighCPL) {
+                // Critical Recovery Check: Improving but still > 2x Avg
+                if (cpl > avgCpl * 2.0) return "Crítico";
+                return "Em Recuperação";
+            }
+            return "Em Otimização";
         }
 
         if (isLowCPL) {
+            // Safety: even with low current CPL, if forecast is bad or it spiked recently
+            if (isForecastBad || isOwnSpike) return "Curva de Fadiga";
+
             if (isCurrentBad || trend > 1.10) return "Curva de Fadiga";
             return "Estrela";
         }
 
-        if (isHighCPL) {
+        if (isHighCPL || isForecastBad) {
             return "Fadigado";
         }
 
@@ -236,6 +387,10 @@ export default function CreativesPage() {
                 content = "O modelo identificou uma reversão positiva. O desempenho está voltando ao normal, não pause agora.";
                 icon = <RefreshCw className="h-3 w-3 mr-1" />;
                 break;
+            case "Crítico":
+                content = "O CPL está caindo, mas o valor absoluto ainda é extremo (> 2x Média). Atenção total no Stop Loss.";
+                icon = <AlertTriangle className="h-3 w-3 mr-1" />;
+                break;
             case "Fadigado":
                 content = "CPL persistentemente alto. A regressão matemática mostra que a audiência parou de responder a este anúncio.";
                 icon = <TrendingUp className="h-3 w-3 mr-1" />;
@@ -253,25 +408,38 @@ export default function CreativesPage() {
 
         const badge = (() => {
             switch (status) {
+                // VERDE: ESCALAR (CPL Baixo ou Caindo Bem)
                 case "Estrela":
-                    return <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-400 border-0 flex items-center">🚀 Estrela</Badge>;
-                case "Curva de Fadiga":
-                case "CPL em Alta":
-                    return <Badge className="bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 dark:text-amber-400 border-0 flex items-center">⚠️ {status}</Badge>;
                 case "Em Otimização":
-                    return <Badge className="bg-blue-500/15 text-blue-700 hover:bg-blue-500/25 dark:text-blue-400 border-0 flex items-center">📈 Otimizando</Badge>;
-                case "Em Recuperação":
-                    return <Badge className="bg-purple-500/15 text-purple-700 hover:bg-purple-500/25 dark:text-purple-400 border-0 flex items-center">🩹 Recuperando</Badge>;
-                case "Fadigado":
-                    return <Badge className="bg-red-500/15 text-red-700 hover:bg-red-500/25 dark:text-red-400 border-0 flex items-center">🔴 Fadigado</Badge>;
-                case "Testando":
-                    return <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50/50 flex items-center gap-1">
-                        <RefreshCw className="h-2.5 w-2.5 animate-spin-slow" /> Testando
+                    return <Badge className="bg-emerald-500/20 text-emerald-800 hover:bg-emerald-500/30 dark:text-emerald-300 border-0 flex items-center gap-1.5 px-2.5 py-1 ring-2 ring-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.3)] font-bold">
+                        <Sparkles className="h-3.5 w-3.5" /> Escalar
                     </Badge>;
+
+                // AZUL: OBSERVAR (Recuperando, Testando, Estável)
+                case "Em Recuperação":
+                case "Testando":
                 case "Estável":
-                    return <Badge variant="secondary" className="text-muted-foreground opacity-70">Estável</Badge>;
+                    return <Badge className="bg-blue-600/20 text-blue-800 hover:bg-blue-600/30 dark:text-blue-300 border-0 flex items-center gap-1.5 px-2.5 py-1 ring-1 ring-blue-500/30 font-semibold">
+                        <Eye className="h-3.5 w-3.5" /> Observar
+                    </Badge>;
+
+                // LARANJA: ALERTA (CPL Alto mas melhorando, ou subindo)
+                case "Crítico":
+                case "CPL em Alta":
+                case "Curva de Fadiga":
+                    return <Badge className="bg-amber-500/20 text-amber-800 hover:bg-amber-500/30 dark:text-amber-300 border-0 flex items-center gap-1.5 px-2.5 py-1 ring-1 ring-amber-500/40 font-semibold">
+                        <AlertTriangle className="h-3.5 w-3.5" /> Alerta
+                    </Badge>;
+
+                // VERMELHO: PAUSAR (Ruim e sem melhora)
+                case "Fadigado":
+                case "Piorando": // Caso exista
+                    return <Badge className="bg-red-500/15 text-red-700 hover:bg-red-500/25 dark:text-red-400 border-0 flex items-center gap-1.5 px-2">
+                        <TrendingUp className="h-3 w-3" /> Pausar
+                    </Badge>;
+
                 default:
-                    return <Badge variant="outline" className="text-xs text-muted-foreground">Em Aprendizado</Badge>;
+                    return <Badge variant="outline" className="text-xs text-muted-foreground flex items-center gap-1"><RefreshCw className="h-3 w-3 animate-spin-slow" /> Aprendendo</Badge>;
             }
         })();
 
@@ -282,143 +450,23 @@ export default function CreativesPage() {
                         {badge}
                     </div>
                 </TooltipTrigger>
-                <TooltipContent side="top" className="p-3 max-w-[250px] space-y-1">
-                    <p className="font-bold text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Status: {status}</p>
-                    <p className="text-xs leading-relaxed">{content}</p>
+                <TooltipContent side="top" className="p-3 max-w-[260px] space-y-2">
+                    <div className="space-y-0.5">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Diagnóstico Detalhado</p>
+                        <div className="font-bold text-sm flex items-center gap-1.5 text-foreground">
+                            {icon}
+                            <span>{status}</span>
+                        </div>
+                    </div>
+                    <div className="w-full h-px bg-border/50" />
+                    <p className="text-xs leading-relaxed text-muted-foreground/90">
+                        {content}
+                    </p>
                 </TooltipContent>
             </Tooltip>
         );
     };
 
-    const CreativeAnalysisHover = ({ row }: { row: CreativeRow }) => {
-        const [analysis, setAnalysis] = React.useState<string | null>(null);
-        const [loading, setLoading] = React.useState(false);
-        const supabase = getSupabaseClient();
-
-        const handleMouseEnter = async () => {
-            // Allow re-fetch if currently showing the "placeholder" text or error
-            const isPlaceholder = analysis === "Nenhuma análise encontrada. Clique para gerar." ||
-                analysis === "Erro ao carregar análise." ||
-                analysis === "Nenhuma análise detalhada encontrada.";
-
-            if ((analysis && !isPlaceholder) || loading) return;
-
-            setLoading(true);
-            console.log(`[GaiaHover] Buscando análise para ad_id: ${row.ad_id}`);
-
-            try {
-                // Fetch from both tables in parallel
-                const [quickRes, contextRes] = await Promise.all([
-                    supabase
-                        .from("fact_creative_insights")
-                        .select("analyzed_at, diagnostico, visual_description")
-                        .eq("ad_id", String(row.ad_id))
-                        .order("analyzed_at", { ascending: false })
-                        .limit(1),
-                    supabase
-                        .from("creative_contextual_insights")
-                        .select("analyzed_at, why_performs, visual_description")
-                        .eq("ad_id", String(row.ad_id))
-                        .order("analyzed_at", { ascending: false })
-                        .limit(1)
-                ]);
-
-                const quickData = quickRes.data?.[0];
-                const contextData = contextRes.data?.[0];
-
-                console.log(`[GaiaHover] Resultados para ${row.ad_id}:`, {
-                    quick: quickData ? "Encontrado" : "Nulo",
-                    context: contextData ? "Encontrado" : "Nulo"
-                });
-
-                // Determine effective latest analysis
-                let bestContent = "Nenhuma análise detalhada encontrada.";
-                let latestDate = 0;
-
-                if (quickData?.analyzed_at) {
-                    const date = new Date(quickData.analyzed_at).getTime();
-                    if (!isNaN(date) && date > latestDate) {
-                        latestDate = date;
-                        // Parse Quick Analysis
-                        try {
-                            if (quickData.diagnostico && (quickData.diagnostico.includes('[') || quickData.diagnostico.includes('{'))) {
-                                const parsed = JSON.parse(quickData.diagnostico);
-                                const insights = Array.isArray(parsed) ? parsed : (parsed.insights || []);
-                                const text = insights.map((i: any) => i.description).join(" ");
-                                bestContent = text || quickData.visual_description || "Análise sem texto.";
-                            } else {
-                                bestContent = quickData.diagnostico || quickData.visual_description || "Análise visual concluída.";
-                            }
-                        } catch {
-                            bestContent = quickData.diagnostico || quickData.visual_description || "Erro ao ler análise.";
-                        }
-                    }
-                }
-
-                if (contextData?.analyzed_at) {
-                    const date = new Date(contextData.analyzed_at).getTime();
-                    if (!isNaN(date) && date > latestDate) {
-                        latestDate = date; // CRUCIAL: Update latestDate so the check below doesn't override bestContent
-                        // Prefer Contextual Analysis
-                        bestContent = contextData.why_performs || contextData.visual_description || "Análise contextual sem resumo textual.";
-                    }
-                }
-
-                // If neither returned data
-                if (latestDate === 0) {
-                    bestContent = "Nenhuma análise encontrada. Clique para gerar.";
-                }
-
-                setAnalysis(bestContent);
-
-            } catch (e) {
-                console.error(e);
-                setAnalysis("Erro ao carregar análise.");
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        return (
-            <HoverCard onOpenChange={(open) => { if (open) handleMouseEnter(); }}>
-                <HoverCardTrigger asChild>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={(e) => { e.stopPropagation(); openInsightsModal(row); }}
-                    >
-                        <Wand2 className={cn("h-4 w-4", row.has_insights ? "text-purple-600" : "text-muted-foreground/30")} />
-                    </Button>
-                </HoverCardTrigger>
-                <HoverCardContent className="w-80 p-3">
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                            <Sparkles className="h-4 w-4 text-purple-500" />
-                            <h4 className="text-sm font-semibold">Última Análise IA</h4>
-                        </div>
-                        {loading ? (
-                            <div className="space-y-2">
-                                <Skeleton className="h-4 w-full" />
-                                <Skeleton className="h-4 w-3/4" />
-                            </div>
-                        ) : analysis ? (
-                            <p className="text-xs text-muted-foreground leading-relaxed line-clamp-6">
-                                {analysis}
-                            </p>
-                        ) : (
-                            <p className="text-xs text-muted-foreground italic">
-                                {row.has_insights ? "Carregando..." : "Nenhuma análise disponível. Clique para gerar."}
-                            </p>
-                        )}
-                        <p className="text-[10px] text-purple-600 pt-2 border-t mt-2">
-                            Clique no ícone para ver detalhes completos
-                        </p>
-                    </div>
-                </HoverCardContent>
-            </HoverCard>
-        );
-    };
 
     // Helper function to filter by status
     const filterStatus = React.useCallback((row: CreativeRow) => {
@@ -525,46 +573,41 @@ export default function CreativesPage() {
     }, [data]);
 
     // Aggregate by ad_id for table (sum metrics across dates)
-    const aggregatedData = React.useMemo(() => {
+    // 1. Group daily data by ad_id and apply high-level filters (Benchmark Data)
+    const allAggregated = React.useMemo(() => {
         if (!data) return [];
 
-        // Apply branding filter only here (status filter will be applied after aggregation)
-        const filteredData = data.filter(row => filterBranding(row));
+        const filteredByBranding = data.filter(row => filterBranding(row));
 
-        // Group daily data by ad_id for sparklines
-        const dailyByAd: Record<string, { date: string; cpl: number; conversions: number }[]> = {};
-        filteredData.forEach(row => {
-            if (!dailyByAd[row.ad_id]) {
-                dailyByAd[row.ad_id] = [];
-            }
+        // GLOBAL STATUS FILTER (User requested consistency across KPIs/Graph)
+        const filteredByStatus = filteredByBranding.filter(r => {
+            if (statusFilter !== "all" && r.effective_status !== statusFilter) return false;
+            if (onlyActive && r.effective_status !== 'ACTIVE') return false;
+            return true;
+        });
+
+        const dailyByAd: Record<string, { date: string; cpl: number | null; conversions: number; investimento: number; impressoes: number }[]> = {};
+        filteredByStatus.forEach(row => {
+            if (!dailyByAd[row.ad_id]) dailyByAd[row.ad_id] = [];
             dailyByAd[row.ad_id].push({
                 date: row.data_referencia,
                 cpl: (row.conversoes && row.conversoes > 0) ? (row.investimento / row.conversoes) : null,
-                conversions: row.conversoes || 0
+                conversions: row.conversoes || 0,
+                investimento: row.investimento || 0,
+                impressoes: row.impressoes || 0
             });
         });
-        // Sort daily data by date
-        Object.keys(dailyByAd).forEach(adId => {
-            dailyByAd[adId].sort((a, b) => a.date.localeCompare(b.date));
-        });
 
-        const grouped = filteredData.reduce((acc, row) => {
+        const grouped = filteredByStatus.reduce((acc, row) => {
             if (!acc[row.ad_id]) {
-                acc[row.ad_id] = {
-                    ...row,
-                    investimento: 0,
-                    impressoes: 0,
-                    cliques: 0,
-                    conversoes: 0,
-                };
+                acc[row.ad_id] = { ...row, investimento: 0, impressoes: 0, cliques: 0, conversoes: 0 };
             }
-            // Accumulate metrics
             acc[row.ad_id].investimento += row.investimento || 0;
             acc[row.ad_id].impressoes += row.impressoes || 0;
             acc[row.ad_id].cliques += row.cliques || 0;
             acc[row.ad_id].conversoes += row.conversoes || 0;
 
-            // Keep/Update metadata (pick any non-null value)
+            // Sync metadata
             acc[row.ad_id].effective_status = row.effective_status || acc[row.ad_id].effective_status;
             acc[row.ad_id].preview_shareable_link = row.preview_shareable_link || acc[row.ad_id].preview_shareable_link;
             acc[row.ad_id].image_url = row.image_url || acc[row.ad_id].image_url;
@@ -573,8 +616,23 @@ export default function CreativesPage() {
             return acc;
         }, {} as Record<string, CreativeRow>);
 
-        // Pre-calculate reference avgCPL for status logic (to avoid circular dependency with kpis)
-        const performanceRows = Object.values(grouped).filter(r => {
+        Object.keys(dailyByAd).forEach(adId => {
+            dailyByAd[adId].sort((a, b) => a.date.localeCompare(b.date));
+        });
+
+        return Object.values(grouped).map(r => ({
+            ...r,
+            dailyHistory: dailyByAd[r.ad_id] || []
+        }));
+    }, [data, filterBranding, statusFilter, onlyActive]);
+
+    // 2. Calculate Stable Account KPIs (The Benchmark - derived from all data in period/unit/course)
+    const kpis: KPIs = React.useMemo(() => {
+        if (!allAggregated || allAggregated.length === 0) {
+            return { totalCreatives: 0, totalConversions: 0, avgCPL: null, avgCTR: 0, totalSpend: 0 };
+        }
+
+        const performanceData = allAggregated.filter(r => {
             const u = (r.unidade || "").toLowerCase();
             const c = (r.curso || "").toLowerCase();
             const campName = (r.campaign_name || "").toLowerCase();
@@ -583,31 +641,49 @@ export default function CreativesPage() {
                 campName.includes("institucional");
             return !isBranding;
         });
-        const perfSpend = performanceRows.reduce((acc, r) => acc + (r.investimento || 0), 0);
-        const perfConversions = performanceRows.reduce((acc, r) => acc + (r.conversoes || 0), 0);
-        const referenceAvgCpl = perfConversions > 0 ? perfSpend / perfConversions : 0;
 
-        return Object.values(grouped)
+        const totalSpend = allAggregated.reduce((acc, r) => acc + (r.investimento || 0), 0);
+        const totalConversions = allAggregated.reduce((acc, r) => acc + (r.conversoes || 0), 0);
+        const performanceSpend = performanceData.reduce((acc, r) => acc + (r.investimento || 0), 0);
+        const performanceConversions = performanceData.reduce((acc, r) => acc + (r.conversoes || 0), 0);
+
+        const totalImpressions = allAggregated.reduce((acc, r) => acc + (r.impressoes || 0), 0);
+        const totalClicks = allAggregated.reduce((acc, r) => acc + (r.cliques || 0), 0);
+
+        return {
+            totalCreatives: allAggregated.length,
+            totalConversions,
+            totalSpend,
+            avgCPL: performanceConversions > 0 ? performanceSpend / performanceConversions : null,
+            avgCTR: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
+        };
+    }, [allAggregated]);
+
+    // 3. Final Table Data (Applying Table-specific filters and sorting)
+    const aggregatedData = React.useMemo(() => {
+        if (!allAggregated) return [];
+
+        return allAggregated
             .map((r) => {
                 const cplValue = r.conversoes > 0 ? r.investimento / r.conversoes : null;
-                const history = dailyByAd[r.ad_id] || [];
+                const history = r.dailyHistory || [];
                 const predictedCpl = calculateCPLForecast(history);
                 return {
                     ...r,
                     ctr: r.impressoes > 0 ? (r.cliques / r.impressoes) * 100 : 0,
                     cpl: cplValue,
-                    dailyHistory: history,
-                    computedStatus: getCreativeStatus(cplValue, referenceAvgCpl, history),
+                    computedStatus: getCreativeStatus(cplValue, kpis.avgCPL || 0, history, predictedCpl),
                     predicted_cpl: predictedCpl
                 };
             })
             .filter((r) => {
                 if (minConversions > 0 && r.conversoes < minConversions) return false;
                 if (minInvestment > 0 && (r.investimento || 0) < minInvestment) return false;
+                if (!filterStatus(r)) return false;
                 return true;
             })
             .sort((a, b) => {
-                const getValue = (row: any) => {
+                const getValue = (row: CreativeRow & { ctr: number; cpl: number | null; computedStatus: string; predicted_cpl: number | null }) => {
                     switch (sortBy) {
                         case "status": return row.computedStatus;
                         case "ad_name": return row.ad_name || row.ad_id || "";
@@ -617,6 +693,7 @@ export default function CreativesPage() {
                         case "impressoes": return row.impressoes || 0;
                         case "cliques": return row.cliques || 0;
                         case "ctr": return row.ctr || 0;
+                        case "cpm": return (row.investimento / (row.impressoes || 1)) * 1000;
                         case "conversoes": return row.conversoes || 0;
                         case "cpl": return row.cpl || 9999999;
                         case "investimento": return row.investimento || 0;
@@ -629,14 +706,8 @@ export default function CreativesPage() {
 
                 if (sortBy === "status") {
                     const statusWeights: Record<string, number> = {
-                        "Estrela": 1,
-                        "Em Recuperação": 2,
-                        "Em Otimização": 3,
-                        "Testando": 4,
-                        "Estável": 5,
-                        "CPL em Alta": 6,
-                        "Curva de Fadiga": 7,
-                        "Fadigado": 8
+                        "Estrela": 1, "Em Recuperação": 2, "Em Otimização": 3, "Testando": 4,
+                        "Estável": 5, "CPL em Alta": 6, "Curva de Fadiga": 7, "Fadigado": 8
                     };
                     const aWeight = statusWeights[aVal] || 99;
                     const bWeight = statusWeights[bVal] || 99;
@@ -644,64 +715,19 @@ export default function CreativesPage() {
                 }
 
                 if (sortBy === "effective_status") {
-                    const statusWeight = (s: string) => {
-                        if (s === "ACTIVE") return 1;
-                        if (s === "PAUSED") return 2;
-                        return 3;
-                    };
+                    const statusWeight = (s: string) => s === "ACTIVE" ? 1 : s === "PAUSED" ? 2 : 3;
                     const aWeight = statusWeight(aVal);
                     const bWeight = statusWeight(bVal);
-                    if (aWeight !== bWeight) {
-                        return sortDir === "asc" ? aWeight - bWeight : bWeight - aWeight;
-                    }
+                    if (aWeight !== bWeight) return sortDir === "asc" ? aWeight - bWeight : bWeight - aWeight;
                     return 0;
                 }
 
                 if (typeof aVal === "string") {
-                    return sortDir === "asc"
-                        ? aVal.localeCompare(bVal)
-                        : bVal.localeCompare(aVal);
+                    return sortDir === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
                 }
                 return sortDir === "asc" ? aVal - bVal : bVal - aVal;
-            })
-            // Apply status filter AFTER aggregation (using consolidated effective_status)
-            .filter(row => filterStatus(row));
-    }, [data, sortBy, sortDir, filterBranding, filterStatus]);
-
-    // Aggregate KPIs - derive from aggregatedData which has proper status filtering
-    const kpis: KPIs = React.useMemo(() => {
-        if (!aggregatedData || aggregatedData.length === 0) {
-            return { totalCreatives: 0, totalConversions: 0, avgCPL: null, avgCTR: 0, totalSpend: 0 };
-        }
-
-        const totalCreatives = aggregatedData.length;
-        const totalConversions = aggregatedData.reduce((acc, r) => acc + (r.conversoes || 0), 0);
-        const totalSpend = aggregatedData.reduce((acc, r) => acc + (r.investimento || 0), 0);
-
-        // CPL Calculation: Explicitly exclude Branding investment/conversions
-        // This ensures "Avg CPL" always reflects Performance CPL
-        const performanceData = aggregatedData.filter(r => {
-            const u = (r.unidade || "").toLowerCase();
-            const c = (r.curso || "").toLowerCase();
-            const campName = (r.campaign_name || "").toLowerCase();
-
-            const isBranding = u.includes("branding") || u.includes("institucional") ||
-                c.includes("branding") || campName.includes("branding") ||
-                campName.includes("institucional");
-            return !isBranding;
-        });
-
-        const performanceSpend = performanceData.reduce((acc, r) => acc + (r.investimento || 0), 0);
-        const performanceConversions = performanceData.reduce((acc, r) => acc + (r.conversoes || 0), 0);
-
-        const avgCPL = performanceConversions > 0 ? performanceSpend / performanceConversions : null;
-
-        const totalImpressions = aggregatedData.reduce((acc, r) => acc + (r.impressoes || 0), 0);
-        const totalClicks = aggregatedData.reduce((acc, r) => acc + (r.cliques || 0), 0);
-        const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
-
-        return { totalCreatives, totalConversions, avgCPL, avgCTR, totalSpend };
-    }, [aggregatedData]);
+            });
+    }, [allAggregated, sortBy, sortDir, minConversions, minInvestment, filterStatus, onlyActive, kpis.avgCPL]);
 
     // Paginated data
     const totalPages = Math.ceil(aggregatedData.length / itemsPerPage);
@@ -721,8 +747,13 @@ export default function CreativesPage() {
     const evolutionData = React.useMemo(() => {
         if (!data) return [];
 
-        // Apply branding filter (status filter not applicable for daily aggregation)
-        const filteredData = data.filter(row => filterBranding(row));
+        // Apply branding AND status filter for consistent evolution data
+        const filteredData = data.filter(row => {
+            if (!filterBranding(row)) return false;
+            if (statusFilter !== "all" && row.effective_status !== statusFilter) return false;
+            if (onlyActive && row.effective_status !== 'ACTIVE') return false;
+            return true;
+        });
 
         const byDate = filteredData.reduce((acc, row) => {
             const date = row.data_referencia;
@@ -851,8 +882,23 @@ export default function CreativesPage() {
                     </SelectContent>
                 </Select>
 
-                {/* Branding Toggle */}
+                {/* Active Only Toggle */}
                 <div className="flex items-center gap-2 ml-auto">
+                    <Switch
+                        id="onlyActive"
+                        checked={onlyActive}
+                        onCheckedChange={setOnlyActive}
+                    />
+                    <label
+                        htmlFor="onlyActive"
+                        className="text-sm text-muted-foreground cursor-pointer select-none"
+                    >
+                        Apenas Ativos
+                    </label>
+                </div>
+
+                {/* Branding Toggle */}
+                <div className="flex items-center gap-2">
                     <Switch
                         id="hideBranding"
                         checked={hideBranding}
@@ -1038,110 +1084,102 @@ export default function CreativesPage() {
                     <div className="rounded-md border">
                         <Table>
                             <TableHeader>
-                                <TableRow>
+                                <TableRow className="hover:bg-transparent text-[13px]">
+                                    <TableHead className="w-[280px] cursor-pointer p-2" onClick={() => toggleSort("campaign_name")}>
+                                        <span className="flex items-center text-[13px]">Campanha {getSortIcon("campaign_name")}</span>
+                                    </TableHead>
 
-                                    <TableHead className="w-[80px] text-center cursor-pointer" onClick={() => toggleSort("effective_status")}>
-                                        <div className="flex flex-col items-center justify-center gap-0.5">
-                                            <span className="text-[10px] text-muted-foreground font-normal">Status</span>
-                                            {getSortIcon("effective_status")}
-                                        </div>
+                                    <TableHead className="w-[240px] cursor-pointer p-2" onClick={() => toggleSort("ad_name")}>
+                                        <span className="flex items-center text-[13px]">Criativo {getSortIcon("ad_name")}</span>
                                     </TableHead>
-                                    <TableHead className="w-[500px] cursor-pointer" onClick={() => toggleSort("ad_name")}>
-                                        <span className="flex items-center">Criativo {getSortIcon("ad_name")}</span>
+
+                                    <TableHead className="w-[120px] cursor-pointer p-2" onClick={() => toggleSort("unidade")}>
+                                        <span className="flex items-center text-[13px]">Unidade {getSortIcon("unidade")}</span>
                                     </TableHead>
-                                    <TableHead className="w-[100px] cursor-pointer" onClick={() => toggleSort("unidade")}>
-                                        <span className="flex items-center">Unidade {getSortIcon("unidade")}</span>
+
+                                    <TableHead className="text-right w-[70px] cursor-pointer p-2" onClick={() => toggleSort("ctr")}>
+                                        <span className="flex items-center justify-end text-[13px]">CTR {getSortIcon("ctr")}</span>
                                     </TableHead>
-                                    <TableHead className="text-right cursor-pointer" onClick={() => toggleSort("conversoes")}>
-                                        <span className="flex items-center justify-end">Conversões {getSortIcon("conversoes")}</span>
+
+                                    <TableHead className="text-right w-[80px] cursor-pointer p-2" onClick={() => toggleSort("cpm")}>
+                                        <span className="flex items-center justify-end text-[13px]">CPM {getSortIcon("cpm")}</span>
                                     </TableHead>
-                                    <TableHead className="text-right cursor-pointer" onClick={() => toggleSort("cpl")}>
-                                        <span className="flex items-center justify-end">CPL {getSortIcon("cpl")}</span>
+
+                                    <TableHead className="text-right w-[80px] cursor-pointer p-2" onClick={() => toggleSort("cpl")}>
+                                        <span className="flex items-center justify-end text-[13px]">CPL {getSortIcon("cpl")}</span>
                                     </TableHead>
-                                    <TableHead className="text-right">
-                                        <div className="flex items-center justify-end gap-1">
-                                            CPL Previsto
+
+                                    <TableHead className="text-right w-[70px] cursor-pointer p-2" onClick={() => toggleSort("conversoes")}>
+                                        <span className="flex items-center justify-end text-[13px]">Conv. {getSortIcon("conversoes")}</span>
+                                    </TableHead>
+
+                                    <TableHead className="text-right w-[90px] cursor-pointer p-2" onClick={() => toggleSort("investimento")}>
+                                        <span className="flex items-center justify-end text-[13px]">Invest. {getSortIcon("investimento")}</span>
+                                    </TableHead>
+
+                                    <TableHead className="text-center w-[200px] p-2">
+                                        <div className="flex items-center justify-center gap-1 text-xs">
+                                            Saúde & Tendência
                                             <TooltipProvider>
                                                 <Tooltip>
                                                     <TooltipTrigger asChild>
                                                         <Info className="h-3 w-3 cursor-help text-muted-foreground/50" />
                                                     </TooltipTrigger>
                                                     <TooltipContent className="max-w-[200px] p-2 text-[11px]">
-                                                        <p>Este é o custo futuro que o <strong>modelo estatístico de regressão</strong> prevê para este anúncio.</p>
-                                                        <p className="mt-1 text-muted-foreground italic text-[10px]"><strong>O que é regressão:</strong> Uma técnica que encontra padrões no passado para traçar uma "linha de tendência" e projetar o futuro.</p>
+                                                        <p> Fluxo Temporal de Decisão:</p>
+                                                        <ul className="list-disc pl-3 mt-1 space-y-0.5">
+                                                            <li><strong>Passado:</strong> Gráfico (Tendência)</li>
+                                                            <li><strong>Presente:</strong> Badge (Diagnóstico Atual)</li>
+                                                            <li><strong>Futuro:</strong> Previsão (Projeção CPL)</li>
+                                                        </ul>
                                                     </TooltipContent>
                                                 </Tooltip>
                                             </TooltipProvider>
                                         </div>
                                     </TableHead>
-                                    <TableHead className="text-right w-[140px]">
-                                        Histórico (CPL)
-                                    </TableHead>
-                                    <TableHead className="text-center w-[80px] cursor-pointer" onClick={() => toggleSort("ctr")}>
-                                        <span className="flex items-center justify-center pl-4">CTR {getSortIcon("ctr")}</span>
-                                    </TableHead>
-                                    <TableHead className="text-right cursor-pointer" onClick={() => toggleSort("investimento")}>
-                                        <span className="flex items-center justify-end">Investimento {getSortIcon("investimento")}</span>
-                                    </TableHead>
 
-                                    <TableHead className="w-[120px] text-center cursor-pointer" onClick={() => toggleSort("status")}>
-                                        <span className="flex items-center justify-center">Fase {getSortIcon("status")}</span>
-                                    </TableHead>
-                                    <TableHead className="w-[60px] text-center">IA</TableHead>
+                                    <TableHead className="w-[60px] text-center p-2 text-[13px]" onClick={() => toggleSort("effective_status")}>Status</TableHead>
+                                    <TableHead className="w-[40px] text-center p-2 text-[13px]">IA</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {isLoading ? (
                                     Array.from({ length: 5 }).map((_, i) => (
                                         <TableRow key={i}>
-                                            <TableCell><Skeleton className="h-12 w-full" /></TableCell>
-                                            <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                                            <TableCell><Skeleton className="h-4 w-12" /></TableCell>
-                                            <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                                            <TableCell><Skeleton className="h-8 w-24" /></TableCell>
-                                            <TableCell><Skeleton className="h-4 w-12" /></TableCell>
-                                            <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                                            <TableCell><Skeleton className="h-6 w-16" /></TableCell>
-                                            <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+                                            <TableCell className="p-2"><Skeleton className="h-4 w-32" /></TableCell>
+                                            <TableCell className="p-2 flex gap-2"><Skeleton className="h-10 w-10" /><Skeleton className="h-4 w-32" /></TableCell>
+                                            <TableCell className="p-2"><Skeleton className="h-4 w-12" /></TableCell>
+                                            <TableCell className="p-2"><Skeleton className="h-4 w-8" /></TableCell>
+                                            <TableCell className="p-2"><Skeleton className="h-4 w-8" /></TableCell>
+                                            <TableCell className="p-2"><Skeleton className="h-4 w-12" /></TableCell>
+                                            <TableCell className="p-2"><Skeleton className="h-4 w-8" /></TableCell>
+                                            <TableCell className="p-2"><Skeleton className="h-4 w-16" /></TableCell>
+                                            <TableCell className="p-2"><Skeleton className="h-8 w-40" /></TableCell>
+                                            <TableCell className="p-2 text-center"><Skeleton className="h-4 w-7 mx-auto" /></TableCell>
+                                            <TableCell className="p-2 text-center"><Skeleton className="h-6 w-6 mx-auto" /></TableCell>
                                         </TableRow>
                                     ))
                                 ) : paginatedData.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={9} className="h-24 text-center">
+                                        <TableCell colSpan={11} className="h-24 text-center">
                                             Nenhum criativo encontrado.
                                         </TableCell>
                                     </TableRow>
                                 ) : (
                                     paginatedData.map((row) => (
-                                        <TableRow key={row.ad_id} className="group hover:bg-muted/50">
+                                        <TableRow key={row.ad_id} className="group hover:bg-muted/50 text-[13px]">
 
-                                            <TableCell className="text-center">
-                                                <div className="flex flex-col items-center gap-1.5">
-                                                    <TooltipProvider>
-                                                        <Tooltip>
-                                                            <TooltipTrigger asChild>
-                                                                <div className="flex items-center">
-                                                                    <Switch
-                                                                        checked={row.effective_status === 'ACTIVE'}
-                                                                        className="data-[state=checked]:bg-blue-600 h-5 w-9 pointer-events-none"
-                                                                    />
-                                                                </div>
-                                                            </TooltipTrigger>
-                                                            <TooltipContent className="text-[10px]">
-                                                                <p>{row.effective_status === 'ACTIVE' ? 'Ativo (Rodando)' : 'Pausado'}</p>
-                                                                <p className="opacity-70">Atualizado via rotina diária</p>
-                                                            </TooltipContent>
-                                                        </Tooltip>
-                                                    </TooltipProvider>
-
-                                                    {/* Badge removido daqui */}
+                                            {/* 1. Campanha */}
+                                            <TableCell className="p-2 max-w-[280px]">
+                                                <div className="text-foreground" title={row.campaign_name}>
+                                                    {row.campaign_name}
                                                 </div>
                                             </TableCell>
-                                            <TableCell>
-                                                <div className="flex gap-3 min-w-0">
-                                                    {/* Thumbnail with Hover Zoom */}
-                                                    {/* Thumbnail with Hover Zoom */}
-                                                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-muted group/image">
+
+                                            {/* 4. Criativo (Thumb + Name) */}
+                                            <TableCell className="p-2 max-w-[240px]">
+                                                <div className="flex gap-2 min-w-0 items-center">
+                                                    <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md border bg-muted group/image">
                                                         {row.thumbnail_url || row.image_url ? (
                                                             <HoverCard>
                                                                 <HoverCardTrigger asChild>
@@ -1153,7 +1191,7 @@ export default function CreativesPage() {
                                                                             loading="lazy"
                                                                         />
                                                                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/image:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                                                                            <Eye className="h-6 w-6 text-white drop-shadow-md" />
+                                                                            <Eye className="h-4 w-4 text-white drop-shadow-md" />
                                                                         </div>
                                                                     </div>
                                                                 </HoverCardTrigger>
@@ -1172,90 +1210,175 @@ export default function CreativesPage() {
                                                             </div>
                                                         )}
                                                     </div>
-
-                                                    <div className="flex flex-col gap-1 min-w-0 justify-center">
-                                                        <div className="flex items-center gap-2">
-                                                            <Badge variant="outline" className="w-fit gap-1 px-1.5 py-0 h-5 text-[10px] font-normal text-muted-foreground border-primary/20">
-                                                                {getCreativeIcon(row.creative_type)}
+                                                    <div className="flex flex-col min-w-0">
+                                                        <TooltipProvider>
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <a
+                                                                        href={row.preview_shareable_link || row.image_url || `https://www.facebook.com/ads/library/?id=${row.ad_id}`}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                                                                    >
+                                                                        {row.ad_name || "Sem Nome"}
+                                                                        <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                                    </a>
+                                                                </TooltipTrigger>
+                                                                <TooltipContent side="top">
+                                                                    <p className="text-[10px] font-mono">ID: {row.ad_id}</p>
+                                                                </TooltipContent>
+                                                            </Tooltip>
+                                                        </TooltipProvider>
+                                                        <div className="flex items-center gap-1">
+                                                            <Badge variant="outline" className="px-1 py-0 h-4 text-[9px] border-primary/20 text-muted-foreground">
                                                                 {row.creative_type || "Anúncio"}
                                                             </Badge>
-                                                            {row.campaign_name && (
-                                                                <span className="text-[10px] text-muted-foreground truncate max-w-[400px]" title={row.campaign_name}>
-                                                                    {row.campaign_name}
-                                                                </span>
+                                                            {(() => {
+                                                                // Simple Fatigue logic for UI indicator
+                                                                const history = row.dailyHistory || [];
+                                                                const isFatigued = history.length >= 7 &&
+                                                                    kpis.avgCPL && row.cpl && row.cpl > kpis.avgCPL * 1.5;
+
+                                                                if (isFatigued) {
+                                                                    return (
+                                                                        <Badge variant="outline" className="px-1 py-0 h-4 text-[9px] border-red-200 bg-red-50 text-red-600 flex items-center gap-0.5">
+                                                                            <AlertTriangle className="h-2 w-2" /> Fadiga
+                                                                        </Badge>
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            })()}
+                                                            {row.has_insights && (
+                                                                <TooltipProvider>
+                                                                    <Tooltip>
+                                                                        <TooltipTrigger asChild>
+                                                                            <span className="text-[9px] text-purple-600 font-medium flex items-center gap-0.5 cursor-help">
+                                                                                <Sparkles className="h-2 w-2" /> IA
+                                                                            </span>
+                                                                        </TooltipTrigger>
+                                                                        <TooltipContent className="text-[10px]">IA já analisou este criativo</TooltipContent>
+                                                                    </Tooltip>
+                                                                </TooltipProvider>
                                                             )}
                                                         </div>
-                                                        <a
-                                                            href={row.preview_shareable_link || row.image_url || `https://www.facebook.com/ads/library/?id=${row.ad_id}`}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="font-medium text-sm truncate text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1.5"
-                                                            title={row.ad_name || row.ad_id}
-                                                        >
-                                                            {row.ad_name || "Sem Nome"}
-                                                            <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                                        </a>
-                                                        <span className="text-[10px] text-muted-foreground font-mono">
-                                                            ID: {row.ad_id}
-                                                        </span>
-                                                        {row.has_insights && (
-                                                            <div className="flex items-center gap-1 text-[10px] text-purple-600 font-medium animate-pulse">
-                                                                <Sparkles className="h-2.5 w-2.5" />
-                                                                IA: Análise disponível
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 </div>
                                             </TableCell>
-                                            <TableCell className="text-xs text-muted-foreground max-w-[100px]">
-                                                <div className="flex flex-col gap-0.5 truncate">
-                                                    <span className="truncate" title={row.unidade}>{row.unidade}</span>
-                                                    <span className="opacity-70 text-[10px] truncate" title={row.curso}>{row.curso}</span>
+
+                                            {/* 5. Unidade */}
+                                            <TableCell className="p-2 text-muted-foreground max-w-[120px]">
+                                                <div className="flex flex-col min-w-0" title={`${row.unidade} - ${row.curso}`}>
+                                                    <div className="font-medium text-foreground leading-tight text-[12px]">{row.unidade}</div>
+                                                    <div className="text-[11px] leading-tight opacity-80">{row.curso}</div>
                                                 </div>
                                             </TableCell>
-                                            <TableCell className="text-right">
-                                                <div className="font-medium">{row.conversoes}</div>
-                                                <div className="text-[10px] text-muted-foreground">leads</div>
-                                            </TableCell>
-                                            <TableCell className="text-right">
+
+                                            {/* 6. CTR */}
+                                            <TableCell className="p-2 text-right">
                                                 <div className={cn(
-                                                    "font-medium",
-                                                    (row.cpl || 0) < 30 ? "text-emerald-600" : (row.cpl || 0) > 100 ? "text-red-600" : ""
+                                                    "font-medium font-mono text-[12px]",
+                                                    (row.ctr || 0) > 0.015 ? "text-emerald-600" : ""
+                                                )}>
+                                                    {pct(row.ctr)}
+                                                </div>
+                                            </TableCell>
+
+                                            {/* 7. CPM */}
+                                            <TableCell className="p-2 text-right">
+                                                <div className="font-medium font-mono text-[12px] text-muted-foreground">
+                                                    {brl((row.investimento / (row.impressoes || 1)) * 1000)}
+                                                </div>
+                                            </TableCell>
+
+                                            {/* 8. CPL */}
+                                            <TableCell className="p-2 text-right">
+                                                <div className={cn(
+                                                    "font-medium font-mono text-[12px]",
+                                                    !row.cpl ? "text-muted-foreground" :
+                                                        kpis.avgCPL && row.cpl <= kpis.avgCPL ? "text-emerald-600" :
+                                                            kpis.avgCPL && row.cpl <= kpis.avgCPL * 1.3 ? "text-amber-500" :
+                                                                "text-red-600"
                                                 )}>
                                                     {brl(row.cpl)}
                                                 </div>
                                             </TableCell>
-                                            <TableCell className="text-right">
-                                                <span className={cn(
-                                                    "font-bold",
-                                                    row.predicted_cpl && row.cpl && row.predicted_cpl > row.cpl * 1.1 ? "text-amber-600" :
-                                                        row.predicted_cpl && row.cpl && row.predicted_cpl < row.cpl * 0.9 ? "text-emerald-600" :
-                                                            "text-muted-foreground"
-                                                )}>
-                                                    {row.predicted_cpl ? brl(row.predicted_cpl) : "-"}
-                                                </span>
+
+                                            {/* 9. Conversões */}
+                                            <TableCell className="p-2 text-right">
+                                                <div className="font-medium font-mono text-[12px]">{row.conversoes}</div>
                                             </TableCell>
-                                            <TableCell className="text-right pl-4">
-                                                <CplSparkline
-                                                    data={row.dailyHistory || []}
-                                                    width={120}
-                                                    height={32}
-                                                    avgCpl={kpis.avgCPL}
-                                                />
-                                            </TableCell>
-                                            <TableCell className="text-center text-xs pl-6">
-                                                {pct(row.ctr)}
-                                            </TableCell>
-                                            <TableCell className="text-right">
+
+                                            {/* 10. Investimento */}
+                                            <TableCell className="p-2 text-right text-muted-foreground font-mono text-[12px]">
                                                 {brl(row.investimento)}
                                             </TableCell>
-                                            <TableCell className="text-center">
-                                                <div className="scale-90 origin-center">
-                                                    {getStatusBadge(row.computedStatus)}
+
+                                            {/* 10. Saúde & Tendência */}
+                                            <TableCell className="p-2 text-center">
+                                                <div className="flex flex-col items-center gap-1 w-full max-w-[220px] mx-auto">
+                                                    {/* PASSADO */}
+                                                    <div className="w-full">
+                                                        <CplSparkline
+                                                            data={row.dailyHistory || []}
+                                                            width={180}
+                                                            height={24}
+                                                            avgCpl={kpis.avgCPL}
+                                                        />
+                                                    </div>
+                                                    {/* PRESENTE and FUTURO Row */}
+                                                    <div className="flex items-center gap-2 scale-90">
+                                                        {/* PRESENTE: Badge */}
+                                                        {getStatusBadge(row.computedStatus)}
+
+                                                        {/* FUTURO: Projection */}
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <div className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground bg-muted/30 px-1.5 py-1 rounded-md border border-border/50 cursor-help h-[24px]">
+                                                                    <span>Prev:</span>
+                                                                    <span className={cn(
+                                                                        row.predicted_cpl && row.cpl && row.predicted_cpl > row.cpl * 1.1 ? "text-amber-600 font-bold" :
+                                                                            row.predicted_cpl && row.cpl && row.predicted_cpl < row.cpl * 0.9 ? "text-emerald-600 font-bold" :
+                                                                                "text-foreground"
+                                                                    )}>
+                                                                        {row.predicted_cpl ? brl(row.predicted_cpl) : "-"}
+                                                                    </span>
+                                                                </div>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent side="bottom" className="max-w-[220px] p-2 space-y-1">
+                                                                <p className="font-semibold text-[10px] uppercase text-muted-foreground">Projeção (D+1)</p>
+                                                                <p className="text-xs">Estimativa do CPL para amanhã baseada na regressão linear dos últimos 14 dias.</p>
+                                                                <div className="text-[10px] pt-1 space-y-0.5 border-t mt-1">
+                                                                    <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Queda esperada &gt; 10%</div>
+                                                                    <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Alta esperada &gt; 10%</div>
+                                                                </div>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    </div>
                                                 </div>
                                             </TableCell>
-                                            <TableCell className="text-center">
-                                                <CreativeAnalysisHover row={row} />
+
+                                            {/* 10. Status */}
+                                            <TableCell className="p-2 text-center">
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <div className="flex items-center justify-center">
+                                                                <Switch
+                                                                    checked={row.effective_status === 'ACTIVE'}
+                                                                    className="data-[state=checked]:bg-blue-600 h-4 w-7 pointer-events-none scale-75"
+                                                                />
+                                                            </div>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent className="text-[10px]">
+                                                            {row.effective_status === 'ACTIVE' ? 'Ativo' : 'Pausado'}
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            </TableCell>
+
+                                            {/* 11. IA */}
+                                            <TableCell className="p-2 text-center">
+                                                <CreativeAnalysisHover row={row} onOpenInsights={() => openInsightsModal(row)} />
                                             </TableCell>
                                         </TableRow>
                                     ))

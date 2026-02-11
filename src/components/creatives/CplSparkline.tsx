@@ -72,11 +72,31 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
     // UX Refinement: If it's overall better but recently bouncy, it's "Otimizando"
     const isOptimizing = variation < -5 && !isImproving && !isDeclining;
 
-    const lineColor = isImproving || isOptimizing
-        ? "#10b981" // emerald-500
-        : isDeclining
-            ? "#ef4444" // red-500
-            : "#64748b"; // slate-500
+    // New refined logic: 
+    // - If Improving (> 2x Avg CPL) -> "Crítico (Melhorando)" (Red/Amber)
+    // - If Improving (> Avg CPL) -> "Em Recuperação" (Blue)
+
+    const isHighCost = avgCpl ? (recentAvg > avgCpl * 2.0) : false;
+    const isOverCost = avgCpl ? (recentAvg > avgCpl * 1.15) : false; // 15% margin
+
+    // Critical: Ultra High Cost
+    const isCriticalRecovery = isImproving && isHighCost;
+
+    // Fatigued: High Cost & Not Improving
+    const isFatigued = isOverCost && !isImproving;
+
+    // Recovering: Improving & High Cost (but not Critical)
+    const isRecovering = isImproving && avgCpl && (recentAvg > avgCpl) && !isCriticalRecovery;
+
+    const lineColor = isCriticalRecovery
+        ? "#f97316" // orange-500 (Alerta)
+        : isFatigued || isDeclining
+            ? "#ef4444" // red-500 (Pausar)
+            : isRecovering
+                ? "#3b82f6" // blue-500 (Observar)
+                : isImproving || isOptimizing
+                    ? "#10b981" // emerald-500 (Escalar)
+                    : "#3b82f6"; // blue-500 (Estável -> Observar)
 
     // Format data with formatted date for tooltip
     const chartData = data.map(d => ({
@@ -110,16 +130,24 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                     <span className="text-sm font-semibold truncate max-w-[200px]">
                         Evolução CPL & Leads
                     </span>
-                    <div className={`flex items-center gap-1 text-xs font-medium ${isImproving ? "text-emerald-600" :
-                        isOptimizing ? "text-blue-600" :
-                            isDeclining ? "text-red-600" : "text-slate-600"
+                    <div className={`flex items-center gap-1 text-xs font-medium ${isCriticalRecovery ? "text-orange-600" :
+                            isFatigued || isDeclining ? "text-red-600" :
+                                isRecovering ? "text-blue-600" :
+                                    isImproving || isOptimizing ? "text-emerald-600" :
+                                        "text-blue-600"
                         }`}>
-                        {isImproving ? (
+                        {isCriticalRecovery ? (
+                            <><TrendingDown className="h-3 w-3" /> Crítico (Melhorando)</>
+                        ) : isFatigued ? (
+                            <><TrendingUp className="h-3 w-3" /> Fadigado</>
+                        ) : isDeclining ? (
+                            <><TrendingUp className="h-3 w-3" /> Piorando</>
+                        ) : isRecovering ? (
+                            <><TrendingDown className="h-3 w-3" /> Em Recuperação</>
+                        ) : isImproving ? (
                             <><TrendingDown className="h-3 w-3" /> Melhorando</>
                         ) : isOptimizing ? (
                             <><RefreshCw className="h-3 w-3" /> Otimizando</>
-                        ) : isDeclining ? (
-                            <><TrendingUp className="h-3 w-3" /> Piorando</>
                         ) : (
                             <><Minus className="h-3 w-3" /> Estável</>
                         )}
@@ -173,9 +201,18 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                                 yAxisId="left"
                                 y={overallAvg}
                                 stroke="#94a3b8"
-                                strokeDasharray="2 2"
-                                label={{ value: 'Média', fontSize: 8, fill: '#94a3b8', position: 'insideRight' }}
+                                strokeDasharray="3 3"
+                                label={{ value: 'Média Anúncio', fontSize: 8, fill: '#94a3b8', position: 'insideBottomRight' }}
                             />
+                            {avgCpl && (
+                                <ReferenceLine
+                                    yAxisId="left"
+                                    y={avgCpl}
+                                    stroke="#8b5cf6" // Violet for Account Average
+                                    strokeDasharray="5 5"
+                                    label={{ value: 'Média Conta', fontSize: 8, fill: '#8b5cf6', position: 'insideTopRight' }}
+                                />
+                            )}
                             <Bar
                                 yAxisId="right"
                                 dataKey="conversions"
@@ -200,30 +237,47 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                 </div>
 
                 {/* Stats */}
+                {/* Stats Row 1: Variation */}
                 <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t text-xs">
                     <div className="text-center">
-                        <div className="text-muted-foreground">Início</div>
-                        <div className="font-medium">{brl(firstValue)}</div>
+                        <div className="text-muted-foreground text-[10px]">Início</div>
+                        <div className="font-medium text-slate-600">{brl(firstValue)}</div>
                     </div>
                     <div className="text-center">
-                        <div className="text-muted-foreground">Fim</div>
-                        <div className="font-medium">{brl(lastValue)}</div>
+                        <div className="text-muted-foreground text-[10px]">Fim</div>
+                        <div className="font-medium text-slate-600">{brl(lastValue)}</div>
                     </div>
                     <div className="text-center">
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <div className="text-muted-foreground flex items-center justify-center gap-0.5 cursor-help">
-                                    Variação
+                                <div className="cursor-help">
+                                    <div className="text-muted-foreground text-[10px] flex items-center justify-center gap-0.5">
+                                        Variação
+                                    </div>
+                                    <div className={`font-medium ${variation > 0 ? "text-red-500" : "text-emerald-500"}`}>
+                                        {variation > 0 ? "+" : ""}{variation.toFixed(0)}%
+                                    </div>
                                 </div>
                             </TooltipTrigger>
                             <TooltipContent side="top" className="max-w-[200px] text-[10px]">
                                 Comparativo entre o primeiro e o último dia com leads no período.
                             </TooltipContent>
                         </Tooltip>
-                        <div className={`font-medium ${variation > 0 ? "text-red-600" : variation < 0 ? "text-emerald-600" : ""}`}>
-                            {variation > 0 ? "+" : ""}{variation.toFixed(0)}%
-                        </div>
                     </div>
+                </div>
+
+                {/* Stats Row 2: Averages */}
+                <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-dashed text-xs bg-muted/20 -mx-3 px-3 pb-1">
+                    <div className="text-center">
+                        <div className="text-muted-foreground text-[10px]">Média Anúncio</div>
+                        <div className="font-medium text-slate-600 font-mono">{brl(overallAvg)}</div>
+                    </div>
+                    {avgCpl && (
+                        <div className="text-center border-l border-dashed pl-2">
+                            <div className="text-muted-foreground text-[10px]">Média Conta</div>
+                            <div className="font-medium text-purple-600 font-mono">{brl(avgCpl)}</div>
+                        </div>
+                    )}
                 </div>
             </HoverCardContent>
         </HoverCard>
