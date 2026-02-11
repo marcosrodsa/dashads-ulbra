@@ -98,22 +98,26 @@ Deno.serve(async (req) => {
         const ctr = totals.impressions > 0 ? Number(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
         const cpa = totals.conversions > 0 ? Number((totals.spend / totals.conversions).toFixed(2)) : null;
 
-        // 4. Regression & Trend (ALIGNED WITH FRONTEND LOGIC)
+        // 4. Regression & Trend (ALIGNED WITH FRONTEND LOGIC - Last 14 days only!)
         const dailyData = (perfData || [])
-            .filter((d: any) => d.conversoes > 0) // ✅ FIX: Only days with actual conversions
-            .sort((a, b) => new Date(a.data_referencia).getTime() - new Date(b.data_referencia).getTime());
+            .filter((d: any) => d.conversoes > 0) // FIX: Only days with actual conversions
+            .sort((a, b) => new Date(a.data_referencia).getTime() - new Date(b.data_referencia).getTime())
+            .slice(-14); // FIX: LIMIT TO LAST 14 DAYS (match frontend)
+
+        console.log(`[DEBUG] creativeId: ${creativeId}, dailyData.length: ${dailyData.length}`);
+        console.log(`[DEBUG] dailyData CPLs:`, dailyData.map(d => (d.investimento / d.conversoes).toFixed(2)));
 
         let forecast = { predicted_cpl: null as number | null, trend_direction: "stable", confidence_r2: 0 };
-        if (dailyData.length >= 2) { // ✅ FIX: Match frontend minimum (was 5)
+        if (dailyData.length >= 5) { // FIX: Match frontend minimum (not 2)
             const x = dailyData.map((_, i) => i + 1);
-            const y = dailyData.map(d => d.investimento / d.conversoes); // ✅ FIX: Pure CPL, no fallback
+            const y = dailyData.map(d => d.investimento / d.conversoes); // FIX: Pure CPL, no fallback
             const n = x.length;
             const sumX = x.reduce((a, b) => a + b, 0), sumY = y.reduce((a, b) => a + b, 0);
             const sumXY = x.reduce((s, xi, i) => s + xi * y[i], 0), sumXX = x.reduce((s, xi) => s + xi * xi, 0);
 
             const denominator = n * sumXX - sumX * sumX;
             if (denominator === 0) {
-                // Cannot compute regression
+                console.log(`[DEBUG] Denominator is zero, cannot compute regression`);
             } else {
                 const slope = (n * sumXY - sumX * sumY) / denominator;
                 const intercept = (sumY - slope * sumX) / n;
@@ -122,9 +126,11 @@ Deno.serve(async (req) => {
                 const ssRes = y.reduce((s, yi, i) => s + Math.pow(yi - (slope * x[i] + intercept), 2), 0);
                 const r2 = ssTot === 0 ? 0 : 1 - (ssRes / ssTot);
 
-                forecast.predicted_cpl = Math.max(0, Number((slope * (n + 1) + intercept).toFixed(2))); // ✅ FIX: n+1 (tomorrow)
+                forecast.predicted_cpl = Math.max(0, Number((slope * (n + 1) + intercept).toFixed(2))); // FIX: n+1 (tomorrow)
                 forecast.confidence_r2 = Number(r2.toFixed(2));
                 forecast.trend_direction = slope > 0.5 ? "rising" : slope < -0.5 ? "falling" : "stable";
+
+                console.log(`[DEBUG] slope: ${slope.toFixed(4)}, intercept: ${intercept.toFixed(2)}, predicted: ${forecast.predicted_cpl}`);
             }
         }
 
