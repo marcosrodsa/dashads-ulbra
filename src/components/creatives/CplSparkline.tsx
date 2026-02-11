@@ -63,11 +63,13 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
 
     // Squad Tip + Sanity Lock: 
     // Only mark as "Declining" if:
-    // 1. CPL increased significantly (>12%)
-    // 2. It's NOT extremely cheap compared to account average
+    // 1. CPL increased significantly (>12%) or had an extreme last-day spike
+    // 2. It's NOT extremely cheap compared to account average (at the moment)
     // 3. Current Price is NOT lower than the Starting Price (Sanity Lock)
-    const isCheap = avgCpl ? (recentAvg < avgCpl * 0.85) : false;
-    const isDeclining = (recentAvg > prevAvg * 1.12) && !isCheap && (lastValue >= firstValue);
+    const isHealthy = avgCpl ? (lastValue < avgCpl * 1.05) : true;
+    const isCheap = avgCpl ? (recentAvg < avgCpl * 0.85 && lastValue < avgCpl * 1.1) : false;
+    const isLastDaySpike = avgCpl ? (lastValue > avgCpl * 1.25) : (lastValue > overallAvg * 1.5);
+    const isDeclining = ((recentAvg > prevAvg * 1.12) || isLastDaySpike) && !isCheap && (lastValue >= firstValue) && !isHealthy;
 
     // UX Refinement: Long-term sanity check
     const isOverallBetter = variation < -10; // Significant improvement from start
@@ -85,7 +87,7 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
     // Fatigued: High Cost & Not Improving & NOT Overall better (New Safety)
     // Mandatory Dual-Factor: Only suggest Red (Pausar) if it's already high AND forecast would likely stay high (using variance/trend)
     // For the sparkline, if it's improving or overall better, it's not truly fatigued yet.
-    const isFatigued = isOverCost && !isImproving && !isOverallBetter;
+    const isFatigued = isOverCost && !isImproving && !isOverallBetter && !isHealthy;
 
     // Recovering: Improving OR Overall Better but still High Cost (but not Critical)
     const isRecovering = (isImproving || isOverallBetter) && avgCpl && (recentAvg > avgCpl) && !isCriticalRecovery;
