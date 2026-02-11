@@ -223,11 +223,10 @@ export default function CreativesPage() {
     const [sortBy, setSortBy] = React.useState<string>("status");
     const [sortDir, setSortDir] = React.useState<"asc" | "desc">("asc");
     const [currentPage, setCurrentPage] = React.useState(1);
-    const [statusFilter, setStatusFilter] = React.useState<string>("all");
     const [minConversions, setMinConversions] = React.useState<number>(0);
     const [minInvestment, setMinInvestment] = React.useState<number>(0);
     const [viewMode, setViewMode] = React.useState<"list" | "grid">("list");
-    const [onlyActive, setOnlyActive] = React.useState(false);
+    const [onlyActive, setOnlyActive] = React.useState(true);
     const itemsPerPage = 100;
 
     const [period, setPeriod] = React.useState<string>("30");
@@ -468,11 +467,6 @@ export default function CreativesPage() {
     };
 
 
-    // Helper function to filter by status
-    const filterStatus = React.useCallback((row: CreativeRow) => {
-        if (statusFilter === "all") return true;
-        return row.effective_status === statusFilter;
-    }, [statusFilter]);
 
     // Toggle sort function
     const toggleSort = (column: string) => {
@@ -567,10 +561,6 @@ export default function CreativesPage() {
         return [...new Set(data.map((r) => r.curso).filter(Boolean))];
     }, [data]);
 
-    const statusOptions = React.useMemo(() => {
-        if (!data) return [];
-        return [...new Set(data.map((r) => r.effective_status).filter(Boolean))].sort();
-    }, [data]);
 
     // Aggregate by ad_id for table (sum metrics across dates)
     // 1. Group daily data by ad_id and apply high-level filters (Benchmark Data)
@@ -579,15 +569,9 @@ export default function CreativesPage() {
 
         const filteredByBranding = data.filter(row => filterBranding(row));
 
-        // GLOBAL STATUS FILTER (User requested consistency across KPIs/Graph)
-        const filteredByStatus = filteredByBranding.filter(r => {
-            if (statusFilter !== "all" && r.effective_status !== statusFilter) return false;
-            if (onlyActive && r.effective_status !== 'ACTIVE') return false;
-            return true;
-        });
 
         const dailyByAd: Record<string, { date: string; cpl: number | null; conversions: number; investimento: number; impressoes: number }[]> = {};
-        filteredByStatus.forEach(row => {
+        filteredByBranding.forEach(row => {
             if (!dailyByAd[row.ad_id]) dailyByAd[row.ad_id] = [];
             dailyByAd[row.ad_id].push({
                 date: row.data_referencia,
@@ -598,7 +582,7 @@ export default function CreativesPage() {
             });
         });
 
-        const grouped = filteredByStatus.reduce((acc, row) => {
+        const grouped = filteredByBranding.reduce((acc, row) => {
             if (!acc[row.ad_id]) {
                 acc[row.ad_id] = { ...row, investimento: 0, impressoes: 0, cliques: 0, conversoes: 0 };
             }
@@ -624,7 +608,7 @@ export default function CreativesPage() {
             ...r,
             dailyHistory: dailyByAd[r.ad_id] || []
         }));
-    }, [data, filterBranding, statusFilter, onlyActive]);
+    }, [data, filterBranding]);
 
     // 2. Calculate Stable Account KPIs (The Benchmark - derived from all data in period/unit/course)
     const kpis: KPIs = React.useMemo(() => {
@@ -679,7 +663,8 @@ export default function CreativesPage() {
             .filter((r) => {
                 if (minConversions > 0 && r.conversoes < minConversions) return false;
                 if (minInvestment > 0 && (r.investimento || 0) < minInvestment) return false;
-                if (!filterStatus(r)) return false;
+                // TABLE-ONLY STATUS FILTER: Apply here so it doesn't affect KPIs
+                if (onlyActive && r.effective_status !== 'ACTIVE') return false;
                 return true;
             })
             .sort((a, b) => {
@@ -727,7 +712,7 @@ export default function CreativesPage() {
                 }
                 return sortDir === "asc" ? aVal - bVal : bVal - aVal;
             });
-    }, [allAggregated, sortBy, sortDir, minConversions, minInvestment, filterStatus, onlyActive, kpis.avgCPL]);
+    }, [allAggregated, sortBy, sortDir, minConversions, minInvestment, onlyActive, kpis.avgCPL]);
 
     // Paginated data
     const totalPages = Math.ceil(aggregatedData.length / itemsPerPage);
@@ -747,13 +732,8 @@ export default function CreativesPage() {
     const evolutionData = React.useMemo(() => {
         if (!data) return [];
 
-        // Apply branding AND status filter for consistent evolution data
-        const filteredData = data.filter(row => {
-            if (!filterBranding(row)) return false;
-            if (statusFilter !== "all" && row.effective_status !== statusFilter) return false;
-            if (onlyActive && row.effective_status !== 'ACTIVE') return false;
-            return true;
-        });
+        // Apply ONLY branding filter for evolution data to show full account history
+        const filteredData = data.filter(row => filterBranding(row));
 
         const byDate = filteredData.reduce((acc, row) => {
             const date = row.data_referencia;
@@ -869,18 +849,7 @@ export default function CreativesPage() {
                     </SelectContent>
                 </Select>
 
-                {/* Status Filter */}
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-[160px]">
-                        <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">Todos Status</SelectItem>
-                        {statusOptions.map((s) => (
-                            <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+                <div className="flex-1" />
 
                 {/* Active Only Toggle */}
                 <div className="flex items-center gap-2 ml-auto">
