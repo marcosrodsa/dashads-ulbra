@@ -72,6 +72,10 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
     // UX Refinement: Long-term sanity check
     const isOverallBetter = variation < -10; // Significant improvement from start
 
+    // Threshold Definitions
+    const isHighCost = avgCpl ? (recentAvg > avgCpl * 2.0) : false;
+    const isOverCost = avgCpl ? (recentAvg > avgCpl * 1.15) : false; // 15% margin
+
     // UX Refinement: If it's overall better but recently bouncy, it's "Otimizando"
     const isOptimizing = (variation < -5 || isOverallBetter) && !isImproving && !isDeclining && !isOverCost;
 
@@ -79,6 +83,8 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
     const isCriticalRecovery = isImproving && isHighCost;
 
     // Fatigued: High Cost & Not Improving & NOT Overall better (New Safety)
+    // Mandatory Dual-Factor: Only suggest Red (Pausar) if it's already high AND forecast would likely stay high (using variance/trend)
+    // For the sparkline, if it's improving or overall better, it's not truly fatigued yet.
     const isFatigued = isOverCost && !isImproving && !isOverallBetter;
 
     // Recovering: Improving OR Overall Better but still High Cost (but not Critical)

@@ -325,7 +325,29 @@ export default function CreativesPage() {
             return "Estrela";
         }
 
-        if (isHighCPL || isForecastBad) {
+        // Logic for High CPL ads (Potential Pause/Warning)
+        const isExtremelyHigh = cpl > avgCpl * 1.8;
+        const isVeryHigh = cpl > avgCpl * 1.4;
+
+        // SMARTER PROTECTION: If the ad's average is still BETTER than account average, 
+        // don't suggest PAUSING immediately unless it's a massive sustained spike.
+        const isBetterThanAccount = (ownAvgCpl || cpl) < avgCpl * 0.9;
+
+        // DUAL-FACTOR PAUSE: Only suggest PAUSING if current CPL is high AND forecast is bad.
+        // This prevents killing potentially good ads that have temporary spikes.
+        if (isExtremelyHigh || (isVeryHigh && isForecastBad && !isBetterThanAccount)) {
+            return "Fadigado";
+        }
+
+        if (trend > 1.15 || isForecastBad) {
+            // If the forecast is actually GOOD (green) despite current trend/cpl, 
+            // DO NOT pause. Demote to "Alerta" to watch it recover.
+            const isForecastActuallyGood = predictedCpl && predictedCpl < avgCpl * 1.1;
+
+            if (isForecastActuallyGood) return "CPL em Alta"; // Demote from Pause to Alert
+
+            // Keep as warning if it's still "cheap" relatively
+            if (isBetterThanAccount && cpl < avgCpl * 1.2) return "CPL em Alta";
             return "Fadigado";
         }
 
@@ -728,8 +750,21 @@ export default function CreativesPage() {
 
                 if (sortBy === "status") {
                     const statusWeights: Record<string, number> = {
-                        "Estrela": 1, "Em Recuperação": 2, "Em Otimização": 3, "Testando": 4,
-                        "Estável": 5, "CPL em Alta": 6, "Curva de Fadiga": 7, "Fadigado": 8
+                        // Priority 1: PAUSAR (Red)
+                        "Fadigado": 1,
+                        "Piorando": 1,
+                        // Priority 2: ALERTA (Amber)
+                        "Crítico": 2,
+                        "CPL em Alta": 2,
+                        "Curva de Fadiga": 2,
+                        // Priority 3: ESCALAR (Green)
+                        "Estrela": 3,
+                        "Em Otimização": 3,
+                        // Priority 4: OBSERVAR (Blue)
+                        "Estável": 4,
+                        "Em Recuperação": 4,
+                        "Testando": 4,
+                        "Em Aprendizado": 5
                     };
                     const aWeight = statusWeights[aVal] || 99;
                     const bWeight = statusWeights[bVal] || 99;
