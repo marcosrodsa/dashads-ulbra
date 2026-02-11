@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RefreshCw, History, Video as VideoIcon, BarChart3, Wand2, Sparkles, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Lightbulb, Eye, Info } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getSupabaseClient } from "@/integrations/supabase/client";
-import { format } from "date-fns";
+import { format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -78,6 +78,7 @@ interface InsightsModalProps {
     creativeName: string | null;
     creativeId: string | null;
     campaignName?: string | null;
+    dateRange?: { from: Date; to: Date } | null;
     metrics: {
         conversoes: number;
         cpl: number | null;
@@ -395,6 +396,7 @@ export function CreativeInsightsModal({
     creativeName,
     creativeId,
     campaignName,
+    dateRange,
     metrics,
     onGenerate
 }: InsightsModalProps) {
@@ -467,7 +469,19 @@ export function CreativeInsightsModal({
 
         setIsContextualLoading(true);
         try {
-            const result = await generateContextualInsights(creativeId);
+            // Pass explicit period from UI to ensure backend uses same timeframe
+            const periodStart = dateRange?.from
+                ? format(dateRange.from, 'yyyy-MM-dd')
+                : format(subDays(new Date(), 30), 'yyyy-MM-dd');
+            const periodEnd = dateRange?.to
+                ? format(dateRange.to, 'yyyy-MM-dd')
+                : format(subDays(new Date(), 1), 'yyyy-MM-dd');
+
+            const result = await generateContextualInsights(
+                creativeId,
+                periodStart,
+                periodEnd
+            );
             setContextualAnalysis(result);
 
             // Refresh history

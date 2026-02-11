@@ -71,14 +71,22 @@ Deno.serve(async (req) => {
 
         const { creativeId, periodStart, periodEnd }: AnalysisRequest = await req.json();
         if (!creativeId) throw new Error("Missing creativeId");
+        if (!periodStart || !periodEnd) {
+            throw new Error("periodStart and periodEnd are required - must match UI filter period");
+        }
 
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
         // 1. Temporal Logic (D-1 Enforcement)
+        // Clamp endDate to yesterday to ensure only complete data
         const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        let endDate = periodEnd || yesterday;
-        if (endDate > yesterday) endDate = yesterday;
-        const startDate = periodStart || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        let endDate = periodEnd;
+        if (endDate > yesterday) {
+            console.warn(`[TEMPORAL] endDate ${endDate} > yesterday ${yesterday}, clamping to yesterday`);
+            endDate = yesterday;
+        }
+        const startDate = periodStart;
+        console.log(`[PERIOD] Using explicit period: ${startDate} to ${endDate} (UI-aligned)`);
 
         // 2. Data Fetching
         const { data: asset } = await supabase.from("fact_creative_assets").select("*").eq("ad_id", creativeId).single();

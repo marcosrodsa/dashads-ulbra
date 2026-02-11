@@ -631,10 +631,16 @@ export default function CreativesPage() {
             dailyByAd[adId].sort((a, b) => a.date.localeCompare(b.date));
         });
 
-        return Object.values(grouped).map(r => ({
-            ...r,
-            dailyHistory: dailyByAd[r.ad_id] || []
-        }));
+        return Object.values(grouped).map(r => {
+            const dailyHistory = dailyByAd[r.ad_id] || [];
+            const predicted_cpl = calculateCPLForecast(dailyHistory);
+
+            return {
+                ...r,
+                dailyHistory,
+                predicted_cpl
+            };
+        });
     }, [data, filterBranding]);
 
     // 2. STABLE Account Benchmarks (Unfiltered - stable reference for IA status)
@@ -1468,6 +1474,7 @@ export default function CreativesPage() {
                 creativeId={insightsModal.creative?.ad_id || null}
                 creativeName={insightsModal.creative?.ad_name || null}
                 campaignName={insightsModal.creative?.campaign_name || null}
+                dateRange={{ from: dateRange.start, to: dateRange.end }}
                 metrics={insightsModal.creative ? {
                     conversoes: insightsModal.creative.conversoes || 0,
                     cpl: insightsModal.creative.cpl,
