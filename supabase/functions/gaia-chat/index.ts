@@ -1,5 +1,5 @@
 // Supabase Edge Function: gaia-chat
-// VERSÃO ELITE: Self-Contained Tool Calling com Gemini 1.5 Flash
+// VERSÃO ELITE: Self-Contained Tool Calling com Gemini 1.5 Flash + RAG (Knowledge Base)
 // Nota: Funções estatísticas incorporadas para evitar erros de importação no deploy.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -134,6 +134,20 @@ const TOOLS = [
                     },
                     required: ["dimension"]
                 }
+            },
+            {
+                name: "search_knowledge_base",
+                description: "CONSULTA TÉCNICA/CONCEITUAL: Busca no 'cérebro' da Gaia definições de KPIs, regras de negócio, nomes de tabelas, colunas SQL e como os dashboards funcionam. Use SEMPRE que o usuário perguntar 'O que é...', 'Como calcula...', 'Onde vejo...' ou perguntas sobre o sistema.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        query: {
+                            type: "string",
+                            description: "A pergunta ou termo para buscar na base de conhecimento (ex: 'Definição de CPL', 'Tabela de Budget')."
+                        }
+                    },
+                    required: ["query"]
+                }
             }
         ]
     }
@@ -213,24 +227,24 @@ serve(async (req) => {
         };
 
         const today = new Date().toISOString().split("T")[0];
-        const systemInstruction = `Você é a Gaia Elite v3.0 (Otimização Proativa). HOJE É ${today} (FEVEREIRO/2026).
-Seu objetivo é ser PROATIVA, ANALÍTICA e DIRETA. NÃO FAÇA PERGUNTAS DE CLARIFICAÇÃO SE O CONTEXTO JÁ EXISTE.
+        const systemInstruction = `Você é a Gaia Elite v3.5 (RAG-Enhanced). HOJE É ${today} (FEVEREIRO/2026).
+Seu objetivo é ser PROATIVA, ANALÍTICA e DIRETA.
 
 DIRETRIZES DE INTELIGÊNCIA:
-1. SEM PERGUNTAS DE CLARIFICAÇÃO: Se o usuário perguntar "Como está a performance?", use os valores de Unidade: "${context?.unidade || 'Todas'}" e Curso: "${context?.curso || 'Todos'}" IMEDIATAMENTE. Nunca pergunte "Para qual unidade?" se o contexto não for nulo. Se for null, assuma "Todas".
-2. CHAMADA DE FERRAMENTA OBRIGATÓRIA: Antes de dizer "Não sei" ou pedir detalhes, você DEVE tentar chamar uma ferramenta com o contexto disponível.
-3. DIFERENCIAÇÃO DE DADOS:
-    - PERFORMANCE/PREVISÃO: Use 'query_global_performance'. Ela dá o CPL real e a PREDIÇÃO (campo forecast). Para perguntas de "Como está indo" ou "Previsão", use esta.
-    - ORÇAMENTO/CONSUMO: Use 'query_budget_comparison'. Ela dá o Planejado vs Real. Para perguntas de "Consumo" ou "Orçamento", use esta.
+1. SEM PERGUNTAS DE CLARIFICAÇÃO: Use o contexto: Unidade="${context?.unidade || 'Todas'}", Curso="${context?.curso || 'Todos'}".
+2. RAG (CONHECIMENTO TÉCNICO): Se o usuário perguntar "O que é...", "Como funciona...", "Qual tabela..." ou algo conceitual, USE A TOOL 'search_knowledge_base' primeiro.
+3. DATA-DRIVEN: 
+    - Consumo/Meta -> 'query_budget_comparison'
+    - Performance/Previsão -> 'query_global_performance'
 4. REALIDADE TEMPORAL:
-    - Fevereiro/2026 é o mês ATUAL e OPERACIONAL.
-    - Março/2026 é PLANEJAMENTO FUTURO. Ignore Março a menos que perguntem especificamente por ele. Se a ferramenta retornar Março como "esta semana", CORRIJA e procure a semana de Fevereiro.
-5. TRANSPARÊNCIA: Informe a data do dado mais recente (campo latest_data_date) se houver delay.
+    - Fevereiro/2026 é o mês ATUAL.
+    - Se a ferramenta retornar Março, ignore ou alerte que é futuro.
+5. TRANSPARÊNCIA: Cite a fonte se usar a Knowledge Base (ex: "Segundo a documentação do módulo Budget...").
 
 CONTEXTO DASHBOARD ATUAL:
 - Unidade: "${context?.unidade || 'Todas'}"
 - Curso: "${context?.curso || 'Todos'}"
-- Período do Filtro: ${dateRange.start} até ${dateRange.end} (Nota: Dados reais disponíveis até ontém)`;
+- Período do Filtro: ${dateRange.start} até ${dateRange.end}`;
 
         let chatContents = [...conversationHistory];
         if (chatContents.length === 0 || chatContents[chatContents.length - 1]?.parts?.[0]?.text !== message) {
@@ -238,9 +252,9 @@ CONTEXTO DASHBOARD ATUAL:
         }
 
         const MODELS = [
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-flash",
-            "gemini-3-flash"
+            "gemini-2.0-flash", // Upgrade to 2.0 if available/stable, fallback strictly happens below
+            "gemini-1.5-pro",   // Better reasoning for RAG
+            "gemini-1.5-flash"
         ];
 
         let toolExecutionCount = 0;
@@ -373,8 +387,47 @@ CONTEXTO DASHBOARD ATUAL:
                             p_end_date: args.end_date || dateRange.end
                         });
                         toolResult = data;
+                    } else if (name === "search_knowledge_base") {
+                        // RAG LOGIC START
+                        const embeddingApiKey = apiKeys[0]; // Use first available key
+                        // SQUAD FIX: Use gemini-embedding-001 explicitly (Confirmed via Diagnostics)
+                        const embeddingUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${embeddingApiKey}`;
+
+                        const embRes = await fetch(embeddingUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                content: { parts: [{ text: args.query }] }
+                                // 'model' field removed to rely on URL path
+                            })
+                        });
+
+                        if (!embRes.ok) {
+                            throw new Error(`Embedding Error: ${await embRes.text()}`);
+                        }
+
+                        const embData = await embRes.json();
+                        const queryVector = embData.embedding.values;
+
+                        // Call RPC match_knowledge
+                        const { data: knowledgeData, error: knowledgeError } = await supabase.rpc('match_knowledge', {
+                            query_embedding: queryVector,
+                            match_threshold: 0.5, // Only relevant matches
+                            match_count: 3
+                        });
+
+                        if (knowledgeError) throw knowledgeError;
+
+                        toolResult = {
+                            matches: knowledgeData?.map((k: any) => ({
+                                content: k.content,
+                                source: k.metadata?.source,
+                                similarity: k.similarity
+                            }))
+                        };
+                        // RAG LOGIC END
                     }
-                } catch (toolErr) {
+                } catch (toolErr: any) {
                     console.error(`Erro executando ferramenta ${name}:`, toolErr);
                     toolResult = { error: toolErr.message };
                 }
@@ -401,7 +454,7 @@ CONTEXTO DASHBOARD ATUAL:
             headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Gaia Elite Runtime Error:", error);
         return new Response(JSON.stringify({ success: false, error: error.message }), {
             status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" }
