@@ -696,7 +696,7 @@ export default function CreativesPage() {
         const totalClicks = displaySet.reduce((acc, r) => acc + (r.cliques || 0), 0);
 
         return {
-            totalCreatives: displaySet.length,
+            totalCreatives: performanceData.length, // ✅ FIX: Count only non-branding creatives
             totalConversions,
             totalSpend,
             avgCPL: performanceConversions > 0 ? performanceSpend / performanceConversions : null,
