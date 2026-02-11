@@ -84,6 +84,7 @@ interface InsightsModalProps {
         ctr: number;
         investimento: number;
         avgCPL: number | null;
+        predictedCpl?: number | null;
     } | null;
     onGenerate?: () => void;
 }
@@ -632,14 +633,14 @@ export function CreativeInsightsModal({
                                                             <Info className="h-3 w-3 cursor-help text-purple-400" />
                                                         </TooltipTrigger>
                                                         <TooltipContent className="max-w-[200px] p-2 text-[11px]">
-                                                            <p>Este é o custo futuro que o <strong>modelo estatístico de regressão</strong> prevê para este anúncio.</p>
+                                                            <p>Estimativa do CPL para amanhã baseada na <strong>regressão linear</strong> dos últimos 14 dias.</p>
                                                             <p className="mt-1 text-muted-foreground italic text-[10px]"><strong>O que é regressão:</strong> Uma técnica que encontra padrões no passado para traçar uma "linha de tendência" e projetar o futuro.</p>
                                                         </TooltipContent>
                                                     </Tooltip>
                                                 </TooltipProvider>
                                             </p>
                                             <p className="text-lg font-bold">
-                                                {contextualAnalysis.performance.cpa ? `R$ ${contextualAnalysis.performance.cpa.toFixed(2)}` : 'N/A'}
+                                                {metrics?.predictedCpl ? `R$ ${metrics.predictedCpl.toFixed(2)}` : 'N/A'}
                                             </p>
                                         </div>
                                     </div>

@@ -267,8 +267,8 @@ export default function CampaignClassifierPage() {
             }
         }
 
-        const pending = all.filter(c => !c.mapping_id);
-        const mapped = all.filter(c => !!c.mapping_id);
+        const pending = all.filter(c => !c.is_ignored && (!c.mapping_id || !c.unit_id || !c.course_id));
+        const mapped = all.filter(c => c.is_ignored || (!!c.mapping_id && !!c.unit_id && !!c.course_id));
 
         // Decide what to show based on current tab
         let toShow: AggregatedCampaign[] = [];

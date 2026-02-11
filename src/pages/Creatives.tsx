@@ -335,7 +335,9 @@ export default function CreativesPage() {
 
         // DUAL-FACTOR PAUSE: Only suggest PAUSING if current CPL is high AND forecast is bad.
         // This prevents killing potentially good ads that have temporary spikes.
-        if (isExtremelyHigh || (isVeryHigh && isForecastBad && !isBetterThanAccount)) {
+        const isHealthy = cpl < avgCpl * 1.05; // Guardrail: within 5% of account average or better
+
+        if (!isHealthy && (isExtremelyHigh || (isVeryHigh && isForecastBad && !isBetterThanAccount))) {
             return "Fadigado";
         }
 
@@ -344,7 +346,7 @@ export default function CreativesPage() {
             // DO NOT pause. Demote to "Alerta" to watch it recover.
             const isForecastActuallyGood = predictedCpl && predictedCpl < avgCpl * 1.1;
 
-            if (isForecastActuallyGood) return "CPL em Alta"; // Demote from Pause to Alert
+            if (isForecastActuallyGood || isHealthy) return "CPL em Alta"; // Guardrail protects healthy ads
 
             // Keep as warning if it's still "cheap" relatively
             if (isBetterThanAccount && cpl < avgCpl * 1.2) return "CPL em Alta";
@@ -1471,7 +1473,8 @@ export default function CreativesPage() {
                     cpl: insightsModal.creative.cpl,
                     ctr: insightsModal.creative.ctr || 0,
                     investimento: insightsModal.creative.investimento || 0,
-                    avgCPL: kpis.avgCPL
+                    avgCPL: kpis.avgCPL,
+                    predictedCpl: insightsModal.creative.predicted_cpl || null
                 } : null}
             />
         </div>
