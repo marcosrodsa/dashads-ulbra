@@ -315,10 +315,13 @@ export default function CreativesPage() {
         }
 
         if (isLowCPL) {
-            // Safety: even with low current CPL, if forecast is bad or it spiked recently
-            if (isForecastBad || isOwnSpike) return "Curva de Fadiga";
+            // SMARTER FATIGUE: only flag as Fatigue Curve if forecast confirms an upcoming increase
+            // If forecast is good (predicted < current or predicted < avg), keep as Star/Scaling
+            const isForecastRising = predictedCpl && predictedCpl > cpl * 1.1;
 
-            if (isCurrentBad || trend > 1.10) return "Curva de Fadiga";
+            if (isForecastBad || (isOwnSpike && isForecastRising)) return "Curva de Fadiga";
+
+            if (isCurrentBad || (trend > 1.10 && isForecastRising)) return "Curva de Fadiga";
             return "Estrela";
         }
 
