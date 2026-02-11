@@ -696,13 +696,13 @@ export default function CreativesPage() {
         const totalClicks = displaySet.reduce((acc, r) => acc + (r.cliques || 0), 0);
 
         return {
-            totalCreatives: performanceData.length, // ✅ FIX: Count only non-branding creatives
+            totalCreatives: hideBranding ? performanceData.length : displaySet.length, // Respect branding filter toggle
             totalConversions,
             totalSpend,
             avgCPL: performanceConversions > 0 ? performanceSpend / performanceConversions : null,
             avgCTR: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
         };
-    }, [allAggregated, onlyActive]);
+    }, [allAggregated, onlyActive, hideBranding]); // Add hideBranding to dependencies
 
     // 3. Final Table Data (Applying Table-specific filters and sorting)
     const aggregatedData = React.useMemo(() => {
