@@ -610,10 +610,10 @@ export default function CreativesPage() {
         }));
     }, [data, filterBranding]);
 
-    // 2. Calculate Stable Account KPIs (The Benchmark - derived from all data in period/unit/course)
-    const kpis: KPIs = React.useMemo(() => {
+    // 2. STABLE Account Benchmarks (Unfiltered - stable reference for IA status)
+    const stableBenchmarks = React.useMemo(() => {
         if (!allAggregated || allAggregated.length === 0) {
-            return { totalCreatives: 0, totalConversions: 0, avgCPL: null, avgCTR: 0, totalSpend: 0 };
+            return { avgCPL: 0, avgCTR: 0 };
         }
 
         const performanceData = allAggregated.filter(r => {
@@ -626,8 +626,6 @@ export default function CreativesPage() {
             return !isBranding;
         });
 
-        const totalSpend = allAggregated.reduce((acc, r) => acc + (r.investimento || 0), 0);
-        const totalConversions = allAggregated.reduce((acc, r) => acc + (r.conversoes || 0), 0);
         const performanceSpend = performanceData.reduce((acc, r) => acc + (r.investimento || 0), 0);
         const performanceConversions = performanceData.reduce((acc, r) => acc + (r.conversoes || 0), 0);
 
@@ -635,13 +633,49 @@ export default function CreativesPage() {
         const totalClicks = allAggregated.reduce((acc, r) => acc + (r.cliques || 0), 0);
 
         return {
-            totalCreatives: allAggregated.length,
+            avgCPL: performanceConversions > 0 ? performanceSpend / performanceConversions : 0,
+            avgCTR: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
+        };
+    }, [allAggregated]);
+
+    // 2b. DISPLAY KPIs (Filtered - matches what user sees on screen)
+    const kpis: KPIs = React.useMemo(() => {
+        if (!allAggregated || allAggregated.length === 0) {
+            return { totalCreatives: 0, totalConversions: 0, avgCPL: null, avgCTR: 0, totalSpend: 0 };
+        }
+
+        // Apply active filter for display KPIs
+        const displaySet = allAggregated.filter(r => {
+            if (onlyActive && r.effective_status !== 'ACTIVE') return false;
+            return true;
+        });
+
+        const performanceData = displaySet.filter(r => {
+            const u = (r.unidade || "").toLowerCase();
+            const c = (r.curso || "").toLowerCase();
+            const campName = (r.campaign_name || "").toLowerCase();
+            const isBranding = u.includes("branding") || u.includes("institucional") ||
+                c.includes("branding") || campName.includes("branding") ||
+                campName.includes("institucional");
+            return !isBranding;
+        });
+
+        const totalSpend = displaySet.reduce((acc, r) => acc + (r.investimento || 0), 0);
+        const totalConversions = displaySet.reduce((acc, r) => acc + (r.conversoes || 0), 0);
+        const performanceSpend = performanceData.reduce((acc, r) => acc + (r.investimento || 0), 0);
+        const performanceConversions = performanceData.reduce((acc, r) => acc + (r.conversoes || 0), 0);
+
+        const totalImpressions = displaySet.reduce((acc, r) => acc + (r.impressoes || 0), 0);
+        const totalClicks = displaySet.reduce((acc, r) => acc + (r.cliques || 0), 0);
+
+        return {
+            totalCreatives: displaySet.length,
             totalConversions,
             totalSpend,
             avgCPL: performanceConversions > 0 ? performanceSpend / performanceConversions : null,
             avgCTR: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
         };
-    }, [allAggregated]);
+    }, [allAggregated, onlyActive]);
 
     // 3. Final Table Data (Applying Table-specific filters and sorting)
     const aggregatedData = React.useMemo(() => {
@@ -656,7 +690,7 @@ export default function CreativesPage() {
                     ...r,
                     ctr: r.impressoes > 0 ? (r.cliques / r.impressoes) * 100 : 0,
                     cpl: cplValue,
-                    computedStatus: getCreativeStatus(cplValue, kpis.avgCPL || 0, history, predictedCpl),
+                    computedStatus: getCreativeStatus(cplValue, stableBenchmarks.avgCPL || 0, history, predictedCpl),
                     predicted_cpl: predictedCpl
                 };
             })
@@ -712,7 +746,7 @@ export default function CreativesPage() {
                 }
                 return sortDir === "asc" ? aVal - bVal : bVal - aVal;
             });
-    }, [allAggregated, sortBy, sortDir, minConversions, minInvestment, onlyActive, kpis.avgCPL]);
+    }, [allAggregated, sortBy, sortDir, minConversions, minInvestment, onlyActive, stableBenchmarks.avgCPL]);
 
     // Paginated data
     const totalPages = Math.ceil(aggregatedData.length / itemsPerPage);
@@ -728,12 +762,16 @@ export default function CreativesPage() {
 
 
 
-    // Daily aggregation for evolution chart (applies branding filter)
+    // Daily aggregation for evolution chart (applies branding AND active filter for consistency)
     const evolutionData = React.useMemo(() => {
         if (!data) return [];
 
-        // Apply ONLY branding filter for evolution data to show full account history
-        const filteredData = data.filter(row => filterBranding(row));
+        const filteredData = data.filter(row => {
+            if (!filterBranding(row)) return false;
+            // SYNC CHART WITH DISPLAY FILTER
+            if (onlyActive && row.effective_status !== 'ACTIVE') return false;
+            return true;
+        });
 
         const byDate = filteredData.reduce((acc, row) => {
             const date = row.data_referencia;
@@ -752,7 +790,7 @@ export default function CreativesPage() {
                 leads: values.leads,
                 cpl: values.leads > 0 ? values.spend / values.leads : 0,
             }));
-    }, [data, filterBranding]);
+    }, [data, filterBranding, onlyActive]);
 
     return (
         <div className="flex flex-col gap-6 p-6">
@@ -1206,7 +1244,7 @@ export default function CreativesPage() {
                                                                 // Simple Fatigue logic for UI indicator
                                                                 const history = row.dailyHistory || [];
                                                                 const isFatigued = history.length >= 7 &&
-                                                                    kpis.avgCPL && row.cpl && row.cpl > kpis.avgCPL * 1.5;
+                                                                    stableBenchmarks.avgCPL && row.cpl && row.cpl > stableBenchmarks.avgCPL * 1.5;
 
                                                                 if (isFatigued) {
                                                                     return (
@@ -1264,8 +1302,8 @@ export default function CreativesPage() {
                                                 <div className={cn(
                                                     "font-medium font-mono text-[12px]",
                                                     !row.cpl ? "text-muted-foreground" :
-                                                        kpis.avgCPL && row.cpl <= kpis.avgCPL ? "text-emerald-600" :
-                                                            kpis.avgCPL && row.cpl <= kpis.avgCPL * 1.3 ? "text-amber-500" :
+                                                        stableBenchmarks.avgCPL && row.cpl <= stableBenchmarks.avgCPL ? "text-emerald-600" :
+                                                            stableBenchmarks.avgCPL && row.cpl <= stableBenchmarks.avgCPL * 1.3 ? "text-amber-500" :
                                                                 "text-red-600"
                                                 )}>
                                                     {brl(row.cpl)}
@@ -1291,7 +1329,7 @@ export default function CreativesPage() {
                                                             data={row.dailyHistory || []}
                                                             width={180}
                                                             height={24}
-                                                            avgCpl={kpis.avgCPL}
+                                                            avgCpl={stableBenchmarks.avgCPL}
                                                         />
                                                     </div>
                                                     {/* PRESENTE and FUTURO Row */}
