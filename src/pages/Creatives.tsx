@@ -1170,9 +1170,9 @@ export default function CreativesPage() {
                                         <span className="flex items-center justify-end text-[13px]">Invest. {getSortIcon("investimento")}</span>
                                     </TableHead>
 
-                                    <TableHead className="text-center w-[200px] p-2">
-                                        <div className="flex items-center justify-center gap-1 text-xs">
-                                            Saúde & Tendência
+                                    <TableHead className="text-center w-[200px] cursor-pointer p-2" onClick={() => toggleSort("status")}>
+                                        <div className="flex items-center justify-center gap-1 text-[13px]">
+                                            Saúde & Tendência {getSortIcon("status")}
                                             <TooltipProvider>
                                                 <Tooltip>
                                                     <TooltipTrigger asChild>
