@@ -168,7 +168,10 @@ export function DashboardFilterBar() {
 
     // --- State and Logic for Split Date UX (Period Select + Custom Date Picker) ---
     const nowRef = React.useRef(new Date());
-    const todayStable = new Date(nowRef.current.getFullYear(), nowRef.current.getMonth(), nowRef.current.getDate());
+    const todayStable = React.useMemo(() => {
+        const d = nowRef.current;
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }, []);
 
     const rangeStart = filters.dateRange?.from ?? startOfMonth(todayStable);
     const rangeEnd = filters.dateRange?.to ?? filters.dateRange?.from ?? endOfMonth(rangeStart);
@@ -180,13 +183,11 @@ export function DashboardFilterBar() {
         return `(${format(start, "dd/MM")} - ${format(end, "dd/MM")})`;
     };
 
-    // Detect initial period from filters
-    const detectPeriod = React.useCallback(() => {
+    // DERIVED STATE: period is calculated directly from global dateRange
+    const period = React.useMemo(() => {
         if (!filters.dateRange?.from || !filters.dateRange?.to) return "custom";
 
         const yesterday = subDays(todayStable, 1);
-
-        // Se não termina ontem, é personalizado
         if (!isSameDay(filters.dateRange.to, yesterday)) return "custom";
 
         const diff = differenceInCalendarDays(filters.dateRange.to, filters.dateRange.from) + 1;
@@ -194,36 +195,6 @@ export function DashboardFilterBar() {
 
         return "custom";
     }, [filters.dateRange, todayStable]);
-
-    const [period, setPeriod] = React.useState<string>(detectPeriod());
-
-    // 1. Sync DateRange -> Local Period State (When global filters change)
-    React.useEffect(() => {
-        const detected = detectPeriod();
-        if (detected !== period) {
-            setPeriod(detected);
-        }
-    }, [filters.dateRange, detectPeriod, period]);
-
-    // 2. Sync Local Period Dropdown -> Global Filter State
-    React.useEffect(() => {
-        if (period !== "custom") {
-            const end = subDays(todayStable, 1); // Yesterday at 00:00
-            const days = parseInt(period) || 30;
-            const start = subDays(end, days - 1); // Start also at 00:00
-
-            // Ajustar end para fim do dia (23:59:59) para garantir que pegamos todos os dados do dia final
-            const preciseEnd = new Date(end);
-            preciseEnd.setHours(23, 59, 59, 999);
-
-            const currentStart = filters.dateRange?.from;
-            const currentEnd = filters.dateRange?.to;
-
-            if (!currentStart || !currentEnd || !isSameDay(currentStart, start) || !isSameDay(currentEnd, preciseEnd)) {
-                setDateRange({ from: start, to: preciseEnd });
-            }
-        }
-    }, [period, setDateRange, todayStable]); // Incluímos todayStable para segurança, mas ele é baseado numa ref estável
 
 
     const businessUnitsQuery = useQuery({
@@ -297,10 +268,15 @@ export function DashboardFilterBar() {
                                 <Select
                                     value={period}
                                     onValueChange={(v) => {
-                                        setPeriod(v);
                                         if (v === "custom") {
-                                            // Limpa o range ao entrar no modo personalizado para facilitar a escolha de um dia único
                                             setDateRange(undefined);
+                                        } else {
+                                            const days = parseInt(v);
+                                            const end = subDays(todayStable, 1);
+                                            const start = subDays(end, days - 1);
+                                            const preciseEnd = new Date(end);
+                                            preciseEnd.setHours(23, 59, 59, 999);
+                                            setDateRange({ from: start, to: preciseEnd });
                                         }
                                     }}
                                 >

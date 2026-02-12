@@ -35,16 +35,26 @@ type FiltersContextValue = {
 
 const FiltersContext = React.createContext<FiltersContextValue | null>(null);
 
-const defaultFilters = (): FiltersState => ({
-  month: startOfMonth(new Date()),
-  dateRange: { from: startOfMonth(new Date()), to: endOfMonth(new Date()) },
-  businessUnit: null,
-  course: null,
-  platform: null,
-  week: null,
-  excludeEad: false,
-  hideBranding: true,
-});
+const defaultFilters = (): FiltersState => {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const s = startOfMonth(today);
+  const e = endOfMonth(today);
+  // Garantir fim do dia para consistência com filtros
+  const preciseEnd = new Date(e);
+  preciseEnd.setHours(23, 59, 59, 999);
+
+  return {
+    month: s,
+    dateRange: { from: s, to: preciseEnd },
+    businessUnit: null,
+    course: null,
+    platform: null,
+    week: null,
+    excludeEad: false,
+    hideBranding: true,
+  };
+};
 
 export function FiltersProvider({ children }: { children: React.ReactNode }) {
   const [filters, setFilters] = React.useState<FiltersState>(() => defaultFilters());

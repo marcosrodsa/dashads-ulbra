@@ -230,19 +230,20 @@ export default function CreativesPage() {
     const [onlyActive, setOnlyActive] = React.useState(true);
     const itemsPerPage = 100;
 
-    const [period, setPeriod] = React.useState<string>("30");
     const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
 
     // --- State and Logic for Split Date UX ---
     const nowRef = React.useRef(new Date());
-    const todayStable = new Date(nowRef.current.getFullYear(), nowRef.current.getMonth(), nowRef.current.getDate());
+    const todayStable = React.useMemo(() => {
+        const d = nowRef.current;
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }, []);
 
-    // Detect initial period from filters
-    const detectPeriod = React.useCallback(() => {
+    // DERIVED STATE: period is calculated directly from global dateRange
+    const period = React.useMemo(() => {
         if (!globalRange?.from || !globalRange?.to) return "custom";
 
         const yesterday = subDays(todayStable, 1);
-
         if (!isSameDay(globalRange.to, yesterday)) return "custom";
 
         const diff = differenceInCalendarDays(globalRange.to, globalRange.from) + 1;
@@ -250,30 +251,6 @@ export default function CreativesPage() {
 
         return "custom";
     }, [globalRange, todayStable]);
-
-    // 1. Sync DateRange -> Local Period State
-    React.useEffect(() => {
-        const detected = detectPeriod();
-        if (detected !== period) {
-            setPeriod(detected);
-        }
-    }, [globalRange, detectPeriod, period]);
-
-    // 2. Sync Local Period Dropdown -> Global Filter State
-    React.useEffect(() => {
-        if (period !== "custom") {
-            const end = subDays(todayStable, 1);
-            const days = parseInt(period) || 30;
-            const start = subDays(end, days - 1);
-
-            const preciseEnd = new Date(end);
-            preciseEnd.setHours(23, 59, 59, 999);
-
-            if (!globalRange?.from || !globalRange?.to || !isSameDay(globalRange.from, start) || !isSameDay(globalRange.to, preciseEnd)) {
-                setDateRange({ from: start, to: preciseEnd });
-            }
-        }
-    }, [period, setDateRange, todayStable]);
 
     // Default hideBranding to true when entering this page
     React.useEffect(() => {
@@ -862,9 +839,15 @@ export default function CreativesPage() {
                         <Select
                             value={period}
                             onValueChange={(v) => {
-                                setPeriod(v);
                                 if (v === "custom") {
                                     setDateRange(undefined);
+                                } else {
+                                    const days = parseInt(v);
+                                    const end = subDays(todayStable, 1);
+                                    const start = subDays(end, days - 1);
+                                    const preciseEnd = new Date(end);
+                                    preciseEnd.setHours(23, 59, 59, 999);
+                                    setDateRange({ from: start, to: preciseEnd });
                                 }
                             }}
                         >
@@ -926,7 +909,7 @@ export default function CreativesPage() {
                     </label>
                     <Select value={unidade || "all"} onValueChange={(val) => setBusinessUnit(val === "all" ? null : val)}>
                         <SelectTrigger className="h-9 w-full bg-background/50">
-                            <SelectValue placeholder="Todas" />
+                            <SelectValue placeholder="Todos" />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Todas as Unidades</SelectItem>

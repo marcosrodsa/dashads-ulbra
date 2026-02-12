@@ -108,7 +108,10 @@ export function PerformanceFilterBar() {
 
     // --- State and Logic for Split Date UX (Period Select + Custom Date Picker) ---
     const nowRef = React.useRef(new Date());
-    const todayStable = new Date(nowRef.current.getFullYear(), nowRef.current.getMonth(), nowRef.current.getDate());
+    const todayStable = React.useMemo(() => {
+        const d = nowRef.current;
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }, []);
 
     // Helper to get formatted range label for presets
     const getPresetRangeLabel = (days: number) => {
@@ -117,12 +120,11 @@ export function PerformanceFilterBar() {
         return `(${format(start, "dd/MM")} - ${format(end, "dd/MM")})`;
     };
 
-    // Detect initial period from filters
-    const detectPeriod = React.useCallback(() => {
+    // DERIVED STATE: period is calculated directly from global dateRange
+    const period = React.useMemo(() => {
         if (!filters.dateRange?.from || !filters.dateRange?.to) return "custom";
 
         const yesterday = subDays(todayStable, 1);
-
         if (!isSameDay(filters.dateRange.to, yesterday)) return "custom";
 
         const diff = differenceInCalendarDays(filters.dateRange.to, filters.dateRange.from) + 1;
@@ -131,34 +133,7 @@ export function PerformanceFilterBar() {
         return "custom";
     }, [filters.dateRange, todayStable]);
 
-    const [period, setPeriod] = React.useState<string>(detectPeriod());
-
-    // 1. Sincronizar Range -> Dropdown (Local State)
-    React.useEffect(() => {
-        const detected = detectPeriod();
-        if (detected !== period) {
-            setPeriod(detected);
-        }
-    }, [filters.dateRange, detectPeriod, period]);
-
-    // 2. Sincronizar Dropdown -> Range (Global Context)
-    React.useEffect(() => {
-        if (period !== "custom") {
-            const end = subDays(todayStable, 1);
-            const days = parseInt(period) || 30;
-            const start = subDays(end, days - 1);
-
-            const preciseEnd = new Date(end);
-            preciseEnd.setHours(23, 59, 59, 999);
-
-            const currentStart = filters.dateRange?.from;
-            const currentEnd = filters.dateRange?.to;
-
-            if (!currentStart || !currentEnd || !isSameDay(currentStart, start) || !isSameDay(currentEnd, preciseEnd)) {
-                setDateRange({ from: start, to: preciseEnd });
-            }
-        }
-    }, [period, setDateRange, todayStable]); // Removi filters.dateRange daqui para evitar loop circular
+    // Effects that sync state were replaced by derived period + direct setDateRange in Select below
 
     const activeFiltersCount = [
         filters.businessUnit,
@@ -240,10 +215,15 @@ export function PerformanceFilterBar() {
                                 <Select
                                     value={period}
                                     onValueChange={(v) => {
-                                        setPeriod(v);
                                         if (v === "custom") {
-                                            // Limpa o range ao entrar no modo personalizado para facilitar a escolha de um dia único
                                             setDateRange(undefined);
+                                        } else {
+                                            const days = parseInt(v);
+                                            const end = subDays(todayStable, 1);
+                                            const start = subDays(end, days - 1);
+                                            const preciseEnd = new Date(end);
+                                            preciseEnd.setHours(23, 59, 59, 999);
+                                            setDateRange({ from: start, to: preciseEnd });
                                         }
                                     }}
                                 >
