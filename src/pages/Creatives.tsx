@@ -13,11 +13,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
-import { Sparkles, TrendingUp, TrendingDown, Eye, MousePointer, DollarSign, Users, Image, Video, LayoutGrid, RefreshCw, CalendarIcon, Info, ArrowUpDown, ArrowUp, ArrowDown, Wand2, ExternalLink, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { Sparkles, TrendingUp, TrendingDown, Eye, MousePointer, DollarSign, Users, Image, Video, LayoutGrid, RefreshCw, CalendarIcon, Info, ArrowUpDown, ArrowUp, ArrowDown, Wand2, ExternalLink, ChevronLeft, ChevronRight, AlertTriangle, CalendarDays, Building2, GraduationCap, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { CplEvolutionChart } from "@/components/performance/PerformanceCharts";
 import { CreativeCPLHeatmap } from "@/components/creatives/CreativeCPLHeatmap";
 import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { CreativeInsightsModal } from "@/components/creatives/CreativeInsightsModal";
 import { CplSparkline } from "@/components/creatives/CplSparkline";
 import { useFilters } from "@/contexts/filters-context";
@@ -808,128 +809,144 @@ export default function CreativesPage() {
             </div>
 
             {/* Filters */}
-            <div className="flex flex-wrap gap-4 items-center">
-                <Select
-                    value={period}
-                    onValueChange={(v) => {
-                        setPeriod(v);
-                        if (v === "custom") {
-                            // Limpa o range ao entrar no modo personalizado para facilitar a escolha de um dia único
-                            setDateRange(undefined);
-                        }
-                    }}
-                >
-                    <SelectTrigger className="w-[260px]">
-                        <SelectValue placeholder="Período" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="1">
-                            Ontem <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(1)}</span>
-                        </SelectItem>
-                        <SelectItem value="7">
-                            Últimos 7 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(7)}</span>
-                        </SelectItem>
-                        <SelectItem value="15">
-                            Últimos 15 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(15)}</span>
-                        </SelectItem>
-                        <SelectItem value="30">
-                            Últimos 30 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(30)}</span>
-                        </SelectItem>
-                        <SelectItem value="90">
-                            Últimos 90 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(90)}</span>
-                        </SelectItem>
-                        <SelectItem value="custom">Personalizado</SelectItem>
-                    </SelectContent>
-                </Select>
-
-                {period === "custom" && (
-                    <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-                        <PopoverTrigger asChild>
-                            <Button variant="outline" className="w-[240px] justify-start text-left font-normal">
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {globalRange?.from ? (
-                                    globalRange.to && !isSameDay(globalRange.from, globalRange.to) ? (
-                                        <>{format(globalRange.from, "dd/MM/yy", { locale: ptBR })} - {format(globalRange.to, "dd/MM/yy", { locale: ptBR })}</>
-                                    ) : (
-                                        format(globalRange.from, "dd/MM/yyyy", { locale: ptBR })
-                                    )
-                                ) : (
-                                    <span>Selecione o período</span>
-                                )}
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                                mode="range"
-                                selected={globalRange}
-                                onSelect={(range) => {
-                                    setDateRange(range);
-                                    // If both are selected, close. Or if it's the second click on same day.
-                                    if (range?.from && range?.to) {
-                                        setIsCalendarOpen(false);
-                                    }
-                                }}
-                                numberOfMonths={2}
-                                locale={ptBR}
-                            />
-                        </PopoverContent>
-                    </Popover>
-                )}
-
-                <Select value={unidade || "all"} onValueChange={(val) => setBusinessUnit(val === "all" ? null : val)}>
-                    <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Unidade" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">Todas as Unidades</SelectItem>
-                        {unidades.map((u) => (
-                            <SelectItem key={u} value={u}>{u}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-
-                <Select value={curso || "all"} onValueChange={(val) => setCourse(val === "all" ? null : val)}>
-                    <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Curso" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">Todos os Cursos</SelectItem>
-                        {cursos.map((c) => (
-                            <SelectItem key={c} value={c}>{c}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-
-                <div className="flex-1" />
-
-                {/* Active Only Toggle */}
-                <div className="flex items-center gap-2 ml-auto">
-                    <Switch
-                        id="onlyActive"
-                        checked={onlyActive}
-                        onCheckedChange={setOnlyActive}
-                    />
-                    <label
-                        htmlFor="onlyActive"
-                        className="text-sm text-muted-foreground cursor-pointer select-none"
-                    >
-                        Apenas Ativos
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6 bg-slate-50/50 p-3 rounded-lg border">
+                {/* Período */}
+                <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                        <CalendarDays className="h-3.5 w-3.5" />
+                        Período
                     </label>
+                    <div className="flex flex-col gap-2 relative">
+                        <Select
+                            value={period}
+                            onValueChange={(v) => {
+                                setPeriod(v);
+                                if (v === "custom") {
+                                    setDateRange(undefined);
+                                }
+                            }}
+                        >
+                            <SelectTrigger className="h-9 w-full bg-background/50">
+                                <SelectValue placeholder="Selecione" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="1">Ontem <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(1)}</span></SelectItem>
+                                <SelectItem value="7">Últimos 7 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(7)}</span></SelectItem>
+                                <SelectItem value="15">Últimos 15 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(15)}</span></SelectItem>
+                                <SelectItem value="30">Últimos 30 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(30)}</span></SelectItem>
+                                <SelectItem value="90">Últimos 90 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(90)}</span></SelectItem>
+                                <SelectItem value="custom">Personalizado</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        {period === "custom" && (
+                            <div className="absolute top-[38px] left-0 z-50 animate-in fade-in zoom-in-95 duration-200">
+                                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button variant="outline" className="w-[240px] justify-start text-left font-normal bg-background shadow-md border-primary/20 h-9">
+                                            <CalendarIcon className="mr-2 h-4 w-4" />
+                                            {globalRange?.from ? (
+                                                globalRange.to && !isSameDay(globalRange.from, globalRange.to) ? (
+                                                    <>{format(globalRange.from, "dd/MM/yy", { locale: ptBR })} - {format(globalRange.to, "dd/MM/yy", { locale: ptBR })}</>
+                                                ) : (
+                                                    format(globalRange.from, "dd/MM/yyyy", { locale: ptBR })
+                                                )
+                                            ) : (
+                                                <span>Selecione o período</span>
+                                            )}
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0" align="start">
+                                        <Calendar
+                                            mode="range"
+                                            selected={globalRange}
+                                            onSelect={(range) => {
+                                                setDateRange(range);
+                                                if (range?.from && range?.to) {
+                                                    setIsCalendarOpen(false);
+                                                }
+                                            }}
+                                            numberOfMonths={2}
+                                            locale={ptBR}
+                                        />
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
-                {/* Branding Toggle */}
-                <div className="flex items-center gap-2">
-                    <Switch
-                        id="hideBranding"
-                        checked={hideBranding}
-                        onCheckedChange={setHideBranding}
-                    />
-                    <label
-                        htmlFor="hideBranding"
-                        className="text-sm text-muted-foreground cursor-pointer select-none"
-                    >
-                        Ocultar Branding
+                {/* Unidade */}
+                <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                        <Building2 className="h-3.5 w-3.5" />
+                        Unidade
                     </label>
+                    <Select value={unidade || "all"} onValueChange={(val) => setBusinessUnit(val === "all" ? null : val)}>
+                        <SelectTrigger className="h-9 w-full bg-background/50">
+                            <SelectValue placeholder="Todas" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Todas as Unidades</SelectItem>
+                            {unidades.map((u) => (
+                                <SelectItem key={u} value={u}>{u}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                {/* Curso */}
+                <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                        <GraduationCap className="h-3.5 w-3.5" />
+                        Curso
+                    </label>
+                    <Select value={curso || "all"} onValueChange={(val) => setCourse(val === "all" ? null : val)}>
+                        <SelectTrigger className="h-9 w-full bg-background/50">
+                            <SelectValue placeholder="Todos" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Todos os Cursos</SelectItem>
+                            {cursos.map((c) => (
+                                <SelectItem key={c} value={c}>{c}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                {/* Toggles Group */}
+                <div className="space-y-3 flex flex-col justify-end pb-1 lg:col-span-2">
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                        {/* Branding Toggle */}
+                        <div className="flex items-center gap-2">
+                            <Switch
+                                id="hideBranding"
+                                checked={hideBranding}
+                                onCheckedChange={setHideBranding}
+                            />
+                            <Label
+                                htmlFor="hideBranding"
+                                className="text-sm font-medium cursor-pointer"
+                            >
+                                Ocultar Branding
+                            </Label>
+                        </div>
+
+                        {/* Active Only Toggle */}
+                        <div className="flex items-center gap-2">
+                            <Switch
+                                id="onlyActive"
+                                checked={onlyActive}
+                                onCheckedChange={setOnlyActive}
+                            />
+                            <Label
+                                htmlFor="onlyActive"
+                                className="text-sm font-medium cursor-pointer"
+                            >
+                                Apenas Ativos
+                            </Label>
+                        </div>
+                    </div>
                 </div>
             </div>
 
