@@ -38,6 +38,11 @@ interface AnalysisRequest {
         curso?: string;
         hideBranding?: boolean;
     };
+    metrics?: {
+        predicted_cpl?: number | null;
+        cpl?: number | null;
+        conversoes?: number;
+    };
 }
 
 interface PerformanceSnapshot {
@@ -74,7 +79,7 @@ Deno.serve(async (req) => {
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing Supabase env vars");
         if (apiKeys.length === 0) throw new Error("No Gemini API Keys found");
 
-        const { creativeId, periodStart, periodEnd, filters }: AnalysisRequest = await req.json();
+        const { creativeId, periodStart, periodEnd, filters, metrics }: AnalysisRequest = await req.json();
         if (!creativeId) throw new Error("Missing creativeId");
         if (!periodStart || !periodEnd) {
             throw new Error("periodStart and periodEnd are required - must match UI filter period");
@@ -138,12 +143,18 @@ Deno.serve(async (req) => {
         }), { impressions: 0, clicks: 0, conversions: 0, spend: 0 });
 
         const ctr = totals.impressions > 0 ? Number(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
-        const cpa = totals.conversions > 0 ? Number((totals.spend / totals.conversions).toFixed(2)) : null;
+        let cpa = totals.conversions > 0 ? Number((totals.spend / totals.conversions).toFixed(2)) : null;
+
+        // OVERRIDE Current CPA with UI value (for absolute parity even in rounding)
+        if (metrics?.cpl !== undefined && metrics.cpl !== null) {
+            console.log(`[PARITY] Using UI-provided actual cpl: ${metrics.cpl}`);
+            cpa = metrics.cpl;
+        }
 
         // 5. Daily Aggregation for Regression (1 point per day)
         const dailyAgg: Record<string, { spend: number, convs: number }> = {};
         filteredData.forEach(d => {
-            const date = d.data_referencia;
+            const date = d.data_referencia.split('T')[0]; // Date truncation consistency
             if (!dailyAgg[date]) dailyAgg[date] = { spend: 0, convs: 0 };
             dailyAgg[date].spend += (d.investimento || 0);
             dailyAgg[date].convs += (d.conversoes || 0);
@@ -151,11 +162,11 @@ Deno.serve(async (req) => {
 
         const dailyData = Object.entries(dailyAgg)
             .map(([date, metrics]) => ({ date, ...metrics }))
-            .filter(d => d.convs > 0)
-            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-            .slice(-14); // LIMIT TO LAST 14 DAYS (match frontend)
+            .filter(d => d.convs > 0 && d.spend > 0) // ALIGNED: Must have spend and conversions
+            .sort((a, b) => a.date.localeCompare(b.date)) // ALIGNED string sort
+            .slice(-14);
 
-        console.log(`[DEBUG] creativeId: ${creativeId}, dailyData.length: ${dailyData.length}`);
+        console.log(`[DEBUG] active regression days: ${dailyData.length}`);
         console.log(`[DEBUG] dailyData CPLs:`, dailyData.map(d => (d.spend / d.convs).toFixed(2)));
 
         let forecast = { predicted_cpl: null as number | null, trend_direction: "stable", confidence_r2: 0 };
@@ -177,7 +188,15 @@ Deno.serve(async (req) => {
                 const ssRes = y.reduce((s, yi, i) => s + Math.pow(yi - (slope * x[i] + intercept), 2), 0);
                 const r2 = ssTot === 0 ? 0 : 1 - (ssRes / ssTot);
 
-                forecast.predicted_cpl = Math.max(0, Number((slope * (n + 1) + intercept).toFixed(2))); // FIX: n+1 (tomorrow)
+                // ALIGNED: Pure float projection, round only at output
+                forecast.predicted_cpl = Math.max(0, slope * (n + 1) + intercept);
+
+                // OVERRIDE with UI values if provided (Absolute Parity)
+                if (metrics?.predicted_cpl !== undefined && metrics.predicted_cpl !== null) {
+                    console.log(`[PARITY] Using UI-provided predicted_cpl: ${metrics.predicted_cpl}`);
+                    forecast.predicted_cpl = metrics.predicted_cpl;
+                }
+
                 forecast.confidence_r2 = Number(r2.toFixed(2));
                 forecast.trend_direction = slope > 0.5 ? "rising" : slope < -0.5 ? "falling" : "stable";
 
@@ -198,12 +217,14 @@ Deno.serve(async (req) => {
 
         const prompt = `Você é a Gaia, Diretora de Criação Sênior da Ulbra.
 Analise este criativo com base nos dados de performance REAIS.
-KPIs (${startDate} a ${endDate}): ${totals.impressions} imps, ${totals.conversions} convs, CPA R$ ${cpa || 'N/A'}.
-Previsão: CPA Projetado R$ ${forecast.predicted_cpl || 'N/A'}, Direção: ${forecast.trend_direction}.
+KPIs (${startDate} a ${endDate}): ${totals.impressions} imps, ${totals.conversions} convs, CPA R$ ${cpa ? cpa.toFixed(2) : 'N/A'}.
+Previsão: CPA Projetado R$ ${forecast.predicted_cpl ? forecast.predicted_cpl.toFixed(2) : 'N/A'}, Direção: ${forecast.trend_direction}.
 
-Instruções:
+Instruções CRÍTICAS:
+- USE OS VALORES DE CPA E CPA PROJETADO ACIMA PARA QUALQUER MENÇÃO NUMÉRICA NO TEXTO. 
+- NÃO recalcule nem invente números diferentes dos fornecidos nos KPIs de entrada (${cpa ? cpa.toFixed(2) : 'N/A'} e ${forecast.predicted_cpl ? forecast.predicted_cpl.toFixed(2) : 'N/A'}).
 - Se imagem indisponível, diga: "Diagnóstico visual indisponível".
-- Explique o PORQUÊ do resultado correlacionando visual/copy com KPIs.
+- Explique o PORQUÊ do resultado correlacionando visual/copy com os KPIs EXATOS fornecidos.
 - Sugira 3 melhorias e indique risco de fadiga.
 
 Retorne EXCLUSIVAMENTE um JSON:

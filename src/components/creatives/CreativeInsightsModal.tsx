@@ -243,7 +243,8 @@ async function generateContextualInsights(
     creativeId: string,
     periodStart?: string,
     periodEnd?: string,
-    filters?: { unidade: string; curso: string; hideBranding: boolean }
+    filters?: { unidade: string; curso: string; hideBranding: boolean },
+    metrics?: any
 ): Promise<ContextualAnalysis | null> {
     try {
         const supabase = getSupabaseClient();
@@ -257,7 +258,8 @@ async function generateContextualInsights(
                 creativeId,
                 periodStart,
                 periodEnd,
-                filters: filters // Pass business filters
+                filters: filters,
+                metrics: metrics // Pass UI-calculated metrics for alignment
             }
         });
 
@@ -489,7 +491,8 @@ export function CreativeInsightsModal({
                 creativeId,
                 periodStart,
                 periodEnd,
-                filters // Passed from props
+                filters, // Passed from props
+                metrics  // Passed from props
             );
             setContextualAnalysis(result);
 
