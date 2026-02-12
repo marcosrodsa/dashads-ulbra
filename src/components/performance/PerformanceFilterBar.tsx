@@ -1,19 +1,20 @@
 import * as React from "react";
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Filter, Building2, GraduationCap, Globe, CalendarDays, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Filter, Building2, GraduationCap, Globe, CalendarDays, X, ChevronDown, ChevronUp, Calendar as CalendarIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { ModernDateFilter } from "@/components/common/ModernDateFilter";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 
+import { Card, CardContent } from "@/components/ui/card";
 import { useFilters } from "@/contexts/filters-context";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 
@@ -32,6 +33,25 @@ function monthOptions(count = 18) {
 
 function asMonthKey(d: Date) {
     return startOfMonth(d).toISOString();
+}
+
+function subDays(date: Date, amount: number): Date {
+    const result = new Date(date);
+    result.setDate(result.getDate() - amount);
+    return result;
+}
+
+function differenceInDays(dateLeft: Date, dateRight: Date): number {
+    const diff = Math.abs(dateLeft.getTime() - dateRight.getTime());
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
+
+function isSameDay(dateLeft: Date, dateRight: Date): boolean {
+    return (
+        dateLeft.getFullYear() === dateRight.getFullYear() &&
+        dateLeft.getMonth() === dateRight.getMonth() &&
+        dateLeft.getDate() === dateRight.getDate()
+    );
 }
 
 // Queries using the new View
@@ -105,6 +125,50 @@ export function PerformanceFilterBar() {
     } = useFilters();
 
     const [isMobileOpen, setIsMobileOpen] = React.useState(false);
+    const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
+
+    // --- State and Logic for Split Date UX (Period Select + Custom Date Picker) ---
+
+    // Helper to get formatted range label for presets
+    const getPresetRangeLabel = (days: number) => {
+        const end = subDays(new Date(), 1); // Yesterday
+        const start = subDays(end, days - 1);
+        return `(${format(start, "dd/MM")} - ${format(end, "dd/MM")})`;
+    };
+
+    // Detect initial period from filters
+    const detectPeriod = React.useCallback(() => {
+        if (!filters.dateRange?.from || !filters.dateRange?.to) return "30"; // Default
+
+        const end = new Date();
+        const yesterday = subDays(end, 1);
+        // Check if TO is Yesterday (ignoring time)
+        if (!isSameDay(filters.dateRange.to, yesterday)) return "custom";
+
+        const diff = differenceInDays(filters.dateRange.to, filters.dateRange.from) + 1;
+        if ([1, 7, 15, 30, 90].includes(diff)) return diff.toString();
+
+        return "custom";
+    }, [filters.dateRange]);
+
+    const [period, setPeriod] = React.useState<string>(detectPeriod());
+
+    // Sync Period -> Filters
+    React.useEffect(() => {
+        if (period !== "custom") {
+            const today = new Date();
+            const end = subDays(today, 1);
+            const days = parseInt(period) || 30;
+            const start = subDays(end, days - 1);
+
+            const currentStart = filters.dateRange?.from;
+            const currentEnd = filters.dateRange?.to;
+
+            if (!currentStart || !currentEnd || !isSameDay(currentStart, start) || !isSameDay(currentEnd, end)) {
+                setDateRange({ from: start, to: end });
+            }
+        }
+    }, [period, setDateRange, filters.dateRange]);
 
     const activeFiltersCount = [
         filters.businessUnit,
@@ -176,16 +240,63 @@ export function PerformanceFilterBar() {
 
                     <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 ${!isMobileOpen ? 'hidden lg:grid' : ''}`}>
 
-                        {/* Mês - Replaced DatePicker with Select */}
                         <div className="space-y-1.5">
                             <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                                 <CalendarDays className="h-3.5 w-3.5" />
                                 Período
                             </label>
-                            <ModernDateFilter
-                                dateRange={filters.dateRange}
-                                onSelect={(range) => setDateRange(range)}
-                            />
+
+                            <div className="flex flex-col gap-2 relative">
+                                <Select value={period} onValueChange={setPeriod}>
+                                    <SelectTrigger className="h-9 w-full bg-background/50">
+                                        <SelectValue placeholder="Selecione" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="1">Ontem <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(1)}</span></SelectItem>
+                                        <SelectItem value="7">Últimos 7 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(7)}</span></SelectItem>
+                                        <SelectItem value="15">Últimos 15 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(15)}</span></SelectItem>
+                                        <SelectItem value="30">Últimos 30 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(30)}</span></SelectItem>
+                                        <SelectItem value="90">Últimos 90 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(90)}</span></SelectItem>
+                                        <SelectItem value="custom">Personalizado</SelectItem>
+                                    </SelectContent>
+                                </Select>
+
+                                {period === "custom" && (
+                                    <div className="absolute top-[38px] left-0 z-50 animate-in fade-in zoom-in-95 duration-200">
+                                        <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                                            <PopoverTrigger asChild>
+                                                <Button variant="outline" className="w-[240px] justify-start text-left font-normal bg-background shadow-md border-primary/20 h-9">
+                                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                                    {filters.dateRange?.from ? (
+                                                        filters.dateRange.to && !isSameDay(filters.dateRange.from, filters.dateRange.to) ? (
+                                                            <>{format(filters.dateRange.from, "dd/MM/yy", { locale: ptBR })} - {format(filters.dateRange.to, "dd/MM/yy", { locale: ptBR })}</>
+                                                        ) : (
+                                                            format(filters.dateRange.from, "dd/MM/yyyy", { locale: ptBR })
+                                                        )
+                                                    ) : (
+                                                        <span>Selecione o período</span>
+                                                    )}
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0" align="start">
+                                                <Calendar
+                                                    mode="range"
+                                                    selected={filters.dateRange}
+                                                    onSelect={(range) => {
+                                                        setDateRange(range);
+                                                        if (range?.from && range?.to) {
+                                                            setIsCalendarOpen(false);
+                                                        }
+                                                    }}
+                                                    numberOfMonths={2}
+                                                    locale={ptBR}
+                                                    initialFocus
+                                                />
+                                            </PopoverContent>
+                                        </Popover>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* Branding Toggle */}
