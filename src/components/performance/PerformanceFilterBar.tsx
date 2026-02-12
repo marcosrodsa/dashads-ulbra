@@ -247,7 +247,16 @@ export function PerformanceFilterBar() {
                             </label>
 
                             <div className="flex flex-col gap-2 relative">
-                                <Select value={period} onValueChange={setPeriod}>
+                                <Select
+                                    value={period}
+                                    onValueChange={(v) => {
+                                        setPeriod(v);
+                                        if (v === "custom") {
+                                            // Limpa o range ao entrar no modo personalizado para facilitar a escolha de um dia único
+                                            setDateRange(undefined);
+                                        }
+                                    }}
+                                >
                                     <SelectTrigger className="h-9 w-full bg-background/50">
                                         <SelectValue placeholder="Selecione" />
                                     </SelectTrigger>
