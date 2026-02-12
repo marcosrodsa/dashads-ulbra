@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { format, subDays, startOfMonth, endOfMonth } from "date-fns";
+import { format, subDays, startOfMonth, endOfMonth, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -230,6 +230,7 @@ export default function CreativesPage() {
     const itemsPerPage = 100;
 
     const [period, setPeriod] = React.useState<string>("30");
+    const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
 
     // Helper function to filter branding
     const filterBranding = React.useCallback((row: CreativeRow) => {
@@ -238,14 +239,20 @@ export default function CreativesPage() {
         const u = (row.unidade || "").toLowerCase();
         const c = (row.curso || "").toLowerCase();
         const campName = (row.campaign_name || "").toLowerCase();
+        const adName = (row.ad_name || "").toLowerCase();
+        const body = (row.body || "").toLowerCase();
 
-        const isEad = u.includes("ead") || c.includes("ead");
-        const isBranding = u.includes("branding") || u.includes("institucional") ||
-            c.includes("branding") || campName.includes("branding") ||
-            campName.includes("institucional");
+        // Keywords that identify branding/institutional/awareness ads
+        const brandingKeywords = ["branding", "institucional", "reconhecimento", "alcance", "awareness", "topo de funil", "marca"];
 
-        // Keep EAD even if has branding
-        if (isEad) return true;
+        const isBranding = brandingKeywords.some(key =>
+            u.includes(key) ||
+            c.includes(key) ||
+            campName.includes(key) ||
+            adName.includes(key) ||
+            body.includes(key)
+        );
+
         return !isBranding;
     }, [hideBranding]);
 
@@ -259,21 +266,15 @@ export default function CreativesPage() {
             return !isWeekend && d.cpl !== null && d.cpl > 0;
         });
 
-        // SAMPLE GUARD: If history is too short (< 7 active days), we are still testing
         if (cleanHistory.length < 7) return "Testando";
 
-        // PREDICTION SAFETY BRAKE: If forecast is very high, avoid scaling status
         const isForecastBad = predictedCpl && avgCpl && predictedCpl > avgCpl * 1.3;
-
-        // PERFORMANCE GUARD: Check last active day
         const lastDayPerformance = cleanHistory[cleanHistory.length - 1];
         const lastCpl = lastDayPerformance.cpl || 0;
-        const isCurrentBad = lastCpl > avgCpl * 1.05; // 5% over avg is a hard limit for "good" statuses
+        const isCurrentBad = lastCpl > avgCpl * 1.05;
 
-        // Windowed Trend: Compare last 2 days vs previous 4 days (more reactive)
         const WINDOW_RECENT = 2;
         const WINDOW_PREV = 4;
-
         const recentPart = cleanHistory.slice(-WINDOW_RECENT);
         const previousPart = cleanHistory.slice(-WINDOW_RECENT - WINDOW_PREV, -WINDOW_RECENT);
 
@@ -293,21 +294,17 @@ export default function CreativesPage() {
         const isOverallBetter = lastValue < firstValue && firstValue > 0;
 
         const ownAvgCpl = cleanHistory.reduce((sum, d) => sum + (d.cpl || 0), 0) / cleanHistory.length;
-        const isOwnSpike = lastCpl > ownAvgCpl * 1.4; // Safety Brake: recent CPL > 40% of its own average
+        const isOwnSpike = lastCpl > ownAvgCpl * 1.4;
 
         const isLowCPL = cpl <= avgCpl * 0.85;
         const isHighCPL = cpl >= avgCpl * 1.15;
 
-        // STATUS LOGIC (Prioritize Trend over Absolute Value when recovering)
         if (trend < 0.92 || isOverallBetter) {
-            // Even if trend is good, if forecast is bad, it's not a star/scaling candidate
             if (isForecastBad) {
                 if (isHighCPL) return "Crítico";
                 return "Curva de Fadiga";
             }
-
             if (isHighCPL) {
-                // Critical Recovery Check: Improving but still > 2x Avg
                 if (cpl > avgCpl * 2.0) return "Crítico";
                 return "Em Recuperação";
             }
@@ -315,52 +312,33 @@ export default function CreativesPage() {
         }
 
         if (isLowCPL) {
-            // SMARTER FATIGUE: only flag as Fatigue Curve if forecast confirms an upcoming increase
-            // If forecast is good (predicted < current or predicted < avg), keep as Star/Scaling
             const isForecastRising = predictedCpl && predictedCpl > cpl * 1.1;
-
             if (isForecastBad || (isOwnSpike && isForecastRising)) return "Curva de Fadiga";
-
             if (isCurrentBad || (trend > 1.10 && isForecastRising)) return "Curva de Fadiga";
             return "Estrela";
         }
 
-        // Logic for High CPL ads (Potential Pause/Warning)
         const isExtremelyHigh = cpl > avgCpl * 1.8;
         const isVeryHigh = cpl > avgCpl * 1.4;
-
-        // SMARTER PROTECTION: If the ad's average is still BETTER than account average, 
-        // don't suggest PAUSING immediately unless it's a massive sustained spike.
         const isBetterThanAccount = (ownAvgCpl || cpl) < avgCpl * 0.9;
-
-        // DUAL-FACTOR PAUSE: Only suggest PAUSING if current CPL is high AND forecast is bad.
-        // This prevents killing potentially good ads that have temporary spikes.
-        const isHealthy = cpl < avgCpl * 1.05; // Guardrail: within 5% of account average or better
+        const isHealthy = cpl < avgCpl * 1.05;
 
         if (!isHealthy && (isExtremelyHigh || (isVeryHigh && isForecastBad && !isBetterThanAccount))) {
             return "Fadigado";
         }
 
         if (trend > 1.15 || isForecastBad) {
-            // If the forecast is actually GOOD (green) despite current trend/cpl, 
-            // DO NOT pause. Demote to "Alerta" to watch it recover.
             const isForecastActuallyGood = predictedCpl && predictedCpl < avgCpl * 1.1;
-
-            if (isForecastActuallyGood || isHealthy) return "CPL em Alta"; // Guardrail protects healthy ads
-
-            // Keep as warning if it's still "cheap" relatively
+            if (isForecastActuallyGood || isHealthy) return "CPL em Alta";
             if (isBetterThanAccount && cpl < avgCpl * 1.2) return "CPL em Alta";
             return "Fadigado";
         }
 
-        // Mid-range CPL
         if (isCurrentBad || trend > 1.15) return "CPL em Alta";
-
         return "Estável";
     };
 
     const calculateCPLForecast = (dailyHistory: { date: string, cpl: number | null }[]) => {
-        // Limit to last 14 days to be more reactive to recent trends
         const dailyData = dailyHistory
             .filter(d => d.cpl !== null && d.cpl > 0)
             .sort((a, b) => a.date.localeCompare(b.date))
@@ -383,7 +361,6 @@ export default function CreativesPage() {
         const slope = (n * sumXY - sumX * sumY) / denominator;
         const intercept = (sumY - slope * sumX) / n;
 
-        // Project for tomorrow (n + 1)
         const forecast = Math.max(0, slope * (n + 1) + intercept);
         return forecast;
     };
@@ -434,36 +411,27 @@ export default function CreativesPage() {
 
         const badge = (() => {
             switch (status) {
-                // VERDE: ESCALAR (CPL Baixo ou Caindo Bem)
                 case "Estrela":
                 case "Em Otimização":
                     return <Badge className="bg-emerald-500/20 text-emerald-800 hover:bg-emerald-500/30 dark:text-emerald-300 border-0 flex items-center gap-1.5 px-2.5 py-1 ring-2 ring-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.3)] font-bold">
                         <Sparkles className="h-3.5 w-3.5" /> Escalar
                     </Badge>;
-
-                // AZUL: OBSERVAR (Recuperando, Testando, Estável)
                 case "Em Recuperação":
                 case "Testando":
                 case "Estável":
                     return <Badge className="bg-blue-600/20 text-blue-800 hover:bg-blue-600/30 dark:text-blue-300 border-0 flex items-center gap-1.5 px-2.5 py-1 ring-1 ring-blue-500/30 font-semibold">
                         <Eye className="h-3.5 w-3.5" /> Observar
                     </Badge>;
-
-                // LARANJA: ALERTA (CPL Alto mas melhorando, ou subindo)
                 case "Crítico":
                 case "CPL em Alta":
                 case "Curva de Fadiga":
                     return <Badge className="bg-amber-500/20 text-amber-800 hover:bg-amber-500/30 dark:text-amber-300 border-0 flex items-center gap-1.5 px-2.5 py-1 ring-1 ring-amber-500/40 font-semibold">
                         <AlertTriangle className="h-3.5 w-3.5" /> Alerta
                     </Badge>;
-
-                // VERMELHO: PAUSAR (Ruim e sem melhora)
                 case "Fadigado":
-                case "Piorando": // Caso exista
                     return <Badge className="bg-red-500/15 text-red-700 hover:bg-red-500/25 dark:text-red-400 border-0 flex items-center gap-1.5 px-2">
                         <TrendingUp className="h-3 w-3" /> Pausar
                     </Badge>;
-
                 default:
                     return <Badge variant="outline" className="text-xs text-muted-foreground flex items-center gap-1"><RefreshCw className="h-3 w-3 animate-spin-slow" /> Aprendendo</Badge>;
             }
@@ -472,30 +440,20 @@ export default function CreativesPage() {
         return (
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <div className="cursor-help w-fit mx-auto">
-                        {badge}
-                    </div>
+                    <div className="cursor-help w-fit mx-auto">{badge}</div>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="p-3 max-w-[260px] space-y-2">
                     <div className="space-y-0.5">
                         <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Diagnóstico Detalhado</p>
-                        <div className="font-bold text-sm flex items-center gap-1.5 text-foreground">
-                            {icon}
-                            <span>{status}</span>
-                        </div>
+                        <div className="font-bold text-sm flex items-center gap-1.5 text-foreground">{icon}<span>{status}</span></div>
                     </div>
                     <div className="w-full h-px bg-border/50" />
-                    <p className="text-xs leading-relaxed text-muted-foreground/90">
-                        {content}
-                    </p>
+                    <p className="text-xs leading-relaxed text-muted-foreground/90">{content}</p>
                 </TooltipContent>
             </Tooltip>
         );
     };
 
-
-
-    // Toggle sort function
     const toggleSort = (column: string) => {
         if (sortBy === column) {
             setSortDir(sortDir === "asc" ? "desc" : "asc");
@@ -505,30 +463,19 @@ export default function CreativesPage() {
         }
     };
 
-    // Get sort icon
     const getSortIcon = (column: string) => {
         if (sortBy !== column) return <ArrowUpDown className="h-3.5 w-3.5 ml-1 text-muted-foreground" />;
-        return sortDir === "asc"
-            ? <ArrowUp className="h-3.5 w-3.5 ml-1" />
-            : <ArrowDown className="h-3.5 w-3.5 ml-1" />;
+        return sortDir === "asc" ? <ArrowUp className="h-3.5 w-3.5 ml-1" /> : <ArrowDown className="h-3.5 w-3.5 ml-1" />;
     };
 
-    const [insightsModal, setInsightsModal] = React.useState<{
-        open: boolean;
-        creative: CreativeRow | null;
-    }>({ open: false, creative: null });
-
-    const openInsightsModal = (row: CreativeRow) => {
-        setInsightsModal({ open: true, creative: row });
-    };
-
-
+    const [insightsModal, setInsightsModal] = React.useState<{ open: boolean; creative: CreativeRow | null; }>({ open: false, creative: null });
+    const openInsightsModal = (row: CreativeRow) => setInsightsModal({ open: true, creative: row });
 
     // Calculate date range (Local period selection updates global range)
     const dateRange = React.useMemo(() => {
         return {
             start: globalRange?.from || startOfMonth(new Date()),
-            end: globalRange?.to || endOfMonth(new Date())
+            end: globalRange?.to || globalRange?.from || endOfMonth(new Date())
         };
     }, [globalRange]);
 
@@ -561,7 +508,8 @@ export default function CreativesPage() {
                 .select("*")
                 .gte("data_referencia", format(dateRange.start, "yyyy-MM-dd"))
                 .lte("data_referencia", format(dateRange.end, "yyyy-MM-dd"))
-                .order("conversoes", { ascending: false });
+                .order("investimento", { ascending: false })
+                .limit(10000);
 
             if (unidade && unidade !== "all") {
                 query = query.eq("unidade", unidade);
@@ -570,7 +518,7 @@ export default function CreativesPage() {
                 query = query.eq("curso", curso);
             }
 
-            const { data, error } = await query.limit(10000);
+            const { data, error } = await query;
             if (error) throw error;
 
             return data as CreativeRow[];
@@ -653,7 +601,7 @@ export default function CreativesPage() {
                 predicted_cpl
             };
         });
-    }, [data, filterBranding]);
+    }, [data, filterBranding, hideBranding]);
 
     // 2. STABLE Account Benchmarks (Unfiltered - stable reference for IA status)
     const stableBenchmarks = React.useMemo(() => {
@@ -661,15 +609,7 @@ export default function CreativesPage() {
             return { avgCPL: 0, avgCTR: 0 };
         }
 
-        const performanceData = allAggregated.filter(r => {
-            const u = (r.unidade || "").toLowerCase();
-            const c = (r.curso || "").toLowerCase();
-            const campName = (r.campaign_name || "").toLowerCase();
-            const isBranding = u.includes("branding") || u.includes("institucional") ||
-                c.includes("branding") || campName.includes("branding") ||
-                campName.includes("institucional");
-            return !isBranding;
-        });
+        const performanceData = allAggregated.filter(r => filterBranding(r));
 
         const performanceSpend = performanceData.reduce((acc, r) => acc + (r.investimento || 0), 0);
         const performanceConversions = performanceData.reduce((acc, r) => acc + (r.conversoes || 0), 0);
@@ -681,46 +621,38 @@ export default function CreativesPage() {
             avgCPL: performanceConversions > 0 ? performanceSpend / performanceConversions : 0,
             avgCTR: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
         };
-    }, [allAggregated]);
+    }, [allAggregated, filterBranding]);
 
     // 2b. DISPLAY KPIs (Filtered - matches what user sees on screen)
     const kpis: KPIs = React.useMemo(() => {
-        if (!allAggregated || allAggregated.length === 0) {
+        if (!data || !allAggregated) {
             return { totalCreatives: 0, totalConversions: 0, avgCPL: null, avgCTR: 0, totalSpend: 0 };
         }
 
-        // Apply active filter for display KPIs
+        // 1. DATA FOR KPIs
+        // We now respect the hideBranding toggle for the dashboard cards to make it "work"
+        // as the user expects. If hideBranding is true, we only sum non-branding ads.
+        const filteredData = data.filter(r => filterBranding(r));
+
+        const totalSpend = filteredData.reduce((acc, r) => acc + (r.investimento || 0), 0);
+        const totalConversions = filteredData.reduce((acc, r) => acc + (r.conversoes || 0), 0);
+        const totalImpressions = filteredData.reduce((acc, r) => acc + (r.impressoes || 0), 0);
+        const totalClicks = filteredData.reduce((acc, r) => acc + (r.cliques || 0), 0);
+
+        // 2. DATA FOR UI/ANALYSIS (Table Count)
         const displaySet = allAggregated.filter(r => {
             if (onlyActive && r.effective_status !== 'ACTIVE') return false;
             return true;
         });
 
-        const performanceData = displaySet.filter(r => {
-            const u = (r.unidade || "").toLowerCase();
-            const c = (r.curso || "").toLowerCase();
-            const campName = (r.campaign_name || "").toLowerCase();
-            const isBranding = u.includes("branding") || u.includes("institucional") ||
-                c.includes("branding") || campName.includes("branding") ||
-                campName.includes("institucional");
-            return !isBranding;
-        });
-
-        const totalSpend = displaySet.reduce((acc, r) => acc + (r.investimento || 0), 0);
-        const totalConversions = displaySet.reduce((acc, r) => acc + (r.conversoes || 0), 0);
-        const performanceSpend = performanceData.reduce((acc, r) => acc + (r.investimento || 0), 0);
-        const performanceConversions = performanceData.reduce((acc, r) => acc + (r.conversoes || 0), 0);
-
-        const totalImpressions = displaySet.reduce((acc, r) => acc + (r.impressoes || 0), 0);
-        const totalClicks = displaySet.reduce((acc, r) => acc + (r.cliques || 0), 0);
-
         return {
-            totalCreatives: hideBranding ? performanceData.length : displaySet.length, // Respect branding filter toggle
+            totalCreatives: displaySet.length, // Only count what is shown in the list
             totalConversions,
             totalSpend,
-            avgCPL: performanceConversions > 0 ? performanceSpend / performanceConversions : null,
+            avgCPL: totalConversions > 0 ? totalSpend / totalConversions : null,
             avgCTR: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
         };
-    }, [allAggregated, onlyActive, hideBranding]); // Add hideBranding to dependencies
+    }, [data, allAggregated, onlyActive, filterBranding]);
 
     // 3. Final Table Data (Applying Table-specific filters and sorting)
     const aggregatedData = React.useMemo(() => {
@@ -740,6 +672,9 @@ export default function CreativesPage() {
                 };
             })
             .filter((r) => {
+                // BRANDING FILTER (Applied to aggregated ad)
+                if (!filterBranding(r)) return false;
+
                 if (minConversions > 0 && r.conversoes < minConversions) return false;
                 if (minInvestment > 0 && (r.investimento || 0) < minInvestment) return false;
                 // TABLE-ONLY STATUS FILTER: Apply here so it doesn't affect KPIs
@@ -804,7 +739,7 @@ export default function CreativesPage() {
                 }
                 return sortDir === "asc" ? aVal - bVal : bVal - aVal;
             });
-    }, [allAggregated, sortBy, sortDir, minConversions, minInvestment, onlyActive, stableBenchmarks.avgCPL]);
+    }, [allAggregated, sortBy, sortDir, minConversions, minInvestment, onlyActive, stableBenchmarks.avgCPL, filterBranding, hideBranding]);
 
     // Paginated data
     const totalPages = Math.ceil(aggregatedData.length / itemsPerPage);
@@ -894,12 +829,12 @@ export default function CreativesPage() {
                 </Select>
 
                 {period === "custom" && (
-                    <Popover>
+                    <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
                         <PopoverTrigger asChild>
                             <Button variant="outline" className="w-[240px] justify-start text-left font-normal">
                                 <CalendarIcon className="mr-2 h-4 w-4" />
                                 {globalRange?.from ? (
-                                    globalRange.to ? (
+                                    globalRange.to && !isSameDay(globalRange.from, globalRange.to) ? (
                                         <>{format(globalRange.from, "dd/MM/yy", { locale: ptBR })} - {format(globalRange.to, "dd/MM/yy", { locale: ptBR })}</>
                                     ) : (
                                         format(globalRange.from, "dd/MM/yyyy", { locale: ptBR })
@@ -913,7 +848,13 @@ export default function CreativesPage() {
                             <Calendar
                                 mode="range"
                                 selected={globalRange}
-                                onSelect={(range) => setDateRange(range)}
+                                onSelect={(range) => {
+                                    setDateRange(range);
+                                    // If both are selected, close. Or if it's the second click on same day.
+                                    if (range?.from && range?.to) {
+                                        setIsCalendarOpen(false);
+                                    }
+                                }}
                                 numberOfMonths={2}
                                 locale={ptBR}
                             />
@@ -1041,7 +982,6 @@ export default function CreativesPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">
-                            {/* Force branding exclusion in KPI logic, regardless of hideBranding toggle */}
                             {isLoading ? <Skeleton className="h-8 w-24" /> : brl(kpis.avgCPL)}
                         </div>
                     </CardContent>
@@ -1077,8 +1017,8 @@ export default function CreativesPage() {
                                 <TooltipTrigger asChild>
                                     <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
                                 </TooltipTrigger>
-                                <TooltipContent side="top" className="max-w-[200px]">
-                                    <p className="text-xs">Valor total investido em mídia paga no período selecionado.</p>
+                                <TooltipContent side="top" className="max-w-[220px]">
+                                    <p className="text-xs">Valor total investido no período. Respeita os filtros de "Unidade", "Curso" e "Ocultar Branding".</p>
                                 </TooltipContent>
                             </Tooltip>
                         </div>
@@ -1465,26 +1405,31 @@ export default function CreativesPage() {
 
                     {/* Pagination */}
                     {totalPages > 1 && (
-                        <div className="flex items-center justify-end space-x-2 py-4">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                                disabled={currentPage === 1}
-                            >
-                                <ChevronLeft className="h-4 w-4" />
-                            </Button>
+                        <div className="flex items-center justify-between py-4">
                             <span className="text-sm text-muted-foreground">
-                                Página {currentPage} de {totalPages}
+                                Mostrando <strong>{(currentPage - 1) * itemsPerPage + 1}</strong>-<strong>{Math.min(currentPage * itemsPerPage, aggregatedData.length)}</strong> de <strong>{aggregatedData.length}</strong> criativos
                             </span>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                                disabled={currentPage === totalPages}
-                            >
-                                <ChevronRight className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center space-x-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                                    disabled={currentPage === 1}
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                </Button>
+                                <span className="text-sm text-muted-foreground">
+                                    Página {currentPage} de {totalPages}
+                                </span>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                                    disabled={currentPage === totalPages}
+                                >
+                                    <ChevronRight className="h-4 w-4" />
+                                </Button>
+                            </div>
                         </div>
                     )}
                 </CardContent>

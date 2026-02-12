@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subMonths, isSameMonth } from "date-fns";
+import * as React from "react";
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subMonths, isSameMonth, addHours } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -249,17 +249,43 @@ function PlatformDonutChart({ data }: { data: any[] }) {
 
 export default function BudgetPage() {
   const { filters } = useFilters();
-  const [selectedUnit, setSelectedUnit] = useState<{ unit: string; rows: any[] } | null>(null);
+  const [selectedUnit, setSelectedUnit] = React.useState<{ unit: string; rows: any[] } | null>(null);
 
   // Helper safe number
   const client = getSupabaseClient();
   const safeNumber = (v: any) => (isNaN(Number(v)) ? 0 : Number(v));
 
-  const effectiveStart = filters?.dateRange?.from || startOfMonth(new Date());
-  const effectiveEnd = filters?.dateRange?.to || endOfMonth(new Date());
+  // Determine effective range.
+  // If user selects a single day in DatePicker, 'to' might be undefined.
+  // We default 'to' to 'from' in that case to ensure a valid 1-day range.
+  const dateFrom = filters?.dateRange?.from;
+  const dateTo = filters?.dateRange?.to;
+
+  const effectiveStart = dateFrom || startOfMonth(new Date());
+
+  // Logic breakdown for debugging
+  let endSource = "default-end-of-month";
+  let effectiveEnd = endOfMonth(new Date());
+
+  if (dateTo) {
+    effectiveEnd = dateTo;
+    endSource = "filters.to";
+  } else if (dateFrom) {
+    effectiveEnd = dateFrom;
+    endSource = "filters.from (fallback)";
+  }
+
+  console.log("[Budget] DATE LOGIC DEBUG:", {
+    filtersDateRange: filters?.dateRange,
+    dateFrom,
+    dateTo,
+    effectiveStart: effectiveStart.toString(),
+    effectiveEnd: effectiveEnd.toString(),
+    endSource
+  });
 
   // Use a unique key for the query to ensure refetch when filters/month change
-  const queryKey = ["budget-data", filters.month?.toISOString(), effectiveStart.toISOString(), effectiveEnd.toISOString()];
+  const queryKey = ["budget-data", filters.month?.toISOString(), effectiveStart.toISOString(), effectiveEnd.toISOString(), filters.platform];
 
   // Fetch Data
   const budgetDataQuery = useQuery({
@@ -268,24 +294,55 @@ export default function BudgetPage() {
       if (!client) return { weeklyRows: [], dailyRows: [], performanceLeads: 0, performanceSpend: 0, plannedTotal: 0, spendTotal: 0 };
 
       // 1. Fetch Weekly Budget (metas)
-      const startStr = format(effectiveStart, "yyyy-MM-dd");
-      const endStr = format(effectiveEnd, "yyyy-MM-dd");
+
+      // HYBRID DATE FIX: 
+      // Detect if Date is "shifted" (UTC Midnight represented in Local Time, e.g. 21:00) 
+      // or "normal" (Local Midnight/End of Day, e.g. 00:00).
+      const getSafeDateString = (d: Date) => {
+        const h = d.getHours();
+        // If hour is 18-22 (6PM-10PM), it's likely a UTC date shifted back by timezone (e.g. UTC-3).
+        // In this case, we want the UTC date components.
+        if (h >= 18 && h <= 22) {
+          return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        }
+        // Otherwise (00:00, 23:59, etc.), use Local components.
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      };
+
+      const startStr = getSafeDateString(effectiveStart);
+      const endStr = getSafeDateString(effectiveEnd);
+
+      // For Weekly Budget, we need to capture the START of the week that contains our start date.
+      // If user selects "Feb 10" (Tuesday), the weekly row might be "Feb 8" (Sunday) or "Feb 9" (Monday).
+      // We'll go back to the start of the week to ensure we pick it up.
+      const weeklyStart = startOfWeek(effectiveStart, { weekStartsOn: 0 }); // Sunday start to be safe
+      const weeklyStartStr = getSafeDateString(weeklyStart);
 
       // A) Buscar dados SEMANAIS (Budget + Realizado Agregado) - Fonte principal do Planejamento
-      const { data: weeklyRows, error: weeklyError } = await client
+      let weeklyQuery = client
         .from("vw_dashboard_semanal_detalhado2")
         .select("*")
-        .gte("data_inicio_semana", startStr)
+        .gte("data_inicio_semana", weeklyStartStr)
         .lte("data_inicio_semana", endStr);
+
+      // REMOVED platform filter from weeklyQuery because the view doesn't have the column
+
+      const { data: weeklyRows, error: weeklyError } = await weeklyQuery;
 
       if (weeklyError) throw weeklyError;
 
       // B) Buscar dados DIÁRIOS (Spend real dia a dia) - Fonte para o gráfico de Pacing
-      const { data: dailyRows, error: dailyError } = await client
+      let dailyQuery = client
         .from("vw_performance_diaria2")
         .select("data_referencia, unidade, curso, platform, investimento, leads")
         .gte("data_referencia", startStr)
         .lte("data_referencia", endStr);
+
+      if (filters.platform && filters.platform !== "all") {
+        dailyQuery = dailyQuery.eq("platform", filters.platform);
+      }
+
+      const { data: dailyRows, error: dailyError } = await dailyQuery;
 
       if (dailyError) throw dailyError;
 
