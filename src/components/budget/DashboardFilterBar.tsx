@@ -139,6 +139,7 @@ export function DashboardFilterBar() {
 
     // Estado para controlar expansão no mobile
     const [isMobileOpen, setIsMobileOpen] = React.useState(false);
+    const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
 
     // Contagem de filtros ativos para feedback visual
     const activeFiltersCount = [
