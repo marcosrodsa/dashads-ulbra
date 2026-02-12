@@ -232,6 +232,11 @@ export default function CreativesPage() {
     const [period, setPeriod] = React.useState<string>("30");
     const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
 
+    // Default hideBranding to true when entering this page
+    React.useEffect(() => {
+        setHideBranding(true);
+    }, [setHideBranding]);
+
     // Helper function to filter branding
     const filterBranding = React.useCallback((row: CreativeRow) => {
         if (!hideBranding) return true;
