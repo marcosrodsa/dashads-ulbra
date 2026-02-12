@@ -32,21 +32,29 @@ function monthOptions(count = 18) {
     }).filter(option => option.date.getFullYear() >= 2026);
 }
 
-function weekOptions(month: Date) {
-    const secureMonth = new Date(month.getFullYear(), month.getMonth(), 15);
-    const start = startOfMonth(secureMonth);
-    const end = endOfMonth(secureMonth);
+function weekOptions(range: { from: Date; to: Date } | undefined) {
+    if (!range || !range.from || !range.to) return [];
+
+    // Capturar todos os meses no intervalo para gerar semanas de cada um
+    const start = startOfMonth(range.from);
+    const end = endOfMonth(range.to);
 
     const weeks = eachWeekOfInterval({
         start: startOfWeek(start, { weekStartsOn: 1 }),
         end: endOfWeek(end, { weekStartsOn: 1 })
     }, { weekStartsOn: 1 });
 
+    // Mapa para evitar duplicatas de semanas que podem cruzar meses
+    const seen = new Set<string>();
+
     return weeks
-        .filter(w => isSameMonth(w, month)) // Only include weeks starting in the selected month
         .map(w => {
             const s = startOfWeek(w, { weekStartsOn: 1 });
             const e = endOfWeek(w, { weekStartsOn: 1 });
+            const val = s.toISOString();
+
+            if (seen.has(val)) return null;
+            seen.add(val);
 
             let label = "";
             if (isSameMonth(s, e)) {
@@ -56,11 +64,12 @@ function weekOptions(month: Date) {
             }
 
             return {
-                value: s.toISOString(),
+                value: val,
                 label: label.toLowerCase(),
                 startDate: s
             };
-        });
+        })
+        .filter((w): w is NonNullable<typeof w> => w !== null);
 }
 
 function subMonths(date: Date, amount: number): Date {
@@ -150,7 +159,7 @@ export function DashboardFilterBar() {
     ].filter(Boolean).length;
 
     const client = getSupabaseClient();
-    const weeks = React.useMemo(() => weekOptions(filters.month || new Date()), [filters.month]);
+    const weeks = React.useMemo(() => weekOptions(filters.dateRange as any), [filters.dateRange]);
 
     const columnsQuery = useQuery({
         queryKey: ["filters", "performanceDailyColumns"],
@@ -190,8 +199,15 @@ export function DashboardFilterBar() {
 
     const [period, setPeriod] = React.useState<string>(detectPeriod());
 
-    // Sync Period -> Filters
-    // When user changes dropdown, update global filters
+    // 1. Sync DateRange -> Local Period State (When global filters change)
+    React.useEffect(() => {
+        const detected = detectPeriod();
+        if (detected !== period) {
+            setPeriod(detected);
+        }
+    }, [filters.dateRange, detectPeriod, period]);
+
+    // 2. Sync Local Period Dropdown -> Global Filter State
     React.useEffect(() => {
         if (period !== "custom") {
             const today = new Date();
@@ -207,7 +223,7 @@ export function DashboardFilterBar() {
                 setDateRange({ from: start, to: end });
             }
         }
-    }, [period, setDateRange, filters.dateRange]);
+    }, [period, setDateRange]);
 
 
     const businessUnitsQuery = useQuery({

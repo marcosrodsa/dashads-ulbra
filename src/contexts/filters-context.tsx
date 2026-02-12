@@ -58,6 +58,7 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
       dateRange: range,
       // If range has a 'from', sync 'month' to it so calendars open in the right place.
       month: range?.from ? startOfMonth(range.from) : prev.month,
+      // Se o usuário selecionou um range manual, limpamos a "semana" selecionada para evitar conflito
       week: null
     }));
   }, []);
