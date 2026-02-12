@@ -79,6 +79,11 @@ interface InsightsModalProps {
     creativeId: string | null;
     campaignName?: string | null;
     dateRange?: { from: Date; to: Date } | null;
+    filters?: {
+        unidade: string;
+        curso: string;
+        hideBranding: boolean;
+    };
     metrics: {
         conversoes: number;
         cpl: number | null;
@@ -237,7 +242,8 @@ async function fetchCreativeVision(adId: string): Promise<CreativeVector | null>
 async function generateContextualInsights(
     creativeId: string,
     periodStart?: string,
-    periodEnd?: string
+    periodEnd?: string,
+    filters?: { unidade: string; curso: string; hideBranding: boolean }
 ): Promise<ContextualAnalysis | null> {
     try {
         const supabase = getSupabaseClient();
@@ -250,7 +256,8 @@ async function generateContextualInsights(
             body: {
                 creativeId,
                 periodStart,
-                periodEnd
+                periodEnd,
+                filters: filters // Pass business filters
             }
         });
 
@@ -398,6 +405,7 @@ export function CreativeInsightsModal({
     campaignName,
     dateRange,
     metrics,
+    filters,
     onGenerate
 }: InsightsModalProps) {
     const [insights, setInsights] = React.useState<CreativeInsight[]>([]);
@@ -480,7 +488,8 @@ export function CreativeInsightsModal({
             const result = await generateContextualInsights(
                 creativeId,
                 periodStart,
-                periodEnd
+                periodEnd,
+                filters // Passed from props
             );
             setContextualAnalysis(result);
 

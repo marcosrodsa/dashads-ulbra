@@ -598,15 +598,27 @@ export default function CreativesPage() {
 
 
         const dailyByAd: Record<string, { date: string; cpl: number | null; conversions: number; investimento: number; impressoes: number }[]> = {};
+        const dailyTemp: Record<string, Record<string, { conversions: number; investimento: number; impressoes: number }>> = {};
+
         filteredByBranding.forEach(row => {
-            if (!dailyByAd[row.ad_id]) dailyByAd[row.ad_id] = [];
-            dailyByAd[row.ad_id].push({
-                date: row.data_referencia,
-                cpl: (row.conversoes && row.conversoes > 0) ? (row.investimento / row.conversoes) : null,
-                conversions: row.conversoes || 0,
-                investimento: row.investimento || 0,
-                impressoes: row.impressoes || 0
-            });
+            if (!dailyTemp[row.ad_id]) dailyTemp[row.ad_id] = {};
+            const d = row.data_referencia;
+            if (!dailyTemp[row.ad_id][d]) {
+                dailyTemp[row.ad_id][d] = { conversions: 0, investimento: 0, impressoes: 0 };
+            }
+            dailyTemp[row.ad_id][d].conversions += row.conversoes || 0;
+            dailyTemp[row.ad_id][d].investimento += row.investimento || 0;
+            dailyTemp[row.ad_id][d].impressoes += row.impressoes || 0;
+        });
+
+        Object.keys(dailyTemp).forEach(adId => {
+            dailyByAd[adId] = Object.entries(dailyTemp[adId]).map(([date, metrics]) => ({
+                date,
+                conversions: metrics.conversions,
+                investimento: metrics.investimento,
+                impressoes: metrics.impressoes,
+                cpl: metrics.conversions > 0 ? metrics.investimento / metrics.conversions : null
+            }));
         });
 
         const grouped = filteredByBranding.reduce((acc, row) => {
@@ -1486,6 +1498,7 @@ export default function CreativesPage() {
                 creativeName={insightsModal.creative?.ad_name || null}
                 campaignName={insightsModal.creative?.campaign_name || null}
                 dateRange={{ from: dateRange.start, to: dateRange.end }}
+                filters={{ unidade, curso, hideBranding }}
                 metrics={insightsModal.creative ? {
                     conversoes: insightsModal.creative.conversoes || 0,
                     cpl: insightsModal.creative.cpl,

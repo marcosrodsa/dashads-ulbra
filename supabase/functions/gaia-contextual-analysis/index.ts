@@ -33,6 +33,11 @@ interface AnalysisRequest {
     creativeId: string;
     periodStart?: string;
     periodEnd?: string;
+    filters?: {
+        unidade?: string;
+        curso?: string;
+        hideBranding?: boolean;
+    };
 }
 
 interface PerformanceSnapshot {
@@ -69,7 +74,7 @@ Deno.serve(async (req) => {
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing Supabase env vars");
         if (apiKeys.length === 0) throw new Error("No Gemini API Keys found");
 
-        const { creativeId, periodStart, periodEnd }: AnalysisRequest = await req.json();
+        const { creativeId, periodStart, periodEnd, filters }: AnalysisRequest = await req.json();
         if (!creativeId) throw new Error("Missing creativeId");
         if (!periodStart || !periodEnd) {
             throw new Error("periodStart and periodEnd are required - must match UI filter period");
@@ -92,11 +97,40 @@ Deno.serve(async (req) => {
         const { data: asset } = await supabase.from("fact_creative_assets").select("*").eq("ad_id", creativeId).single();
         if (!asset) throw new Error("Asset not found");
 
-        const { data: perfData } = await supabase.from("vw_creative_analysis_complete")
-            .select("*").eq("ad_id", creativeId).gte("data_referencia", startDate).lte("data_referencia", endDate);
+        let query = supabase.from("vw_creative_analysis_complete")
+            .select("*")
+            .eq("ad_id", creativeId)
+            .gte("data_referencia", startDate)
+            .lte("data_referencia", endDate);
 
-        // 3. Metrics Aggregation
-        const totals = (perfData || []).reduce((acc: any, row: any) => ({
+        if (filters?.unidade && filters.unidade !== "all") {
+            query = query.eq("unidade", filters.unidade);
+        }
+        if (filters?.curso && filters.curso !== "all") {
+            query = query.eq("curso", filters.curso);
+        }
+
+        const { data: perfData } = await query;
+
+        // 3. Filter Branding (ALIGNED WITH UI)
+        const filteredData = (perfData || []).filter(row => {
+            if (filters?.hideBranding === false) return true; // Only filter if requested
+
+            const u = (row.unidade || "").toLowerCase();
+            const c = (row.curso || "").toLowerCase();
+            const campName = (row.campaign_name || "").toLowerCase();
+
+            const isEad = u.includes("ead") || c.includes("ead");
+            const isBranding = u.includes("branding") || u.includes("institucional") ||
+                c.includes("branding") || campName.includes("branding") ||
+                campName.includes("institucional");
+
+            if (isEad) return true;
+            return !isBranding;
+        });
+
+        // 4. Metrics Aggregation
+        const totals = filteredData.reduce((acc: any, row: any) => ({
             impressions: acc.impressions + (row.impressoes || 0),
             clicks: acc.clicks + (row.cliques || 0),
             conversions: acc.conversions + (row.conversoes || 0),
@@ -106,19 +140,28 @@ Deno.serve(async (req) => {
         const ctr = totals.impressions > 0 ? Number(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
         const cpa = totals.conversions > 0 ? Number((totals.spend / totals.conversions).toFixed(2)) : null;
 
-        // 4. Regression & Trend (ALIGNED WITH FRONTEND LOGIC - Last 14 days only!)
-        const dailyData = (perfData || [])
-            .filter((d: any) => d.conversoes > 0) // FIX: Only days with actual conversions
-            .sort((a, b) => new Date(a.data_referencia).getTime() - new Date(b.data_referencia).getTime())
-            .slice(-14); // FIX: LIMIT TO LAST 14 DAYS (match frontend)
+        // 5. Daily Aggregation for Regression (1 point per day)
+        const dailyAgg: Record<string, { spend: number, convs: number }> = {};
+        filteredData.forEach(d => {
+            const date = d.data_referencia;
+            if (!dailyAgg[date]) dailyAgg[date] = { spend: 0, convs: 0 };
+            dailyAgg[date].spend += (d.investimento || 0);
+            dailyAgg[date].convs += (d.conversoes || 0);
+        });
+
+        const dailyData = Object.entries(dailyAgg)
+            .map(([date, metrics]) => ({ date, ...metrics }))
+            .filter(d => d.convs > 0)
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+            .slice(-14); // LIMIT TO LAST 14 DAYS (match frontend)
 
         console.log(`[DEBUG] creativeId: ${creativeId}, dailyData.length: ${dailyData.length}`);
-        console.log(`[DEBUG] dailyData CPLs:`, dailyData.map(d => (d.investimento / d.conversoes).toFixed(2)));
+        console.log(`[DEBUG] dailyData CPLs:`, dailyData.map(d => (d.spend / d.convs).toFixed(2)));
 
         let forecast = { predicted_cpl: null as number | null, trend_direction: "stable", confidence_r2: 0 };
         if (dailyData.length >= 5) { // FIX: Match frontend minimum (not 2)
             const x = dailyData.map((_, i) => i + 1);
-            const y = dailyData.map(d => d.investimento / d.conversoes); // FIX: Pure CPL, no fallback
+            const y = dailyData.map(d => d.spend / d.convs);
             const n = x.length;
             const sumX = x.reduce((a, b) => a + b, 0), sumY = y.reduce((a, b) => a + b, 0);
             const sumXY = x.reduce((s, xi, i) => s + xi * y[i], 0), sumXX = x.reduce((s, xi) => s + xi * xi, 0);
@@ -144,7 +187,9 @@ Deno.serve(async (req) => {
 
         const performanceSnapshot: PerformanceSnapshot = {
             ctr, cpa, conversions: totals.conversions, impressions: totals.impressions,
-            clicks: totals.clicks, spend: totals.spend, trend: "stable", forecast
+            clicks: totals.clicks, spend: totals.spend,
+            trend: forecast.trend_direction === "rising" ? "declining" : forecast.trend_direction === "falling" ? "improving" : "stable",
+            forecast
         };
 
         // 5. Image & Prompt
