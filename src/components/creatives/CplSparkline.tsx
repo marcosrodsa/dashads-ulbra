@@ -3,6 +3,7 @@ import { ComposedChart, Line, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip as
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { TrendingUp, TrendingDown, Minus, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface CplSparklineProps {
     data: { date: string; cpl: number; conversions?: number }[];
@@ -10,6 +11,8 @@ interface CplSparklineProps {
     width?: number;
     height?: number;
     avgCpl?: number | null;
+    predictedCpl?: number | null;
+    currentCpl?: number | null;
 }
 
 // Format currency
@@ -22,7 +25,7 @@ const formatDate = (dateStr: string) => {
     return `${day}/${month}`;
 };
 
-export function CplSparkline({ data, creativeName, width = 80, height = 24, avgCpl }: CplSparklineProps) {
+export function CplSparkline({ data, creativeName, width = 80, height = 24, avgCpl, predictedCpl, currentCpl }: CplSparklineProps) {
     // Safe data for line chart: ignore nulls AND weekends for trend/variation calculation
     const validData = data.filter(d => {
         const date = new Date(d.date + 'T12:00:00');
@@ -41,6 +44,10 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
     const recentPart = validData.slice(-WINDOW_RECENT);
     const prevPart = validData.slice(-WINDOW_RECENT - WINDOW_PREV, -WINDOW_RECENT);
 
+    const firstValue = validData[0].cpl || 0;
+    const lastValue = validData[validData.length - 1].cpl || 0;
+    const variation = firstValue > 0 ? ((lastValue / firstValue) - 1) * 100 : 0;
+
     let recentAvg = 0;
     let prevAvg = 0;
 
@@ -48,15 +55,11 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
         recentAvg = recentPart.reduce((sum, d) => sum + (d.cpl || 0), 0) / recentPart.length;
         prevAvg = prevPart.reduce((sum, d) => sum + (d.cpl || 0), 0) / prevPart.length;
     } else {
-        recentAvg = validData[validData.length - 1]?.cpl || 0;
-        prevAvg = validData[0]?.cpl || 0;
+        recentAvg = lastValue;
+        prevAvg = firstValue;
     }
 
     const overallAvg = validData.reduce((sum, d) => sum + (d.cpl || 0), 0) / validData.length;
-
-    const firstValue = validData[0].cpl || 0;
-    const lastValue = validData[validData.length - 1].cpl || 0;
-    const variation = firstValue > 0 ? ((lastValue / firstValue) - 1) * 100 : 0;
 
     // Determine color based on windowed trend (Harmonized with overall variation)
     const isImproving = recentAvg < prevAvg * 0.92; // 8% improvement threshold
@@ -108,6 +111,32 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
         // For Recharts to connect points properly across nulls, we can use connectNulls prop
         dateFormatted: formatDate(d.date)
     }));
+
+    // Prepare data for the trend projection
+    const hasPrediction = predictedCpl && predictedCpl > 0;
+
+    // Create extended data for Recharts: history + prediction point
+    const extendedData = hasPrediction ? [
+        ...chartData.map((d, idx) => ({
+            ...d,
+            // Only the LAST historical item gets the forecast key to connect the lines
+            cplForecast: idx === chartData.length - 1 ? d.cpl : null
+        })),
+        {
+            dateFormatted: "Proj.",
+            cpl: null,
+            conversions: null,
+            cplForecast: predictedCpl,
+            isPrediction: true
+        }
+    ] : chartData;
+
+    // SYNC COLOR LOGIC: Use the same logic as the "Prev:" badge in the table
+    // amber-600 = #d97706, emerald-600 = #059669
+    const compValue = currentCpl || lastValue;
+    const predictionColor = hasPrediction
+        ? (predictedCpl > compValue * 1.1 ? "#d97706" : predictedCpl < compValue * 0.9 ? "#059669" : "#64748b")
+        : "#94a3b8";
 
     return (
         <HoverCard openDelay={200} closeDelay={100}>
@@ -161,14 +190,23 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                 {/* Chart */}
                 <div className="h-36 w-full mt-2">
                     <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+                        <ComposedChart data={extendedData} margin={{ top: 5, right: 15, bottom: 5, left: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis
                                 dataKey="dateFormatted"
                                 tick={{ fontSize: 9 }}
                                 tickLine={false}
                                 axisLine={{ stroke: '#e2e8f0' }}
-                                interval="preserveStartEnd"
+                                interval={0} // Show all ticks to ensure "Proj." is visible
+                                tickFormatter={(val, index) => {
+                                    // Logic to avoid crowding: only show every 2nd or 3rd day, but ALWAYS show the last date and "Proj."
+                                    if (val === "Proj.") return val;
+                                    const total = extendedData.length;
+                                    const isLastHistorical = index === total - 2;
+                                    const isFirst = index === 0;
+                                    if (isFirst || isLastHistorical || index % 3 === 0) return val;
+                                    return "";
+                                }}
                             />
                             <YAxis
                                 yAxisId="left"
@@ -197,9 +235,10 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                                 }}
                                 formatter={(value: number, name: string) => {
                                     if (name === "cpl") return [brl(value), 'CPL'];
+                                    if (name === "cplForecast") return [brl(value), 'CPL (Projeção)'];
                                     return [value, 'Leads'];
                                 }}
-                                labelFormatter={(label) => `Data: ${label}`}
+                                labelFormatter={(label) => label === "Proj." ? "Projeção D+1" : `Data: ${label}`}
                             />
                             <ReferenceLine
                                 yAxisId="left"
@@ -225,6 +264,7 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                                 barSize={12}
                                 isAnimationActive={false}
                             />
+                            {/* SOLID LINE: History */}
                             <Line
                                 yAxisId="left"
                                 type="monotone"
@@ -236,6 +276,21 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                                 isAnimationActive={false}
                                 connectNulls
                             />
+                            {/* DASHED LINE: Projection segment */}
+                            {hasPrediction && (
+                                <Line
+                                    yAxisId="left"
+                                    type="monotone"
+                                    dataKey="cplForecast"
+                                    stroke={predictionColor}
+                                    strokeWidth={2.5}
+                                    strokeDasharray="5 5"
+                                    dot={{ r: 4, fill: predictionColor, stroke: '#fff', strokeWidth: 1.5 }}
+                                    activeDot={{ r: 5, fill: predictionColor, stroke: '#fff', strokeWidth: 2 }}
+                                    isAnimationActive={false}
+                                    connectNulls
+                                />
+                            )}
                         </ComposedChart>
                     </ResponsiveContainer>
                 </div>
@@ -270,8 +325,11 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                     </div>
                 </div>
 
-                {/* Stats Row 2: Averages */}
-                <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-dashed text-xs bg-muted/20 -mx-3 px-3 pb-1">
+                {/* Stats Row 2: Averages & Prediction */}
+                <div className={cn(
+                    "grid gap-2 mt-2 pt-2 border-t border-dashed text-xs bg-muted/20 -mx-3 px-3 pb-1",
+                    avgCpl && predictedCpl ? "grid-cols-3" : (avgCpl || predictedCpl) ? "grid-cols-2" : "grid-cols-1"
+                )}>
                     <div className="text-center">
                         <div className="text-muted-foreground text-[10px]">Média Anúncio</div>
                         <div className="font-medium text-slate-600 font-mono">{brl(overallAvg)}</div>
@@ -280,6 +338,17 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                         <div className="text-center border-l border-dashed pl-2">
                             <div className="text-muted-foreground text-[10px]">Média Conta</div>
                             <div className="font-medium text-purple-600 font-mono">{brl(avgCpl)}</div>
+                        </div>
+                    )}
+                    {predictedCpl && predictedCpl > 0 && (
+                        <div className="text-center border-l border-dashed pl-2">
+                            <div className="text-muted-foreground text-[10px]">Previsto</div>
+                            <div className={cn(
+                                "font-medium font-mono",
+                                predictedCpl > compValue * 1.1 ? "text-amber-600" : predictedCpl < compValue * 0.9 ? "text-emerald-600" : "text-slate-600"
+                            )}>
+                                {brl(predictedCpl)}
+                            </div>
                         </div>
                     )}
                 </div>

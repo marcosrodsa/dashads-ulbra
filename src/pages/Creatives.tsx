@@ -1223,10 +1223,19 @@ export default function CreativesPage() {
                                         <TableRow key={row.ad_id} className="group hover:bg-muted/50 text-[13px]">
 
                                             {/* 1. Campanha */}
-                                            <TableCell className="p-2 max-w-[280px]">
-                                                <div className="text-foreground" title={row.campaign_name}>
-                                                    {row.campaign_name}
-                                                </div>
+                                            <TableCell className="p-2 max-w-[200px]">
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <div className="text-foreground truncate cursor-help" title={row.campaign_name}>
+                                                                {row.campaign_name}
+                                                            </div>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent side="right" className="max-w-[300px] text-[11px]">
+                                                            {row.campaign_name}
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
                                             </TableCell>
 
                                             {/* 4. Criativo (Thumb + Name) */}
@@ -1368,14 +1377,16 @@ export default function CreativesPage() {
 
                                             {/* 10. Saúde & Tendência */}
                                             <TableCell className="p-2 text-center">
-                                                <div className="flex flex-col items-center gap-1 w-full max-w-[220px] mx-auto">
+                                                <div className="flex flex-col items-center gap-1 w-full max-w-[180px] mx-auto">
                                                     {/* PASSADO */}
                                                     <div className="w-full">
                                                         <CplSparkline
                                                             data={row.dailyHistory || []}
-                                                            width={180}
+                                                            width={150}
                                                             height={24}
                                                             avgCpl={stableBenchmarks.avgCPL}
+                                                            predictedCpl={row.predicted_cpl}
+                                                            currentCpl={row.cpl}
                                                         />
                                                     </div>
                                                     {/* PRESENTE and FUTURO Row */}
