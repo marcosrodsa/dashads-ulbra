@@ -184,15 +184,16 @@ export function DashboardFilterBar() {
 
     // Detect initial period from filters
     const detectPeriod = React.useCallback(() => {
-        // Se o range estiver incompleto, estamos no meio de uma escolha personalizada
         if (!filters.dateRange?.from || !filters.dateRange?.to) return "custom";
 
-        const end = new Date();
-        const yesterday = subDays(end, 1);
-        // Check if TO is Yesterday (ignoring time)
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const yesterday = subDays(startOfToday, 1);
+
+        // Se não termina ontem, é personalizado (exceto se for um dia futuro, que não suportamos como preset por enquanto)
         if (!isSameDay(filters.dateRange.to, yesterday)) return "custom";
 
-        const diff = differenceInDays(filters.dateRange.to, filters.dateRange.from) + 1;
+        const diff = differenceInCalendarDays(filters.dateRange.to, filters.dateRange.from) + 1;
         if ([1, 7, 15, 30, 90].includes(diff)) return diff.toString();
 
         return "custom";
@@ -211,17 +212,21 @@ export function DashboardFilterBar() {
     // 2. Sync Local Period Dropdown -> Global Filter State
     React.useEffect(() => {
         if (period !== "custom") {
-            const today = new Date();
-            const end = subDays(today, 1); // D-1 (Yesterday)
+            const now = new Date();
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const end = subDays(startOfToday, 1); // Yesterday at 00:00
             const days = parseInt(period) || 30;
-            const start = subDays(end, days - 1);
+            const start = subDays(end, days - 1); // Start also at 00:00
 
-            // Avoid infinite loop by checking if range is already same
+            // Ajustar end para fim do dia (23:59:59) para garantir que pegamos todos os dados do dia final
+            const preciseEnd = new Date(end);
+            preciseEnd.setHours(23, 59, 59, 999);
+
             const currentStart = filters.dateRange?.from;
             const currentEnd = filters.dateRange?.to;
 
-            if (!currentStart || !currentEnd || !isSameDay(currentStart, start) || !isSameDay(currentEnd, end)) {
-                setDateRange({ from: start, to: end });
+            if (!currentStart || !currentEnd || !isSameDay(currentStart, start) || !isSameDay(currentEnd, preciseEnd)) {
+                setDateRange({ from: start, to: preciseEnd });
             }
         }
     }, [period, setDateRange]);

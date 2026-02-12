@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { format, subDays, startOfMonth, endOfMonth, isSameDay } from "date-fns";
+import { format, subDays, startOfMonth, endOfMonth, isSameDay, differenceInCalendarDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { getSupabaseClient } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -232,6 +232,50 @@ export default function CreativesPage() {
 
     const [period, setPeriod] = React.useState<string>("30");
     const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
+
+    // --- State and Logic for Split Date UX ---
+
+    // Detect initial period from filters
+    const detectPeriod = React.useCallback(() => {
+        if (!globalRange?.from || !globalRange?.to) return "custom";
+
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const yesterday = subDays(startOfToday, 1);
+
+        if (!isSameDay(globalRange.to, yesterday)) return "custom";
+
+        const diff = differenceInCalendarDays(globalRange.to, globalRange.from) + 1;
+        if ([1, 7, 15, 30, 90].includes(diff)) return diff.toString();
+
+        return "custom";
+    }, [globalRange]);
+
+    // 1. Sync DateRange -> Local Period State
+    React.useEffect(() => {
+        const detected = detectPeriod();
+        if (detected !== period) {
+            setPeriod(detected);
+        }
+    }, [globalRange, detectPeriod, period]);
+
+    // 2. Sync Local Period Dropdown -> Global Filter State
+    React.useEffect(() => {
+        if (period !== "custom") {
+            const now = new Date();
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const end = subDays(startOfToday, 1);
+            const days = parseInt(period) || 30;
+            const start = subDays(end, days - 1);
+
+            const preciseEnd = new Date(end);
+            preciseEnd.setHours(23, 59, 59, 999);
+
+            if (!globalRange?.from || !globalRange?.to || !isSameDay(globalRange.from, start) || !isSameDay(globalRange.to, preciseEnd)) {
+                setDateRange({ from: start, to: preciseEnd });
+            }
+        }
+    }, [period, setDateRange]);
 
     // Default hideBranding to true when entering this page
     React.useEffect(() => {

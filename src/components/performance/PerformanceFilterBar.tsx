@@ -1,5 +1,5 @@
 import * as React from "react";
-import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
+import { format, subDays, startOfMonth, endOfMonth, eachWeekOfInterval, startOfWeek, endOfWeek, isSameMonth, differenceInCalendarDays, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Filter, Building2, GraduationCap, Globe, CalendarDays, X, ChevronDown, ChevronUp, Calendar as CalendarIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -31,28 +31,7 @@ function monthOptions(count = 18) {
     }).filter(option => option.date.getFullYear() >= 2026);
 }
 
-function asMonthKey(d: Date) {
-    return startOfMonth(d).toISOString();
-}
-
-function subDays(date: Date, amount: number): Date {
-    const result = new Date(date);
-    result.setDate(result.getDate() - amount);
-    return result;
-}
-
-function differenceInDays(dateLeft: Date, dateRight: Date): number {
-    const diff = Math.abs(dateLeft.getTime() - dateRight.getTime());
-    return Math.floor(diff / (1000 * 60 * 60 * 24));
-}
-
-function isSameDay(dateLeft: Date, dateRight: Date): boolean {
-    return (
-        dateLeft.getFullYear() === dateRight.getFullYear() &&
-        dateLeft.getMonth() === dateRight.getMonth() &&
-        dateLeft.getDate() === dateRight.getDate()
-    );
-}
+// --- Helpers removed in favor of date-fns imports ---
 
 // Queries using the new View
 // Queries using the new View (Daily)
@@ -138,15 +117,15 @@ export function PerformanceFilterBar() {
 
     // Detect initial period from filters
     const detectPeriod = React.useCallback(() => {
-        // Se o range estiver incompleto, estamos no meio de uma escolha personalizada
         if (!filters.dateRange?.from || !filters.dateRange?.to) return "custom";
 
-        const end = new Date();
-        const yesterday = subDays(end, 1);
-        // Check if TO is Yesterday (ignoring time)
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const yesterday = subDays(startOfToday, 1);
+
         if (!isSameDay(filters.dateRange.to, yesterday)) return "custom";
 
-        const diff = differenceInDays(filters.dateRange.to, filters.dateRange.from) + 1;
+        const diff = differenceInCalendarDays(filters.dateRange.to, filters.dateRange.from) + 1;
         if ([1, 7, 15, 30, 90].includes(diff)) return diff.toString();
 
         return "custom";
@@ -165,16 +144,20 @@ export function PerformanceFilterBar() {
     // 2. Sincronizar Dropdown -> Range (Global Context)
     React.useEffect(() => {
         if (period !== "custom") {
-            const today = new Date();
-            const end = subDays(today, 1);
+            const now = new Date();
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const end = subDays(startOfToday, 1);
             const days = parseInt(period) || 30;
             const start = subDays(end, days - 1);
+
+            const preciseEnd = new Date(end);
+            preciseEnd.setHours(23, 59, 59, 999);
 
             const currentStart = filters.dateRange?.from;
             const currentEnd = filters.dateRange?.to;
 
-            if (!currentStart || !currentEnd || !isSameDay(currentStart, start) || !isSameDay(currentEnd, end)) {
-                setDateRange({ from: start, to: end });
+            if (!currentStart || !currentEnd || !isSameDay(currentStart, start) || !isSameDay(currentEnd, preciseEnd)) {
+                setDateRange({ from: start, to: preciseEnd });
             }
         }
     }, [period, setDateRange]); // Removi filters.dateRange daqui para evitar loop circular
@@ -188,8 +171,13 @@ export function PerformanceFilterBar() {
     const client = getSupabaseClient();
     const months = React.useMemo(() => monthOptions(18), []);
 
-    const rangeStart = filters.dateRange?.from ?? startOfMonth(new Date());
+    const rangeStart = filters.dateRange?.from ?? startOfToday();
     const rangeEnd = filters.dateRange?.to ?? endOfMonth(rangeStart);
+
+    function startOfToday() {
+        const d = new Date();
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
 
     const businessUnitsQuery = useQuery({
         queryKey: ["perf-filters", "units", rangeStart.toISOString(), rangeEnd.toISOString()],
