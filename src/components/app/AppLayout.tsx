@@ -1,11 +1,13 @@
+import { Suspense, lazy } from "react";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { FiltersProvider } from "@/contexts/filters-context";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./AppSidebar";
 import { useAuth } from "@/contexts/auth-context-core";
-import { LogOut, User } from "lucide-react";
+import { LogOut, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { GaiaChatDrawer } from "@/components/gaia/GaiaChatDrawer";
+
+const GaiaChatDrawer = lazy(() => import("../gaia/GaiaChatDrawer").then(m => ({ default: m.GaiaChatDrawer })));
 
 export function AppLayout() {
   const { fullName, user, signOut } = useAuth();
@@ -39,7 +41,9 @@ export function AppLayout() {
               </div>
 
               <div className="flex items-center gap-3">
-                <GaiaChatDrawer />
+                <Suspense fallback={<Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}>
+                  <GaiaChatDrawer />
+                </Suspense>
 
                 <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-border">
                   <User className="size-4 text-muted-foreground" />
