@@ -234,14 +234,14 @@ export default function CreativesPage() {
     const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
 
     // --- State and Logic for Split Date UX ---
+    const nowRef = React.useRef(new Date());
+    const todayStable = new Date(nowRef.current.getFullYear(), nowRef.current.getMonth(), nowRef.current.getDate());
 
     // Detect initial period from filters
     const detectPeriod = React.useCallback(() => {
         if (!globalRange?.from || !globalRange?.to) return "custom";
 
-        const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const yesterday = subDays(startOfToday, 1);
+        const yesterday = subDays(todayStable, 1);
 
         if (!isSameDay(globalRange.to, yesterday)) return "custom";
 
@@ -249,7 +249,7 @@ export default function CreativesPage() {
         if ([1, 7, 15, 30, 90].includes(diff)) return diff.toString();
 
         return "custom";
-    }, [globalRange]);
+    }, [globalRange, todayStable]);
 
     // 1. Sync DateRange -> Local Period State
     React.useEffect(() => {
@@ -262,9 +262,7 @@ export default function CreativesPage() {
     // 2. Sync Local Period Dropdown -> Global Filter State
     React.useEffect(() => {
         if (period !== "custom") {
-            const now = new Date();
-            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const end = subDays(startOfToday, 1);
+            const end = subDays(todayStable, 1);
             const days = parseInt(period) || 30;
             const start = subDays(end, days - 1);
 
@@ -275,7 +273,7 @@ export default function CreativesPage() {
                 setDateRange({ from: start, to: preciseEnd });
             }
         }
-    }, [period, setDateRange]);
+    }, [period, setDateRange, todayStable]);
 
     // Default hideBranding to true when entering this page
     React.useEffect(() => {

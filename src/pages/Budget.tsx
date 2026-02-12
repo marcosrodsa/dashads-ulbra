@@ -258,14 +258,18 @@ export default function BudgetPage() {
   // Determine effective range.
   // If user selects a single day in DatePicker, 'to' might be undefined.
   // We default 'to' to 'from' in that case to ensure a valid 1-day range.
+  // --- Date Stabilization ---
+  const nowRef = React.useRef(new Date());
+  const todayStable = new Date(nowRef.current.getFullYear(), nowRef.current.getMonth(), nowRef.current.getDate());
+
   const dateFrom = filters?.dateRange?.from;
   const dateTo = filters?.dateRange?.to;
 
-  const effectiveStart = dateFrom || startOfMonth(new Date());
+  const effectiveStart = dateFrom || startOfMonth(todayStable);
 
   // Logic breakdown for debugging
   let endSource = "default-end-of-month";
-  let effectiveEnd = endOfMonth(new Date());
+  let effectiveEnd = endOfMonth(todayStable);
 
   if (dateTo) {
     effectiveEnd = dateTo;
@@ -279,8 +283,8 @@ export default function BudgetPage() {
     filtersDateRange: filters?.dateRange,
     dateFrom,
     dateTo,
-    effectiveStart: effectiveStart.toString(),
-    effectiveEnd: effectiveEnd.toString(),
+    effectiveStart: effectiveStart.toISOString(),
+    effectiveEnd: effectiveEnd.toISOString(),
     endSource
   });
 

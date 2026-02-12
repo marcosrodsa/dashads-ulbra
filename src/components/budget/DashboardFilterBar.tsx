@@ -1,5 +1,5 @@
 import * as React from "react";
-import { format, subDays, startOfMonth, endOfMonth, eachWeekOfInterval, startOfWeek, endOfWeek, isSameMonth, differenceInDays, isSameDay } from "date-fns";
+import { format, subDays, subMonths, startOfMonth, endOfMonth, eachWeekOfInterval, startOfWeek, endOfWeek, isSameMonth, differenceInCalendarDays, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Filter, Building2, GraduationCap, Globe, CalendarDays, X, ChevronDown, ChevronUp, Calendar as CalendarIcon } from "lucide-react";
 import { useLocation } from "react-router-dom";
@@ -72,11 +72,7 @@ function weekOptions(range: { from: Date; to: Date } | undefined) {
         .filter((w): w is NonNullable<typeof w> => w !== null);
 }
 
-function subMonths(date: Date, amount: number): Date {
-    const result = new Date(date);
-    result.setMonth(result.getMonth() - amount);
-    return result;
-}
+// --- Helpers copiados de AppFilters.tsx ---
 
 
 // Simplified Fetchers using vw_performance_diaria2 (consistent with PerformanceFilterBar)
@@ -170,14 +166,16 @@ export function DashboardFilterBar() {
 
     const sameUnitAndCourse = !isBudgetRoute && !!columnsQuery.data && columnsQuery.data.businessUnitCol === columnsQuery.data.courseCol;
 
-    const rangeStart = filters.dateRange?.from ?? startOfMonth(new Date());
-    const rangeEnd = filters.dateRange?.to ?? filters.dateRange?.from ?? endOfMonth(rangeStart);
-
     // --- State and Logic for Split Date UX (Period Select + Custom Date Picker) ---
+    const nowRef = React.useRef(new Date());
+    const todayStable = new Date(nowRef.current.getFullYear(), nowRef.current.getMonth(), nowRef.current.getDate());
+
+    const rangeStart = filters.dateRange?.from ?? startOfMonth(todayStable);
+    const rangeEnd = filters.dateRange?.to ?? filters.dateRange?.from ?? endOfMonth(rangeStart);
 
     // Helper to get formatted range label for presets
     const getPresetRangeLabel = (days: number) => {
-        const end = subDays(new Date(), 1); // Yesterday
+        const end = subDays(todayStable, 1); // Yesterday
         const start = subDays(end, days - 1);
         return `(${format(start, "dd/MM")} - ${format(end, "dd/MM")})`;
     };
@@ -186,18 +184,16 @@ export function DashboardFilterBar() {
     const detectPeriod = React.useCallback(() => {
         if (!filters.dateRange?.from || !filters.dateRange?.to) return "custom";
 
-        const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const yesterday = subDays(startOfToday, 1);
+        const yesterday = subDays(todayStable, 1);
 
-        // Se não termina ontem, é personalizado (exceto se for um dia futuro, que não suportamos como preset por enquanto)
+        // Se não termina ontem, é personalizado
         if (!isSameDay(filters.dateRange.to, yesterday)) return "custom";
 
         const diff = differenceInCalendarDays(filters.dateRange.to, filters.dateRange.from) + 1;
         if ([1, 7, 15, 30, 90].includes(diff)) return diff.toString();
 
         return "custom";
-    }, [filters.dateRange]);
+    }, [filters.dateRange, todayStable]);
 
     const [period, setPeriod] = React.useState<string>(detectPeriod());
 
@@ -212,9 +208,7 @@ export function DashboardFilterBar() {
     // 2. Sync Local Period Dropdown -> Global Filter State
     React.useEffect(() => {
         if (period !== "custom") {
-            const now = new Date();
-            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const end = subDays(startOfToday, 1); // Yesterday at 00:00
+            const end = subDays(todayStable, 1); // Yesterday at 00:00
             const days = parseInt(period) || 30;
             const start = subDays(end, days - 1); // Start also at 00:00
 
@@ -229,7 +223,7 @@ export function DashboardFilterBar() {
                 setDateRange({ from: start, to: preciseEnd });
             }
         }
-    }, [period, setDateRange]);
+    }, [period, setDateRange, todayStable]); // Incluímos todayStable para segurança, mas ele é baseado numa ref estável
 
 
     const businessUnitsQuery = useQuery({

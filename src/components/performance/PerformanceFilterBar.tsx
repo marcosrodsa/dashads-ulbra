@@ -1,5 +1,5 @@
 import * as React from "react";
-import { format, subDays, startOfMonth, endOfMonth, eachWeekOfInterval, startOfWeek, endOfWeek, isSameMonth, differenceInCalendarDays, isSameDay } from "date-fns";
+import { format, subDays, subMonths, startOfMonth, endOfMonth, eachWeekOfInterval, startOfWeek, endOfWeek, isSameMonth, differenceInCalendarDays, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Filter, Building2, GraduationCap, Globe, CalendarDays, X, ChevronDown, ChevronUp, Calendar as CalendarIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -107,10 +107,12 @@ export function PerformanceFilterBar() {
     const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
 
     // --- State and Logic for Split Date UX (Period Select + Custom Date Picker) ---
+    const nowRef = React.useRef(new Date());
+    const todayStable = new Date(nowRef.current.getFullYear(), nowRef.current.getMonth(), nowRef.current.getDate());
 
     // Helper to get formatted range label for presets
     const getPresetRangeLabel = (days: number) => {
-        const end = subDays(new Date(), 1); // Yesterday
+        const end = subDays(todayStable, 1); // Yesterday
         const start = subDays(end, days - 1);
         return `(${format(start, "dd/MM")} - ${format(end, "dd/MM")})`;
     };
@@ -119,9 +121,7 @@ export function PerformanceFilterBar() {
     const detectPeriod = React.useCallback(() => {
         if (!filters.dateRange?.from || !filters.dateRange?.to) return "custom";
 
-        const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const yesterday = subDays(startOfToday, 1);
+        const yesterday = subDays(todayStable, 1);
 
         if (!isSameDay(filters.dateRange.to, yesterday)) return "custom";
 
@@ -129,7 +129,7 @@ export function PerformanceFilterBar() {
         if ([1, 7, 15, 30, 90].includes(diff)) return diff.toString();
 
         return "custom";
-    }, [filters.dateRange]);
+    }, [filters.dateRange, todayStable]);
 
     const [period, setPeriod] = React.useState<string>(detectPeriod());
 
@@ -144,9 +144,7 @@ export function PerformanceFilterBar() {
     // 2. Sincronizar Dropdown -> Range (Global Context)
     React.useEffect(() => {
         if (period !== "custom") {
-            const now = new Date();
-            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const end = subDays(startOfToday, 1);
+            const end = subDays(todayStable, 1);
             const days = parseInt(period) || 30;
             const start = subDays(end, days - 1);
 
@@ -160,7 +158,7 @@ export function PerformanceFilterBar() {
                 setDateRange({ from: start, to: preciseEnd });
             }
         }
-    }, [period, setDateRange]); // Removi filters.dateRange daqui para evitar loop circular
+    }, [period, setDateRange, todayStable]); // Removi filters.dateRange daqui para evitar loop circular
 
     const activeFiltersCount = [
         filters.businessUnit,
@@ -171,13 +169,8 @@ export function PerformanceFilterBar() {
     const client = getSupabaseClient();
     const months = React.useMemo(() => monthOptions(18), []);
 
-    const rangeStart = filters.dateRange?.from ?? startOfToday();
+    const rangeStart = filters.dateRange?.from ?? todayStable;
     const rangeEnd = filters.dateRange?.to ?? endOfMonth(rangeStart);
-
-    function startOfToday() {
-        const d = new Date();
-        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    }
 
     const businessUnitsQuery = useQuery({
         queryKey: ["perf-filters", "units", rangeStart.toISOString(), rangeEnd.toISOString()],
