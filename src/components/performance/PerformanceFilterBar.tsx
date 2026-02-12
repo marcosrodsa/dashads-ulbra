@@ -138,7 +138,8 @@ export function PerformanceFilterBar() {
 
     // Detect initial period from filters
     const detectPeriod = React.useCallback(() => {
-        if (!filters.dateRange?.from || !filters.dateRange?.to) return "30"; // Default
+        // Se o range estiver incompleto, estamos no meio de uma escolha personalizada
+        if (!filters.dateRange?.from || !filters.dateRange?.to) return "custom";
 
         const end = new Date();
         const yesterday = subDays(end, 1);
@@ -153,7 +154,15 @@ export function PerformanceFilterBar() {
 
     const [period, setPeriod] = React.useState<string>(detectPeriod());
 
-    // Sync Period -> Filters
+    // 1. Sincronizar Range -> Dropdown (Local State)
+    React.useEffect(() => {
+        const detected = detectPeriod();
+        if (detected !== period) {
+            setPeriod(detected);
+        }
+    }, [filters.dateRange, detectPeriod, period]);
+
+    // 2. Sincronizar Dropdown -> Range (Global Context)
     React.useEffect(() => {
         if (period !== "custom") {
             const today = new Date();
@@ -168,7 +177,7 @@ export function PerformanceFilterBar() {
                 setDateRange({ from: start, to: end });
             }
         }
-    }, [period, setDateRange, filters.dateRange]);
+    }, [period, setDateRange]); // Removi filters.dateRange daqui para evitar loop circular
 
     const activeFiltersCount = [
         filters.businessUnit,

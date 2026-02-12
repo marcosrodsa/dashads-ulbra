@@ -184,7 +184,8 @@ export function DashboardFilterBar() {
 
     // Detect initial period from filters
     const detectPeriod = React.useCallback(() => {
-        if (!filters.dateRange?.from || !filters.dateRange?.to) return "30"; // Default
+        // Se o range estiver incompleto, estamos no meio de uma escolha personalizada
+        if (!filters.dateRange?.from || !filters.dateRange?.to) return "custom";
 
         const end = new Date();
         const yesterday = subDays(end, 1);
