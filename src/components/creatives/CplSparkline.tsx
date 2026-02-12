@@ -233,9 +233,14 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                                     border: '1px solid #e2e8f0',
                                     boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
                                 }}
-                                formatter={(value: number, name: string) => {
+                                formatter={(value: number, name: string, entry: any) => {
                                     if (name === "cpl") return [brl(value), 'CPL'];
-                                    if (name === "cplForecast") return [brl(value), 'CPL (Projeção)'];
+                                    if (name === "cplForecast") {
+                                        // Somente mostra a projeção se for o ponto de projeção (Proj.)
+                                        // ou se não houver CPL real (conexão)
+                                        if (entry.payload.isPrediction) return [brl(value), 'CPL (Projeção)'];
+                                        return [null, null];
+                                    }
                                     return [value, 'Leads'];
                                 }}
                                 labelFormatter={(label) => label === "Proj." ? "Projeção D+1" : `Data: ${label}`}
@@ -285,8 +290,21 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                                     stroke={predictionColor}
                                     strokeWidth={2.5}
                                     strokeDasharray="5 5"
-                                    dot={{ r: 4, fill: predictionColor, stroke: '#fff', strokeWidth: 1.5 }}
-                                    activeDot={{ r: 5, fill: predictionColor, stroke: '#fff', strokeWidth: 2 }}
+                                    dot={(props: any) => {
+                                        const { cx, cy, payload } = props;
+                                        // Só renderiza o ponto se for o ponto de predição
+                                        if (payload.isPrediction) {
+                                            return <circle cx={cx} cy={cy} r={4} fill={predictionColor} stroke="#fff" strokeWidth={1.5} />;
+                                        }
+                                        return null;
+                                    }}
+                                    activeDot={(props: any) => {
+                                        const { cx, cy, payload } = props;
+                                        if (payload.isPrediction) {
+                                            return <circle cx={cx} cy={cy} r={5} fill={predictionColor} stroke="#fff" strokeWidth={2} />;
+                                        }
+                                        return null;
+                                    }}
                                     isAnimationActive={false}
                                     connectNulls
                                 />
