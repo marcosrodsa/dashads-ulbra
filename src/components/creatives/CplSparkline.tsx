@@ -246,7 +246,8 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                                         }
                                         return [null, null];
                                     }
-                                }
+                                    return [value, 'Leads'];
+                                }}
                                 labelFormatter={(label) => label === "Proj." ? "Projeção D+1" : `Data: ${label}`}
                             />
                             <ReferenceLine
