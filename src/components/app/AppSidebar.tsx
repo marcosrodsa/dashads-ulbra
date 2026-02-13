@@ -19,19 +19,17 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { getSupabaseClient } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/auth-context-core";
-import { AppConfiguration } from "./AppConfiguration";
-import { LogOut } from "lucide-react";
+import { hasAccess } from "@/lib/permissions";
 
 const navItems = [
   { title: "Controle de Budget", url: "/budget", icon: Gauge },
   { title: "Performance de Captação", url: "/performance", icon: BarChart3 },
   { title: "Inteligência de Criativos", url: "/creatives", icon: Sparkles },
-  { title: "Classificação de Campanhas", url: "/classificador", icon: Tag, adminOnly: true },
-  { title: "Usuários", url: "/cadastros/usuarios", icon: Users, adminOnly: true },
-  { title: "Outros Cadastros", url: "/cadastros", icon: Database, adminOnly: true },
-  { title: "Status do Sistema", url: "/status", icon: Activity, adminOnly: true },
-  { title: "Tags & Pixels", url: "/cadastros/tags", icon: Code, adminOnly: true },
+  { title: "Classificação de Campanhas", url: "/classificador", icon: Tag },
+  { title: "Usuários", url: "/cadastros/usuarios", icon: Users },
+  { title: "Outros Cadastros", url: "/cadastros", icon: Database },
+  { title: "Status do Sistema", url: "/status", icon: Activity },
+  { title: "Tags & Pixels", url: "/cadastros/tags", icon: Code },
 ];
 
 
@@ -44,7 +42,7 @@ export function AppSidebar() {
   const { toggleFilters } = useFilters();
   const navigate = useNavigate();
 
-  const filteredNavItems = navItems.filter(item => !item.adminOnly || role === "admin");
+  const filteredNavItems = navItems.filter(item => hasAccess(role, item.url));
 
   return (
     <Sidebar collapsible="icon" className={collapsed ? "w-14" : "w-80"}>

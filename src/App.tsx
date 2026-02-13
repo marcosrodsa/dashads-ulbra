@@ -54,7 +54,7 @@ const App = () => (
                   <Route
                     path="/classificador"
                     element={
-                      <ProtectedRoute requireAdmin>
+                      <ProtectedRoute>
                         <CampaignClassifierPage />
                       </ProtectedRoute>
                     }
@@ -62,7 +62,7 @@ const App = () => (
                   <Route
                     path="/cadastros"
                     element={
-                      <ProtectedRoute requireAdmin>
+                      <ProtectedRoute>
                         <RegistriesPage />
                       </ProtectedRoute>
                     }
@@ -70,7 +70,7 @@ const App = () => (
                   <Route
                     path="/cadastros/tags"
                     element={
-                      <ProtectedRoute requireAdmin>
+                      <ProtectedRoute>
                         <TrackingTagsPage />
                       </ProtectedRoute>
                     }
@@ -78,7 +78,7 @@ const App = () => (
                   <Route
                     path="/cadastros/usuarios"
                     element={
-                      <ProtectedRoute requireAdmin>
+                      <ProtectedRoute>
                         <UsersManagementPage />
                       </ProtectedRoute>
                     }
