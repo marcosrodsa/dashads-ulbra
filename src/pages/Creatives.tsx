@@ -1468,10 +1468,20 @@ export default function CreativesPage() {
                                                             </TooltipTrigger>
                                                             <TooltipContent side="bottom" className="max-w-[220px] p-2 space-y-1">
                                                                 <p className="font-semibold text-[10px] uppercase text-muted-foreground">Projeção (D+1)</p>
-                                                                <p className="text-xs">Estimativa do CPL para amanhã baseada na regressão linear dos últimos 14 dias.</p>
-                                                                <div className="text-[10px] pt-1 space-y-0.5 border-t mt-1">
-                                                                    <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Queda esperada &gt; 10%</div>
-                                                                    <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Alta esperada &gt; 10%</div>
+                                                                <p className="text-xs italic">Estimativa do CPL para amanhã baseada na regressão linear dos últimos 14 dias.</p>
+
+                                                                <div className="pt-1.5 space-y-1 border-t mt-1">
+                                                                    <p className="text-[11px] font-semibold text-foreground flex items-center gap-1">
+                                                                        Confiança: {row.predicted_cpl_confidence}%
+                                                                    </p>
+                                                                    <p className="text-[10px] text-muted-foreground leading-tight">
+                                                                        Indica o nível de previsibilidade dos dados. Valores maiores significam um padrão histórico mais estável e confiável.
+                                                                    </p>
+                                                                </div>
+
+                                                                <div className="text-[10px] pt-1.5 space-y-0.5 border-t mt-1">
+                                                                    <div className="flex items-center gap-1 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Queda esperada &gt; 10%</div>
+                                                                    <div className="flex items-center gap-1 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Alta esperada &gt; 10%</div>
                                                                 </div>
                                                             </TooltipContent>
                                                         </Tooltip>
