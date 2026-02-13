@@ -49,10 +49,9 @@ interface CreativeRow {
     status?: string;
     has_assets: boolean;
     has_insights: boolean;
-    has_assets: boolean;
-    has_insights: boolean;
     predicted_cpl?: number | null;
     predicted_cpl_confidence?: number | null;
+    predicted_slope?: number | null;
 }
 
 interface KPIs {
@@ -284,7 +283,7 @@ export default function CreativesPage() {
         return !isBranding;
     }, [hideBranding]);
 
-    const getCreativeStatus = (cpl: number | null, avgCpl: number | null, dailyHistory: { date: string, cpl: number | null }[] = [], predictedCpl: number | null = null, confidence: number | null = null) => {
+    const getCreativeStatus = (cpl: number | null, avgCpl: number | null, dailyHistory: { date: string, cpl: number | null }[] = [], predictedCpl: number | null = null, confidence: number | null = null, slope: number | null = null) => {
         if (!cpl || !avgCpl || dailyHistory.length < 2) return "Em Aprendizado";
 
         const cleanHistory = dailyHistory.filter(d => {
@@ -418,7 +417,8 @@ export default function CreativesPage() {
 
         return {
             forecast,
-            confidence: Math.round(confidence * 100)
+            confidence: Math.round(confidence * 100),
+            slope
         };
     };
 
@@ -432,54 +432,78 @@ export default function CreativesPage() {
         const hasPrediction = row?.predicted_cpl && row?.predicted_cpl_confidence !== null;
         const confidence = row?.predicted_cpl_confidence;
 
+        const slope = row?.predicted_slope || 0;
+        const trendIcon = slope > 0.05 ? <TrendingUp className="h-3 w-3 text-red-500" /> : slope < -0.05 ? <TrendingDown className="h-3 w-3 text-emerald-500" /> : <RefreshCw className="h-3 w-3 text-blue-400" />;
+
+        // Analytical Engine: Generate non-generic sentences
+        const generateAdvice = () => {
+            const isCritical = cplValue > avgValue * 1.8;
+            const isHigh = cplValue > avgValue * 1.3;
+            const isScale = cplValue < avgValue * 0.8 && confidence > 70;
+            const isVolatile = (confidence || 0) < 40;
+
+            let sentences = [];
+
+            // 1. Momentum Analysis
+            if (Math.abs(slope) > 0.01) {
+                const direction = slope > 0 ? "subida" : "queda";
+                sentences.push(`Trajetória: Momentum de ${direction} de ${brl(Math.abs(slope))}/dia.`);
+
+                if (slope > 0 && isHigh) {
+                    const daysToLimit = Math.max(1, Math.round((avgValue * 2.0 - cplValue) / slope));
+                    if (daysToLimit < 5) sentences.push(`Risco: Limite crítico de ${brl(avgValue * 2)} deve ser atingido em aprox. ${daysToLimit} dias.`);
+                }
+            } else {
+                sentences.push("Estabilidade: Custo operando em zona de baixa volatilidade estatística.");
+            }
+
+            // 2. Benchmarking
+            if (diffPercent > 40) {
+                sentences.push(`Anomalia: Custo ${diffPercent}% acima da média. Eficiência do criativo está severamente comprometida.`);
+            } else if (diffPercent < -20) {
+                sentences.push(`Eficiência: Criativo ${Math.abs(diffPercent)}% mais barato que a conta. Ótima saúde financeira.`);
+            }
+
+            // 3. Actionable Advice
+            if (isScale && slope <= 0) {
+                sentences.push("Ação: Recomendamos escala agressiva (+25% budget) devido à compressão do CPL.");
+            } else if (isCritical) {
+                sentences.push("Ação: Interromper imediatamente. Saturação irreversível detectada pelo modelo.");
+            } else if (slope > 0.1 && isHigh) {
+                sentences.push("Ação: Trocar criativo ou testar novo público. Perda de tração acelerada.");
+            } else {
+                sentences.push("Ação: Manter observação. Padrão de performance está dentro da margem de segurança.");
+            }
+
+            return sentences.join(" ");
+        };
+
+        const analyticalContent = generateAdvice();
+
         switch (status) {
             case "Estrela":
-                content = cplValue && cplValue < avgValue * 0.8
-                    ? `Oportunidade de Escala: CPL de ${brl(cplValue)} está ${Math.abs(diffPercent)}% abaixo do benchmark da conta. A estabilidade estatística sugere baixo risco para aumento de budget.`
-                    : "Performance Superior: Modelo detectou custo estável e ROI positivo sustentado por regressão linear constante.";
-                if (hasPrediction && row.predicted_cpl < cplValue) {
-                    content += ` Projeção matemática aponta queda para ${brl(row.predicted_cpl)} com ${confidence}% de precisão (R²).`;
-                }
                 icon = <Sparkles className="h-3 w-3 mr-1" />;
                 break;
             case "Curva de Fadiga":
-                content = `Alerta de Saturação: Embora o CPL atual de ${brl(cplValue)} seja aceitável, o coeficiente de inclinação (slope) da tendência indica uma subida cíclica iminente.`;
-                if (hasPrediction) content += ` O modelo projeta um custo de ${brl(row.predicted_cpl)} no próximo ciclo (${confidence}% de confiança).`;
-                icon = <TrendingUp className="h-3 w-3 mr-1 text-amber-500" />;
-                break;
             case "CPL em Alta":
-                content = diffPercent > 0
-                    ? `Desvio de Performance: CPL está ${diffPercent}% acima da média controlada. A análise de variância detectou uma volatilidade negativa que requer intervenção técnica.`
-                    : "Anomalia Detectada: Apesar do custo estar dentro da margem, a aceleração estatística (momentum) indica uma subida acentuada nas últimas horas.";
+            case "Fadigado":
                 icon = <TrendingUp className="h-3 w-3 mr-1" />;
                 break;
             case "Em Otimização":
-                content = "Fase de Estabilização: A curva de aprendizado mostra redução progressiva do CPL. A projeção matemática recomenda manutenção para atingir a convergência do modelo.";
                 icon = <TrendingDown className="h-3 w-3 mr-1" />;
                 break;
             case "Em Recuperação":
-                content = `Reversão de Tendência: CPL crítico em ${brl(cplValue)}, porém o modelo identificou o início de uma curva descendente. Recomenda-se aguardar a confirmação estatística.`;
+            case "Testando":
                 icon = <RefreshCw className="h-3 w-3 mr-1" />;
                 break;
             case "Crítico":
-                content = `Stop Loss Imediato: CPL de ${brl(cplValue)} excede o limite tolerável da conta (>200% da média). Sinais de fadiga severa superam qualquer tentativa de recuperação.`;
                 icon = <AlertTriangle className="h-3 w-3 mr-1" />;
                 break;
-            case "Fadigado":
-                content = `Saturação Estatística: CPL de ${brl(cplValue)} está ${diffPercent}% acima do benchmark. A regressão linear confirma que o criativo exauriu a audiência atual.`;
-                if (hasPrediction && confidence > 50) content += ` Projeção de custo insustentável de ${brl(row.predicted_cpl)} com nível de confiança de ${confidence}%.`;
-                icon = <TrendingUp className="h-3 w-3 mr-1" />;
-                break;
-            case "Testando":
-                content = "Período de Aprendizado: Dados insuficientes para cálculo de R² e desvios-padrão. Requer mínimo de 7 dias ou 500 cliques para diagnóstico preditivo.";
-                icon = <RefreshCw className="h-3 w-3 mr-1 animate-spin-slow" />;
-                break;
             case "Estável":
-                content = "Equilíbrio Operacional: Performance dentro do intervalo de confiança esperado. Sem desvios significativos em relação à média histórica da conta.";
                 icon = <Filter className="h-3 w-3 mr-1" />;
                 break;
             default:
-                content = "Processando telemetria de performance em tempo real...";
+                icon = <RefreshCw className="h-3 w-3 mr-1" />;
         }
 
         const badge = (() => {
@@ -518,10 +542,15 @@ export default function CreativesPage() {
                 <TooltipContent side="top" className="p-3 max-w-[260px] space-y-2">
                     <div className="space-y-0.5">
                         <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Diagnóstico Detalhado</p>
-                        <div className="font-bold text-sm flex items-center gap-1.5 text-foreground">{icon}<span>{status}</span></div>
+                        <div className="font-bold text-sm flex items-center justify-between text-foreground">
+                            <div className="flex items-center gap-1.5">
+                                {icon}<span>{status}</span>
+                            </div>
+                            {trendIcon}
+                        </div>
                     </div>
                     <div className="w-full h-px bg-border/50" />
-                    <p className="text-xs leading-relaxed text-muted-foreground/90">{content}</p>
+                    <p className="text-xs leading-relaxed text-muted-foreground/90">{analyticalContent}</p>
                 </TooltipContent>
             </Tooltip>
         );
@@ -739,14 +768,16 @@ export default function CreativesPage() {
                 const forecastResult = calculateCPLForecast(history);
                 const predictedCpl = forecastResult?.forecast || null;
                 const confidence = forecastResult?.confidence || null;
+                const slope = forecastResult?.slope || null;
 
                 return {
                     ...r,
                     ctr: r.impressoes > 0 ? (r.cliques / r.impressoes) * 100 : 0,
                     cpl: cplValue,
-                    computedStatus: getCreativeStatus(cplValue, stableBenchmarks.avgCPL || 0, history, predictedCpl, confidence),
+                    computedStatus: getCreativeStatus(cplValue, stableBenchmarks.avgCPL || 0, history, predictedCpl, confidence, slope),
                     predicted_cpl: predictedCpl,
-                    predicted_cpl_confidence: confidence
+                    predicted_cpl_confidence: confidence,
+                    predicted_slope: slope
                 };
             })
             .filter((r) => {
