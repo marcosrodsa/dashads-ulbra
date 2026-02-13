@@ -27,6 +27,10 @@ export const PERMISSION_MATRIX: Record<string, UserRole[]> = {
  * @returns boolean indicating access
  */
 export function hasAccess(role: UserRole, path: string): boolean {
+    // Public paths or base paths are always accessible
+    if (path === "/" || path === "" || path === "/login") return true;
+
+    // If no role is determined yet, we can't grant access to protected paths
     if (!role) return false;
 
     // Super Admin always has access to everything
@@ -37,10 +41,6 @@ export function hasAccess(role: UserRole, path: string): boolean {
     if (PERMISSION_MATRIX[path]) {
         return PERMISSION_MATRIX[path].includes(role);
     }
-
-    // Default: If no rule is defined, assume it's protected and only super_admin (handled above) can see it.
-    // Or for base layout paths, allow access.
-    if (path === "/" || path === "" || path === "/login") return true;
 
     return false;
 }

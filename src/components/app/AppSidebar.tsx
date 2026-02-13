@@ -19,6 +19,9 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { getSupabaseClient } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/auth-context-core";
+import { AppConfiguration } from "./AppConfiguration";
+import { LogOut } from "lucide-react";
 import { hasAccess } from "@/lib/permissions";
 
 const navItems = [
