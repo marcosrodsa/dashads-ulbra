@@ -337,6 +337,7 @@ export default function CreativesPage() {
                 if (isHighCPL) return "Crítico";
                 return "Curva de Fadiga";
             }
+            if (isForecastExcellent && isHealthy) return "Estrela";
             if (isHighCPL) {
                 if (cpl > avgCpl * 2.0) return "Crítico";
                 return "Em Recuperação";
@@ -350,6 +351,8 @@ export default function CreativesPage() {
             if (isCurrentBad || (trend > 1.10 && isForecastRising)) return "Curva de Fadiga";
             return "Estrela";
         }
+
+        if (isForecastExcellent && isHealthy) return "Estrela";
 
         const isExtremelyHigh = cpl > avgCpl * 1.8;
         const isVeryHigh = cpl > avgCpl * 1.4;
@@ -419,48 +422,64 @@ export default function CreativesPage() {
         };
     };
 
-    const getStatusBadge = (status: string) => {
+    const getStatusBadge = (status: string, row?: any) => {
         let content = "";
         let icon: React.ReactNode = null;
 
+        const cplValue = row?.cpl;
+        const avgValue = stableBenchmarks.avgCPL || 0;
+        const diffPercent = cplValue && avgValue ? Math.round(((cplValue / avgValue) - 1) * 100) : 0;
+        const hasPrediction = row?.predicted_cpl && row?.predicted_cpl_confidence !== null;
+        const confidence = row?.predicted_cpl_confidence;
+
         switch (status) {
             case "Estrela":
-                content = "O modelo estatístico detectou performance excelente com custo estável. Ideal para aumentar o investimento.";
+                content = cplValue && cplValue < avgValue * 0.8
+                    ? `CPL excepcional (R$ ${cplValue.toFixed(2)}), ficando ${Math.abs(diffPercent)}% abaixo da média da conta. Ótima oportunidade de escala.`
+                    : "Performance excelente com custo estável ou tendência de queda confirmada pelo modelo.";
+                if (hasPrediction && row.predicted_cpl < cplValue) {
+                    content += ` Projeção de queda para ${brl(row.predicted_cpl)} (${confidence}% de confiança).`;
+                }
                 icon = <Sparkles className="h-3 w-3 mr-1" />;
                 break;
             case "Curva de Fadiga":
-                content = "Sinal estatístico de cansaço da audiência. O CPL ainda está baixo, mas o modelo projeta uma subida iminente.";
+                content = `Cansaco detectado. O CPL atual (${brl(cplValue)}) ainda é bom, mas a tendência matemática indica alta iminente`;
+                if (hasPrediction) content += ` para ${brl(row.predicted_cpl)} com ${confidence}% de confiança.`;
                 icon = <TrendingUp className="h-3 w-3 mr-1 text-amber-500" />;
                 break;
             case "CPL em Alta":
-                content = "O padrão matemático indica uma subida acentuada no custo. Requer ajuste ou troca de criativo.";
+                content = diffPercent > 0
+                    ? `O custo está ${diffPercent}% acima da média. O padrão atual indica que a tendência de alta deve persistir.`
+                    : "Apesar do custo nominal aceitável, o padrão matemático detectou uma subida acentuada nas últimas horas/dias.";
                 icon = <TrendingUp className="h-3 w-3 mr-1" />;
                 break;
             case "Em Otimização":
-                content = "Tendência estatística positiva: o custo está caindo de forma consistente nos últimos dias.";
+                content = "Tendência positiva: o custo está caindo de forma consistente. O modelo recomenda manter para coletar mais dados.";
                 icon = <TrendingDown className="h-3 w-3 mr-1" />;
                 break;
             case "Em Recuperação":
-                content = "O modelo identificou uma reversão positiva. O desempenho está voltando ao normal, não pause agora.";
+                content = `O CPL atual (${brl(cplValue)}) está alto, mas o modelo detectou uma reversão de tendência. Não pause ainda.`;
                 icon = <RefreshCw className="h-3 w-3 mr-1" />;
                 break;
             case "Crítico":
-                content = "O CPL está caindo, mas o valor absoluto ainda é extremo (> 2x Média). Atenção total no Stop Loss.";
+                content = `CPL Absurdo (${brl(cplValue)}). Mesmo com sinais de melhora, o custo atual é insustentável para a conta.`;
                 icon = <AlertTriangle className="h-3 w-3 mr-1" />;
                 break;
             case "Fadigado":
-                content = "CPL persistentemente alto. A regressão matemática mostra que a audiência parou de responder a este anúncio.";
+                content = `CPL persistente (R$ ${cplValue?.toFixed(2)}), estando ${diffPercent}% acima da média. A audiência saturou e a resposta caiu.`;
+                if (hasPrediction && confidence > 50) content += ` Previsão de custo alto de ${brl(row.predicted_cpl)} (${confidence}% de confiança).`;
                 icon = <TrendingUp className="h-3 w-3 mr-1" />;
                 break;
             case "Testando":
-                content = "Criativo novo. Ainda não há histórico suficiente para o modelo estatístico traçar uma tendência confiável.";
+                content = "Ainda não há histórico (mínimo 7 dias com dados) para gerar um diagnóstico matemático confiável.";
                 icon = <RefreshCw className="h-3 w-3 mr-1 animate-spin-slow" />;
                 break;
             case "Estável":
-                content = "Desempenho dentro do padrão esperado, com variações normais identificadas pelo modelo.";
+                content = "Desempenho dentro da normalidade estatística. Sem sinais fortes de fadiga ou oportunidade de escala agressiva.";
+                icon = <Filter className="h-3 w-3 mr-1" />;
                 break;
             default:
-                content = "Aguardando mais dados para o processamento do modelo estatístico.";
+                content = "Analizando comportamento diário...";
         }
 
         const badge = (() => {
@@ -1435,7 +1454,7 @@ export default function CreativesPage() {
                                                     {/* PRESENTE and FUTURO Row */}
                                                     <div className="flex items-center gap-2 scale-90">
                                                         {/* PRESENTE: Badge */}
-                                                        {getStatusBadge(row.computedStatus)}
+                                                        {getStatusBadge(row.computedStatus, row)}
 
                                                         {/* FUTURO: Projection */}
                                                         <Tooltip>

@@ -13,10 +13,11 @@ export const PERMISSION_MATRIX: Record<string, UserRole[]> = {
     // Operations (Admin and Super Admin)
     "/classificador": ["super_admin", "admin"],
     "/cadastros/usuarios": ["super_admin", "admin"],
+    "/cadastros": ["super_admin", "admin"],
 
-    // System & Technical (Super Admin Only)
-    "/status": ["super_admin"],
-    "/cadastros/tags": ["super_admin"],
+    // System & Technical (Admin and Super Admin)
+    "/status": ["super_admin", "admin"],
+    "/cadastros/tags": ["super_admin", "admin"],
 };
 
 /**
