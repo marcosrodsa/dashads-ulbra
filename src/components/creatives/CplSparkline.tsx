@@ -13,6 +13,7 @@ interface CplSparklineProps {
     avgCpl?: number | null;
     predictedCpl?: number | null;
     currentCpl?: number | null;
+    predictionConfidence?: number | null;
 }
 
 // Format currency
@@ -25,7 +26,7 @@ const formatDate = (dateStr: string) => {
     return `${day}/${month}`;
 };
 
-export function CplSparkline({ data, creativeName, width = 80, height = 24, avgCpl, predictedCpl, currentCpl }: CplSparklineProps) {
+export function CplSparkline({ data, creativeName, width = 80, height = 24, avgCpl, predictedCpl, currentCpl, predictionConfidence }: CplSparklineProps) {
     // Safe data for line chart: ignore nulls AND weekends for trend/variation calculation
     const validData = data.filter(d => {
         const date = new Date(d.date + 'T12:00:00');
@@ -238,11 +239,14 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                                     if (name === "cplForecast") {
                                         // Somente mostra a projeção se for o ponto de projeção (Proj.)
                                         // ou se não houver CPL real (conexão)
-                                        if (entry.payload.isPrediction) return [brl(value), 'CPL (Projeção)'];
+                                        if (entry.payload.isPrediction) {
+                                            const label = 'CPL (Projeção)';
+                                            const confidenceSuffix = predictionConfidence ? ` [Confiança: ${predictionConfidence}%]` : '';
+                                            return [brl(value), `${label}${confidenceSuffix}`];
+                                        }
                                         return [null, null];
                                     }
-                                    return [value, 'Leads'];
-                                }}
+                                }
                                 labelFormatter={(label) => label === "Proj." ? "Projeção D+1" : `Data: ${label}`}
                             />
                             <ReferenceLine
@@ -359,7 +363,7 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                         </div>
                     )}
                     {predictedCpl && predictedCpl > 0 && (
-                        <div className="text-center border-l border-dashed pl-2">
+                        <div className="text-center border-l border-dashed pl-2 flex flex-col items-center">
                             <div className="text-muted-foreground text-[10px]">Previsto</div>
                             <div className={cn(
                                 "font-medium font-mono",
@@ -367,6 +371,11 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                             )}>
                                 {brl(predictedCpl)}
                             </div>
+                            {predictionConfidence !== null && (
+                                <div className="text-[8px] font-bold text-muted-foreground/70 mt-0.5">
+                                    Confiança: {predictionConfidence}%
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

@@ -49,7 +49,10 @@ interface CreativeRow {
     status?: string;
     has_assets: boolean;
     has_insights: boolean;
+    has_assets: boolean;
+    has_insights: boolean;
     predicted_cpl?: number | null;
+    predicted_cpl_confidence?: number | null;
 }
 
 interface KPIs {
@@ -369,11 +372,11 @@ export default function CreativesPage() {
             .sort((a, b) => a.date.localeCompare(b.date))
             .slice(-14);
 
-        if (dailyData.length < 5) return null;
+        const n = dailyData.length;
+        if (n < 5) return null;
 
         const x = dailyData.map((_, i) => i + 1);
         const y = dailyData.map(d => d.cpl as number);
-        const n = x.length;
 
         const sumX = x.reduce((a, b) => a + b, 0);
         const sumY = y.reduce((a, b) => a + b, 0);
@@ -386,8 +389,29 @@ export default function CreativesPage() {
         const slope = (n * sumXY - sumX * sumY) / denominator;
         const intercept = (sumY - slope * sumX) / n;
 
+        // Calculate R² (Coefficient of Determination)
+        const yMean = sumY / n;
+        let ssRes = 0;
+        let ssTot = 0;
+        for (let i = 0; i < n; i++) {
+            const yHat = slope * x[i] + intercept;
+            ssRes += Math.pow(y[i] - yHat, 2);
+            ssTot += Math.pow(y[i] - yMean, 2);
+        }
+
+        const rSquared = ssTot === 0 ? 0 : 1 - (ssRes / ssTot);
+
+        // Confidence formula: R² adjusted by data volume (rewarding more days)
+        // We normalize to 10 days for max volume boost
+        const volumeFactor = Math.min(n, 10) / 10;
+        const confidence = Math.max(0, Math.min(1, rSquared * volumeFactor));
+
         const forecast = Math.max(0, slope * (n + 1) + intercept);
-        return forecast;
+
+        return {
+            forecast,
+            confidence: Math.round(confidence * 100)
+        };
     };
 
     const getStatusBadge = (status: string) => {
@@ -618,12 +642,13 @@ export default function CreativesPage() {
 
         return Object.values(grouped).map(r => {
             const dailyHistory = dailyByAd[r.ad_id] || [];
-            const predicted_cpl = calculateCPLForecast(dailyHistory);
+            const forecastResult = calculateCPLForecast(dailyHistory);
 
             return {
                 ...r,
                 dailyHistory,
-                predicted_cpl
+                predicted_cpl: forecastResult?.forecast || null,
+                predicted_cpl_confidence: forecastResult?.confidence || null
             };
         });
     }, [data, filterBranding, hideBranding]);
@@ -687,13 +712,17 @@ export default function CreativesPage() {
             .map((r) => {
                 const cplValue = r.conversoes > 0 ? r.investimento / r.conversoes : null;
                 const history = r.dailyHistory || [];
-                const predictedCpl = calculateCPLForecast(history);
+                const forecastResult = calculateCPLForecast(history);
+                const predictedCpl = forecastResult?.forecast || null;
+                const confidence = forecastResult?.confidence || null;
+
                 return {
                     ...r,
                     ctr: r.impressoes > 0 ? (r.cliques / r.impressoes) * 100 : 0,
                     cpl: cplValue,
                     computedStatus: getCreativeStatus(cplValue, stableBenchmarks.avgCPL || 0, history, predictedCpl),
-                    predicted_cpl: predictedCpl
+                    predicted_cpl: predictedCpl,
+                    predicted_cpl_confidence: confidence
                 };
             })
             .filter((r) => {
@@ -707,7 +736,7 @@ export default function CreativesPage() {
                 return true;
             })
             .sort((a, b) => {
-                const getValue = (row: CreativeRow & { ctr: number; cpl: number | null; computedStatus: string; predicted_cpl: number | null }) => {
+                const getValue = (row: CreativeRow & { ctr: number; cpl: number | null; computedStatus: string; predicted_cpl: number | null; predicted_cpl_confidence: number | null }) => {
                     switch (sortBy) {
                         case "status": return row.computedStatus;
                         case "ad_name": return row.ad_name || row.ad_id || "";
@@ -1395,6 +1424,7 @@ export default function CreativesPage() {
                                                             avgCpl={stableBenchmarks.avgCPL}
                                                             predictedCpl={row.predicted_cpl}
                                                             currentCpl={row.cpl}
+                                                            predictionConfidence={row.predicted_cpl_confidence}
                                                         />
                                                     </div>
                                                     {/* PRESENTE and FUTURO Row */}
@@ -1405,15 +1435,35 @@ export default function CreativesPage() {
                                                         {/* FUTURO: Projection */}
                                                         <Tooltip>
                                                             <TooltipTrigger asChild>
-                                                                <div className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground bg-muted/30 px-1.5 py-1 rounded-md border border-border/50 cursor-help h-[24px]">
-                                                                    <span>Prev:</span>
-                                                                    <span className={cn(
-                                                                        row.predicted_cpl && row.cpl && row.predicted_cpl > row.cpl * 1.1 ? "text-amber-600 font-bold" :
-                                                                            row.predicted_cpl && row.cpl && row.predicted_cpl < row.cpl * 0.9 ? "text-emerald-600 font-bold" :
-                                                                                "text-foreground"
-                                                                    )}>
-                                                                        {row.predicted_cpl ? brl(row.predicted_cpl) : "-"}
-                                                                    </span>
+                                                                <div className="flex flex-col items-center gap-0.5 bg-muted/30 px-1.5 py-1 rounded-md border border-border/50 cursor-help min-w-[70px]">
+                                                                    <div className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground leading-none">
+                                                                        <span>Prev:</span>
+                                                                        <span className={cn(
+                                                                            row.predicted_cpl && row.cpl && row.predicted_cpl > row.cpl * 1.1 ? "text-amber-600 font-bold" :
+                                                                                row.predicted_cpl && row.cpl && row.predicted_cpl < row.cpl * 0.9 ? "text-emerald-600 font-bold" :
+                                                                                    "text-foreground"
+                                                                        )}>
+                                                                            {row.predicted_cpl ? brl(row.predicted_cpl) : "-"}
+                                                                        </span>
+                                                                    </div>
+                                                                    {row.predicted_cpl_confidence !== null && (
+                                                                        <div className="flex items-center gap-1 w-full mt-0.5">
+                                                                            <div className="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden">
+                                                                                <div
+                                                                                    className={cn(
+                                                                                        "h-full transition-all duration-500",
+                                                                                        row.predicted_cpl_confidence > 75 ? "bg-emerald-500" :
+                                                                                            row.predicted_cpl_confidence > 50 ? "bg-amber-500" :
+                                                                                                "bg-slate-400"
+                                                                                    )}
+                                                                                    style={{ width: `${row.predicted_cpl_confidence}%` }}
+                                                                                />
+                                                                            </div>
+                                                                            <span className="text-[8px] font-bold text-muted-foreground leading-none">
+                                                                                {row.predicted_cpl_confidence}%
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             </TooltipTrigger>
                                                             <TooltipContent side="bottom" className="max-w-[220px] p-2 space-y-1">
