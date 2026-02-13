@@ -435,51 +435,51 @@ export default function CreativesPage() {
         switch (status) {
             case "Estrela":
                 content = cplValue && cplValue < avgValue * 0.8
-                    ? `CPL excepcional (R$ ${cplValue.toFixed(2)}), ficando ${Math.abs(diffPercent)}% abaixo da média da conta. Ótima oportunidade de escala.`
-                    : "Performance excelente com custo estável ou tendência de queda confirmada pelo modelo.";
+                    ? `Oportunidade de Escala: CPL de ${brl(cplValue)} está ${Math.abs(diffPercent)}% abaixo do benchmark da conta. A estabilidade estatística sugere baixo risco para aumento de budget.`
+                    : "Performance Superior: Modelo detectou custo estável e ROI positivo sustentado por regressão linear constante.";
                 if (hasPrediction && row.predicted_cpl < cplValue) {
-                    content += ` Projeção de queda para ${brl(row.predicted_cpl)} (${confidence}% de confiança).`;
+                    content += ` Projeção matemática aponta queda para ${brl(row.predicted_cpl)} com ${confidence}% de precisão (R²).`;
                 }
                 icon = <Sparkles className="h-3 w-3 mr-1" />;
                 break;
             case "Curva de Fadiga":
-                content = `Cansaco detectado. O CPL atual (${brl(cplValue)}) ainda é bom, mas a tendência matemática indica alta iminente`;
-                if (hasPrediction) content += ` para ${brl(row.predicted_cpl)} com ${confidence}% de confiança.`;
+                content = `Alerta de Saturação: Embora o CPL atual de ${brl(cplValue)} seja aceitável, o coeficiente de inclinação (slope) da tendência indica uma subida cíclica iminente.`;
+                if (hasPrediction) content += ` O modelo projeta um custo de ${brl(row.predicted_cpl)} no próximo ciclo (${confidence}% de confiança).`;
                 icon = <TrendingUp className="h-3 w-3 mr-1 text-amber-500" />;
                 break;
             case "CPL em Alta":
                 content = diffPercent > 0
-                    ? `O custo está ${diffPercent}% acima da média. O padrão atual indica que a tendência de alta deve persistir.`
-                    : "Apesar do custo nominal aceitável, o padrão matemático detectou uma subida acentuada nas últimas horas/dias.";
+                    ? `Desvio de Performance: CPL está ${diffPercent}% acima da média controlada. A análise de variância detectou uma volatilidade negativa que requer intervenção técnica.`
+                    : "Anomalia Detectada: Apesar do custo estar dentro da margem, a aceleração estatística (momentum) indica uma subida acentuada nas últimas horas.";
                 icon = <TrendingUp className="h-3 w-3 mr-1" />;
                 break;
             case "Em Otimização":
-                content = "Tendência positiva: o custo está caindo de forma consistente. O modelo recomenda manter para coletar mais dados.";
+                content = "Fase de Estabilização: A curva de aprendizado mostra redução progressiva do CPL. A projeção matemática recomenda manutenção para atingir a convergência do modelo.";
                 icon = <TrendingDown className="h-3 w-3 mr-1" />;
                 break;
             case "Em Recuperação":
-                content = `O CPL atual (${brl(cplValue)}) está alto, mas o modelo detectou uma reversão de tendência. Não pause ainda.`;
+                content = `Reversão de Tendência: CPL crítico em ${brl(cplValue)}, porém o modelo identificou o início de uma curva descendente. Recomenda-se aguardar a confirmação estatística.`;
                 icon = <RefreshCw className="h-3 w-3 mr-1" />;
                 break;
             case "Crítico":
-                content = `CPL Absurdo (${brl(cplValue)}). Mesmo com sinais de melhora, o custo atual é insustentável para a conta.`;
+                content = `Stop Loss Imediato: CPL de ${brl(cplValue)} excede o limite tolerável da conta (>200% da média). Sinais de fadiga severa superam qualquer tentativa de recuperação.`;
                 icon = <AlertTriangle className="h-3 w-3 mr-1" />;
                 break;
             case "Fadigado":
-                content = `CPL persistente (R$ ${cplValue?.toFixed(2)}), estando ${diffPercent}% acima da média. A audiência saturou e a resposta caiu.`;
-                if (hasPrediction && confidence > 50) content += ` Previsão de custo alto de ${brl(row.predicted_cpl)} (${confidence}% de confiança).`;
+                content = `Saturação Estatística: CPL de ${brl(cplValue)} está ${diffPercent}% acima do benchmark. A regressão linear confirma que o criativo exauriu a audiência atual.`;
+                if (hasPrediction && confidence > 50) content += ` Projeção de custo insustentável de ${brl(row.predicted_cpl)} com nível de confiança de ${confidence}%.`;
                 icon = <TrendingUp className="h-3 w-3 mr-1" />;
                 break;
             case "Testando":
-                content = "Ainda não há histórico (mínimo 7 dias com dados) para gerar um diagnóstico matemático confiável.";
+                content = "Período de Aprendizado: Dados insuficientes para cálculo de R² e desvios-padrão. Requer mínimo de 7 dias ou 500 cliques para diagnóstico preditivo.";
                 icon = <RefreshCw className="h-3 w-3 mr-1 animate-spin-slow" />;
                 break;
             case "Estável":
-                content = "Desempenho dentro da normalidade estatística. Sem sinais fortes de fadiga ou oportunidade de escala agressiva.";
+                content = "Equilíbrio Operacional: Performance dentro do intervalo de confiança esperado. Sem desvios significativos em relação à média histórica da conta.";
                 icon = <Filter className="h-3 w-3 mr-1" />;
                 break;
             default:
-                content = "Analizando comportamento diário...";
+                content = "Processando telemetria de performance em tempo real...";
         }
 
         const badge = (() => {
