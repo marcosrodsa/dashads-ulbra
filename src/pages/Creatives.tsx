@@ -284,7 +284,7 @@ export default function CreativesPage() {
         return !isBranding;
     }, [hideBranding]);
 
-    const getCreativeStatus = (cpl: number | null, avgCpl: number | null, dailyHistory: { date: string, cpl: number | null }[] = [], predictedCpl: number | null = null) => {
+    const getCreativeStatus = (cpl: number | null, avgCpl: number | null, dailyHistory: { date: string, cpl: number | null }[] = [], predictedCpl: number | null = null, confidence: number | null = null) => {
         if (!cpl || !avgCpl || dailyHistory.length < 2) return "Em Aprendizado";
 
         const cleanHistory = dailyHistory.filter(d => {
@@ -296,7 +296,12 @@ export default function CreativesPage() {
 
         if (cleanHistory.length < 7) return "Testando";
 
-        const isForecastBad = predictedCpl && avgCpl && predictedCpl > avgCpl * 1.3;
+        // Logic refined with Confidence: 
+        // We only trust the forecast if confidence is above 50%
+        const isConfidenceReliable = confidence !== null && confidence >= 50;
+        const isForecastBad = isConfidenceReliable && predictedCpl && avgCpl && predictedCpl > avgCpl * 1.3;
+        const isForecastExcellent = isConfidenceReliable && predictedCpl && avgCpl && predictedCpl < avgCpl * 0.8;
+
         const lastDayPerformance = cleanHistory[cleanHistory.length - 1];
         const lastCpl = lastDayPerformance.cpl || 0;
         const isCurrentBad = lastCpl > avgCpl * 1.05;
@@ -720,7 +725,7 @@ export default function CreativesPage() {
                     ...r,
                     ctr: r.impressoes > 0 ? (r.cliques / r.impressoes) * 100 : 0,
                     cpl: cplValue,
-                    computedStatus: getCreativeStatus(cplValue, stableBenchmarks.avgCPL || 0, history, predictedCpl),
+                    computedStatus: getCreativeStatus(cplValue, stableBenchmarks.avgCPL || 0, history, predictedCpl, confidence),
                     predicted_cpl: predictedCpl,
                     predicted_cpl_confidence: confidence
                 };
