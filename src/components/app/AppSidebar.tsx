@@ -28,6 +28,7 @@ const navItems = [
   { title: "Controle de Budget", url: "/budget", icon: Gauge },
   { title: "Performance de Captação", url: "/performance", icon: BarChart3 },
   { title: "Inteligência de Criativos", url: "/creatives", icon: Sparkles },
+  { title: "Andrômeda View", url: "/andromeda", icon: Activity },
   { title: "Classificação de Campanhas", url: "/classificador", icon: Tag },
   { title: "Usuários", url: "/cadastros/usuarios", icon: Users },
   { title: "Outros Cadastros", url: "/cadastros", icon: Database },

@@ -240,8 +240,8 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                                         // Somente mostra a projeção se for o ponto de projeção (Proj.)
                                         // ou se não houver CPL real (conexão)
                                         if (entry.payload.isPrediction) {
-                                            const label = 'CPL (Projeção)';
-                                            const confidenceSuffix = predictionConfidence ? ` [Confiança: ${predictionConfidence}%]` : '';
+                                            const label = 'CPL (Projeção Linear)';
+                                            const confidenceSuffix = predictionConfidence ? ` [R²: ${predictionConfidence}%]` : '';
                                             return [brl(value), `${label}${confidenceSuffix}`];
                                         }
                                         return [null, null];
@@ -341,8 +341,8 @@ export function CplSparkline({ data, creativeName, width = 80, height = 24, avgC
                                     </div>
                                 </div>
                             </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-[200px] text-[10px]">
-                                Comparativo entre o primeiro e o último dia com leads no período.
+                            <TooltipContent side="top" className="max-w-[200px] text-[10px] leading-tight">
+                                Análise de Momentum: Variação percentual entre o ponto de entrada e a performance atual nesta janela.
                             </TooltipContent>
                         </Tooltip>
                     </div>

@@ -194,25 +194,56 @@ Deno.serve(async (req) => {
 
         console.log(`Detected type: ${creativeType} for adId: ${adId}`);
 
-        // 3. Fetch Video Metrics (ONLY if video)
+        // 3. Fetch Insights (All Ads)
         let hookRate = null;
         let holdRate = null;
+        let reach = null;
+        let frequency = null;
 
-        if (isVideo) {
-            // ... (keep existing metrics code)
-            const insightResponse = await fetch(
-                `https://graph.facebook.com/v21.0/${adId}/insights?fields=video_3_sec_watched_actions,video_p100_watched_actions,impressions&access_token=${META_API_KEY}`
+        try {
+            console.log(`Fetching basic insights for ad: ${adId}`);
+
+            // 1. Fetch Basic Insights (All Types)
+            const basicResponse = await fetch(
+                `https://graph.facebook.com/v21.0/${adId}/insights?fields=impressions,reach,frequency&access_token=${META_API_KEY}`
             );
-            const insightData = await insightResponse.json();
-            const insights = insightData.data?.[0];
+            const basicJson = await basicResponse.json();
+            const basicInsights = basicJson.data?.[0];
 
-            if (insights) {
-                const impressions = parseInt(insights.impressions || "0");
-                const v3s = insights.video_3_sec_watched_actions?.find((a: any) => a.action_type === "video_view")?.value || 0;
-                const v100 = insights.video_p100_watched_actions?.find((a: any) => a.action_type === "video_view")?.value || 0;
-                if (impressions > 0) hookRate = Number(((v3s / impressions) * 100).toFixed(2));
-                if (v3s > 0) holdRate = Number(((v100 / v3s) * 100).toFixed(2));
+            console.log("DEBUG: Basic Insights ->", JSON.stringify(basicInsights));
+
+            if (basicInsights) {
+                const impressions = parseInt(basicInsights.impressions || "0");
+                reach = parseInt(basicInsights.reach || "0");
+                frequency = parseFloat(basicInsights.frequency || "0");
+
+                // 2. Fetch Video Specifics (Only if Video)
+                if (isVideo) {
+                    try {
+                        const videoResponse = await fetch(
+                            `https://graph.facebook.com/v21.0/${adId}/insights?fields=video_3_sec_watched_actions,video_p100_watched_actions&access_token=${META_API_KEY}`
+                        );
+                        const videoJson = await videoResponse.json();
+                        const videoInsights = videoJson.data?.[0];
+
+                        console.log("DEBUG: Video Insights ->", JSON.stringify(videoInsights));
+
+                        if (videoInsights) {
+                            const v3s = videoInsights.video_3_sec_watched_actions?.find((a: any) => a.action_type === "video_view")?.value || 0;
+                            const v100 = videoInsights.video_p100_watched_actions?.find((a: any) => a.action_type === "video_view")?.value || 0;
+
+                            if (impressions > 0) hookRate = Number(((v3s / impressions) * 100).toFixed(2));
+                            if (v3s > 0) holdRate = Number(((v100 / v3s) * 100).toFixed(2));
+                        }
+                    } catch (vidErr) {
+                        console.warn("Video metrics fetch failed:", vidErr);
+                    }
+                }
+
+                console.log(`✅ Insights Processed: Reach=${reach}, Freq=${frequency}, Hook=${hookRate}%`);
             }
+        } catch (e) {
+            console.warn("Could not fetch insights for ad:", e);
         }
 
         // --- TEXT EXTRACTION STRATEGY ---
@@ -268,6 +299,8 @@ Deno.serve(async (req) => {
             creative_type: creativeType,
             hook_rate: hookRate,
             hold_rate: holdRate,
+            reach: reach,
+            frequency: frequency,
             preview_shareable_link: adData.preview_shareable_link || null,
             effective_status: adData.effective_status || null,
             ad_labels: adData.adlabels?.map((l: any) => l.name) || [],

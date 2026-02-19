@@ -12,7 +12,7 @@ interface CreativeHeatmapData {
     conversoes: number;
     cpl: number | null;
     investimento: number;
-    image_url: string | null;
+    image_url?: string | null;
 }
 
 interface CreativeHeatmapProps {

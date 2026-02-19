@@ -1,0 +1,189 @@
+name: media-buyer-squad
+version: 1.0.0
+description: Advanced Media Buying & Paid Traffic Squad with 5 specialized agents, 18 skills, and 47 expert frameworks
+author: AIOS Team
+license: MIT
+slashPrefix: media-buyer
+
+aios:
+  minVersion: "2.1.0"
+  type: squad
+
+components:
+  agents:
+    - ad-midas.md
+    - media-buyer.md
+    - performance-analyst.md
+    - creative-analyst.md
+    - pixel-specialist.md
+
+  tasks:
+    - ad-midas-define-strategy.md
+    - ad-midas-launch-campaign.md
+    - ad-midas-scale-optimize.md
+    - pixel-specialist-setup-tracking.md
+    - pixel-specialist-audit-tracking.md
+    - creative-analyst-create-briefs.md
+    - creative-analyst-generate-hooks.md
+    - creative-analyst-generate-copy.md
+    - performance-analyst-monitor-metrics.md
+    - performance-analyst-apply-kill-scale.md
+    - performance-analyst-analyze-funnel.md
+    - performance-analyst-optimize-budget.md
+
+  workflows:
+    - campaign-launch-workflow.md
+    - creative-refresh-workflow.md
+    - scale-optimization-workflow.md
+    - tracking-setup-workflow.md
+
+  templates:
+    - creative-brief-template.md
+    - campaign-structure-template.md
+    - metrics-report-template.md
+    - hook-testing-template.md
+
+  checklists:
+    - pre-launch-checklist.md
+    - tracking-validation-checklist.md
+    - scale-readiness-checklist.md
+
+  scripts:
+    - diagnose-metrics.js
+    - audit-tracking.js
+    - detect-fatigue.js
+    - analyze-funnel.js
+    - analyze-attribution.js
+    - generate-hooks.js
+    - generate-copy.js
+    - create-brief.js
+    - generate-angles.js
+    - create-dsl.js
+    - evaluate-kill-scale.js
+    - allocate-budget.js
+    - expand-audience.js
+    - select-funnel.js
+    - calculate-economics.js
+    - check-scale-readiness.js
+    - structure-campaign.js
+    - monitor-campaigns.js
+
+  tools: []
+
+config:
+  extends: extend
+  coding-standards: config/coding-standards.md
+  tech-stack: config/tech-stack.md
+  source-tree: config/source-tree.md
+
+dependencies:
+  node:
+    - axios
+    - dotenv
+  python: []
+  squads: []
+  mcp:
+    - meta-ads
+    - meta-mcp
+    - meta-pixel-mcp
+
+collaboration:
+  handoff_rules:
+    - from: ad-midas
+      to: creative-analyst
+      trigger: "hook rate <15% OR creative briefing needed"
+    - from: ad-midas
+      to: pixel-specialist
+      trigger: "conversion ==0 OR tracking setup needed"
+    - from: ad-midas
+      to: performance-analyst
+      trigger: "CPA > Target OR metrics analysis needed"
+    - from: performance-analyst
+      to: ad-midas
+      trigger: "scaling decision needed OR budget change >50%"
+    - from: performance-analyst
+      to: creative-analyst
+      trigger: "CTR dropping OR creative fatigue detected"
+
+  workflow_sequence:
+    - step: 1
+      agent: ad-midas
+      action: "Define strategy and campaign structure"
+    - step: 2
+      agent: pixel-specialist
+      action: "Configure tracking and attribution"
+    - step: 3
+      agent: creative-analyst
+      action: "Create creative briefs and generate hooks"
+    - step: 4
+      agent: ad-midas
+      action: "Launch campaign"
+    - step: 5
+      agent: performance-analyst
+      action: "Monitor metrics and apply kill/scale rules"
+    - step: 6
+      agent: ad-midas
+      action: "Scale, optimize, or pause"
+
+expert_frameworks:
+  jeremy_haynes:
+    specialties:
+      - DSL Revolution
+      - Constants vs Variables
+      - KiB/Scale Rules
+      - Funnel Selection
+  brian_moncada:
+    specialties:
+      - Andromeda Method
+      - YouTube Ads
+      - Hook Testing
+      - Metric Thresholds
+  alex_hormozi:
+    specialties:
+      - Unit Economics
+      - LTV/CAC Rules
+      - Hydra Strategy
+  brandon_carter:
+    specialties:
+      - Constants vs Variables
+      - Scientific Ad Testing
+  jordan_stupar:
+    specialties:
+      - Creative Strategy
+
+skills:
+  diagnostic:
+    - diagnose-metrics
+    - audit-tracking
+    - detect-fatigue
+    - analyze-funnel
+    - analyze-attribution
+  generative:
+    - generate-hooks
+    - generate-copy
+    - create-brief
+    - generate-angles
+    - create-dsl
+  optimization:
+    - evaluate-kill-scale
+    - allocate-budget
+    - expand-audience
+  strategic:
+    - select-funnel
+    - calculate-economics
+    - check-scale-readiness
+    - structure-campaign
+  automation:
+    - monitor-campaigns
+
+tags:
+  - media-buying
+  - paid-traffic
+  - performance-marketing
+  - meta-ads
+  - facebook-ads
+  - instagram-ads
+  - creative-strategy
+  - analytics
+  - tracking
+  - optimization

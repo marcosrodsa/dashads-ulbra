@@ -49,9 +49,17 @@ interface CreativeRow {
     status?: string;
     has_assets: boolean;
     has_insights: boolean;
-    predicted_cpl?: number | null;
-    predicted_cpl_confidence?: number | null;
-    predicted_slope?: number | null;
+    reach?: number | null;
+    frequency?: number | null;
+    hook_rate?: number | null;
+    hold_rate?: number | null;
+    dailyHistory?: { date: string; cpl: number | null; conversions: number; investimento: number; impressoes: number }[];
+    healthScore?: {
+        score: number;
+        pillars: any;
+        action: string;
+        color: string;
+    };
 }
 
 interface KPIs {
@@ -283,277 +291,217 @@ export default function CreativesPage() {
         return !isBranding;
     }, [hideBranding]);
 
-    const getCreativeStatus = (cpl: number | null, avgCpl: number | null, dailyHistory: { date: string, cpl: number | null }[] = [], predictedCpl: number | null = null, confidence: number | null = null, slope: number | null = null) => {
-        if (!cpl || !avgCpl || dailyHistory.length < 2) return "Em Aprendizado";
+    const getCreativeStatus = (row: CreativeRow, avgCpl: number | null) => {
+        const { cpl, conversoes, investimento, dailyHistory, reach, frequency, hook_rate } = row;
+        const history = dailyHistory || [];
 
-        const cleanHistory = dailyHistory.filter(d => {
-            const date = new Date(d.date + 'T12:00:00');
-            const day = date.getDay();
-            const isWeekend = day === 0 || day === 6;
-            return !isWeekend && d.cpl !== null && d.cpl > 0;
-        });
+        if (conversoes < 5 || history.length < 3) return "Em Aprendizado";
 
-        if (cleanHistory.length < 7) return "Testando";
+        const totalSpend = investimento || 0;
+        const isHighHook = hook_rate && hook_rate > 25;
+        const isEfficient = avgCpl && cpl && cpl < avgCpl * 1.05;
 
-        // Logic refined with Confidence: 
-        // We only trust the forecast if confidence is above 50%
-        const isConfidenceReliable = confidence !== null && confidence >= 50;
-        const isForecastBad = isConfidenceReliable && predictedCpl && avgCpl && predictedCpl > avgCpl * 1.3;
-        const isForecastExcellent = isConfidenceReliable && predictedCpl && avgCpl && predictedCpl < avgCpl * 0.8;
+        // === B. Marginal Efficiency Scaling (Sliding Window 3d vs 3d) ===
+        const sortedHistory = [...history]
+            .filter(d => d.investimento > 0)
+            .sort((a, b) => a.date.localeCompare(b.date));
 
-        const lastDayPerformance = cleanHistory[cleanHistory.length - 1];
-        const lastCpl = lastDayPerformance.cpl || 0;
-        const isCurrentBad = lastCpl > avgCpl * 1.05;
+        let scalingStatus: string | null = null;
+        if (sortedHistory.length >= 6 && isEfficient) {
+            const recent3 = sortedHistory.slice(-3);
+            const previous3 = sortedHistory.slice(-6, -3);
 
-        const WINDOW_RECENT = 2;
-        const WINDOW_PREV = 4;
-        const recentPart = cleanHistory.slice(-WINDOW_RECENT);
-        const previousPart = cleanHistory.slice(-WINDOW_RECENT - WINDOW_PREV, -WINDOW_RECENT);
+            const recentSpend = recent3.reduce((s, d) => s + d.investimento, 0);
+            const previousSpend = previous3.reduce((s, d) => s + d.investimento, 0);
 
-        let trend = 1.0;
-        if (recentPart.length > 0 && previousPart.length > 0) {
-            const recentAvg = recentPart.reduce((sum, d) => sum + (d.cpl || 0), 0) / recentPart.length;
-            const prevAvg = previousPart.reduce((sum, d) => sum + (d.cpl || 0), 0) / previousPart.length;
-            trend = recentAvg / prevAvg;
-        } else {
-            const first = cleanHistory[0].cpl || 0;
-            const last = cleanHistory[cleanHistory.length - 1].cpl || 0;
-            trend = last / first;
-        }
+            const recentCPL = recent3.reduce((s, d) => s + (d.cpl || 0), 0) / recent3.length;
+            const previousCPL = previous3.reduce((s, d) => s + (d.cpl || 0), 0) / previous3.length;
 
-        const firstValue = cleanHistory[0]?.cpl || 0;
-        const lastValue = cleanHistory[cleanHistory.length - 1]?.cpl || 0;
-        const isOverallBetter = lastValue < firstValue && firstValue > 0;
+            if (previousSpend > 0 && previousCPL > 0) {
+                const spendGrowth = (recentSpend - previousSpend) / previousSpend;
+                const cplGrowth = (recentCPL - previousCPL) / previousCPL;
 
-        const ownAvgCpl = cleanHistory.reduce((sum, d) => sum + (d.cpl || 0), 0) / cleanHistory.length;
-        const isOwnSpike = lastCpl > ownAvgCpl * 1.4;
-
-        const isLowCPL = cpl <= avgCpl * 0.85;
-        const isHighCPL = cpl >= avgCpl * 1.15;
-
-        if (trend < 0.92 || isOverallBetter) {
-            if (isForecastBad) {
-                if (isHighCPL) return "Crítico";
-                return "Curva de Fadiga";
+                if (spendGrowth > 0.20 && cplGrowth < 0.10) {
+                    scalingStatus = "Scaling (Top Perform)";
+                } else if (spendGrowth > 0.20 && cplGrowth >= spendGrowth) {
+                    scalingStatus = "Teto de Escala";
+                }
             }
-            if (isForecastExcellent && isHealthy) return "Estrela";
-            if (isHighCPL) {
-                if (cpl > avgCpl * 2.0) return "Crítico";
-                return "Em Recuperação";
-            }
-            return "Em Otimização";
         }
 
-        if (isLowCPL) {
-            const isForecastRising = predictedCpl && predictedCpl > cpl * 1.1;
-            if (isForecastBad || (isOwnSpike && isForecastRising)) return "Curva de Fadiga";
-            if (isCurrentBad || (trend > 1.10 && isForecastRising)) return "Curva de Fadiga";
-            return "Estrela";
+        if (scalingStatus) return scalingStatus;
+
+        // === C. Hook Rate Safety Lock ===
+        if (totalSpend > 200 && hook_rate !== null && hook_rate !== undefined && hook_rate < 10) {
+            return "Rejeição de Recuperação";
         }
 
-        if (isForecastExcellent && isHealthy) return "Estrela";
-
-        const isExtremelyHigh = cpl > avgCpl * 1.8;
-        const isVeryHigh = cpl > avgCpl * 1.4;
-        const isBetterThanAccount = (ownAvgCpl || cpl) < avgCpl * 0.9;
-        const isHealthy = cpl < avgCpl * 1.05;
-
-        if (!isHealthy && (isExtremelyHigh || (isVeryHigh && isForecastBad && !isBetterThanAccount))) {
-            return "Fadigado";
+        // Andromeda Lifecycle Logic
+        if (isEfficient) {
+            if (frequency && frequency > 2.5) return "Estável (Saturando)";
+            return "Stable Contributor";
         }
 
-        if (trend > 1.15 || isForecastBad) {
-            const isForecastActuallyGood = predictedCpl && predictedCpl < avgCpl * 1.1;
-            if (isForecastActuallyGood || isHealthy) return "CPL em Alta";
-            if (isBetterThanAccount && cpl < avgCpl * 1.2) return "CPL em Alta";
-            return "Fadigado";
+        if (cpl && avgCpl && cpl > avgCpl * 1.4) {
+            return "Fadigado (Trocar)";
         }
 
-        if (isCurrentBad || trend > 1.15) return "CPL em Alta";
-        return "Estável";
+        if (totalSpend < 50 && history.length > 7) return "Redundante (Sem Entrega)";
+
+        return "Em Teste";
     };
 
-    const calculateCPLForecast = (dailyHistory: { date: string, cpl: number | null }[]) => {
-        const dailyData = dailyHistory
-            .filter(d => d.cpl !== null && d.cpl > 0)
-            .sort((a, b) => a.date.localeCompare(b.date))
-            .slice(-14);
+    const calculateHealthScore = (row: CreativeRow, avgCpl: number) => {
+        const cpl = row.cpl;
+        const conversions = row.conversoes || 0;
+        const frequency = row.frequency;
+        const hookRate = row.hook_rate;
+        const isImage = row.creative_type?.toUpperCase() === 'IMAGE';
+        const hasFrequency = frequency !== null && frequency !== undefined;
+        const hasHookRate = hookRate !== null && hookRate !== undefined;
 
-        const n = dailyData.length;
-        if (n < 5) return null;
+        // 1. Efficiency Pillar (40%) - CPL vs Account Avg (Continuous Score)
+        let efficiencyScore = 0;
+        let efficiencyReason = '';
 
-        const x = dailyData.map((_, i) => i + 1);
-        const y = dailyData.map(d => d.cpl as number);
+        if (!cpl || !avgCpl) {
+            efficiencyScore = 50;
+            efficiencyReason = 'Sem dados de CPL para comparação';
+        } else {
+            // Calculate deviation percentage: (Avg - CPL) / Avg
+            // Positive deviation means CPL is lower (better)
+            const deviation = (avgCpl - cpl) / avgCpl;
 
-        const sumX = x.reduce((a, b) => a + b, 0);
-        const sumY = y.reduce((a, b) => a + b, 0);
-        const sumXY = x.reduce((s, xi, i) => s + xi * y[i], 0);
-        const sumXX = x.reduce((s, xi) => s + xi * xi, 0);
+            // Base score 70 (Average). 
+            // +30% deviation (CPL 30% lower) = 100 Score.
+            // -40% deviation (CPL 40% higher) = 30 Score.
+            efficiencyScore = Math.min(Math.max(Math.round(70 + (deviation * 100)), 0), 100);
 
-        const denominator = (n * sumXX - sumX * sumX);
-        if (denominator === 0) return null;
+            const pctText = Math.abs(Math.round(deviation * 100));
 
-        const slope = (n * sumXY - sumX * sumY) / denominator;
-        const intercept = (sumY - slope * sumX) / n;
-
-        // Calculate R² (Coefficient of Determination)
-        const yMean = sumY / n;
-        let ssRes = 0;
-        let ssTot = 0;
-        for (let i = 0; i < n; i++) {
-            const yHat = slope * x[i] + intercept;
-            ssRes += Math.pow(y[i] - yHat, 2);
-            ssTot += Math.pow(y[i] - yMean, 2);
+            if (deviation >= 0.3) efficiencyReason = `CPL ${brl(cpl)} é elite (-${pctText}% vs média ${brl(avgCpl)}). Nota Máxima.`;
+            else if (deviation > 0) efficiencyReason = `CPL ${brl(cpl)} está bom (-${pctText}% vs média ${brl(avgCpl)}).`;
+            else if (deviation === 0) efficiencyReason = `CPL ${brl(cpl)} está na média.`;
+            else if (deviation > -0.2) efficiencyReason = `CPL ${brl(cpl)} está acima da média (+${pctText}% vs ${brl(avgCpl)}). Atenção.`;
+            else efficiencyReason = `CPL ${brl(cpl)} está crítico (+${pctText}% vs média ${brl(avgCpl)}).`;
         }
 
-        const rSquared = ssTot === 0 ? 0 : 1 - (ssRes / ssTot);
+        // 2. Volume Pillar (25%) - Data Reliability
+        // Keep linear up to 20 conversions for statistical confidence
+        let volumeScore = Math.min((conversions / 20) * 100, 100);
+        const volumeReason = conversions >= 20
+            ? `${conversions} conversões — dados estatisticamente confiáveis (Nota Máxima)`
+            : `${conversions}/20 conversões — confiança parcial (${Math.round(volumeScore)}%)`;
 
-        // Confidence formula: R² adjusted by data volume (rewarding more days)
-        // We normalize to 10 days for max volume boost
-        const volumeFactor = Math.min(n, 10) / 10;
-        const confidence = Math.max(0, Math.min(1, rSquared * volumeFactor));
+        // 3. Attention/Stability Pillar (20%) - Hook Rate (Vídeo) ou CTR (Imagem)
+        let stabilityScore = 50; // Neutral default
+        let stabilityReason = '';
+        let stabilityLabel = ''; // Used by tooltip
+        const ctrAll = row.ctr || 0;
 
-        const forecast = Math.max(0, slope * (n + 1) + intercept);
+        if (isImage) {
+            // IMAGEM: CTR (Todos) - Linear Scale
+            // 1.5% = 100 score | 0.8% = 53 score | 0% = 0 score
+            stabilityScore = Math.min((ctrAll / 1.5) * 100, 100);
+            stabilityLabel = `Atenção 👁 (CTR ${pct(ctrAll)})`;
+
+            if (ctrAll >= 1.5) stabilityReason = `CTR ${pct(ctrAll)} — elite (Acima de 1.5%). Nota Máxima.`;
+            else if (ctrAll >= 1.0) stabilityReason = `CTR ${pct(ctrAll)} — muito bom (Meta 1.5%).`;
+            else if (ctrAll >= 0.8) stabilityReason = `CTR ${pct(ctrAll)} — aceitável (Meta 1.5%).`;
+            else stabilityReason = `CTR ${pct(ctrAll)} — baixo. Criativo não para o scroll.`;
+
+        } else if (hasHookRate) {
+            // VÍDEO: Hook Rate - Linear Scale
+            // 35% = 100 score | 20% = 57 score
+            stabilityScore = Math.min((hookRate! / 35) * 100, 100);
+            stabilityLabel = `Retenção 🎬 (${hookRate!.toFixed(1)}%)`;
+
+            if (hookRate! >= 35) stabilityReason = `Hook ${hookRate!.toFixed(1)}% — elite (Meta 35%). Nota Máxima.`;
+            else if (hookRate! >= 25) stabilityReason = `Hook ${hookRate!.toFixed(1)}% — muito bom.`;
+            else if (hookRate! >= 20) stabilityReason = `Hook ${hookRate!.toFixed(1)}% — aceitável.`;
+            else stabilityReason = `Hook ${hookRate!.toFixed(1)}% — baixo. Melhore os primeiros 3s.`;
+
+        } else {
+            stabilityLabel = 'Atenção (—)';
+            stabilityReason = 'Sem dados de métrica primária (Hook/CTR).';
+        }
+
+        // 4. Fatigue Warning (15%) - Frequency
+        // Linear Decay from 1.8x to 3.0x
+        // < 1.8 = 100 Score
+        // 2.4 = 50 Score
+        // > 3.0 = 0 Score
+        let fatigueScore = 100;
+        let fatigueReason = '';
+        const freqVal = frequency || 1; // Default to 1 if null for calc, but handle null reasoning
+
+        if (!hasFrequency) {
+            fatigueScore = 70; // Neutral
+            fatigueReason = 'Sem dados de frequência. Score neutro.';
+        } else if (freqVal <= 1.8) {
+            fatigueScore = 100;
+            fatigueReason = `Frequência ${freqVal.toFixed(2)}x — Saudável (Abaixo de 1.8x). Nota Máxima.`;
+        } else if (freqVal >= 3.0) {
+            fatigueScore = 0;
+            fatigueReason = `Frequência ${freqVal.toFixed(2)}x — Saturado (Acima de 3.0x). Score zerado.`;
+        } else {
+            // Interpolate between 1.8 (100) and 3.0 (0)
+            const range = 3.0 - 1.8; // 1.2
+            const excess = freqVal - 1.8;
+            const penalty = (excess / range) * 100;
+            fatigueScore = Math.max(0, Math.round(100 - penalty));
+            fatigueReason = `Frequência ${freqVal.toFixed(2)}x — em elevação (Alerta em 2.5x).`;
+        }
+
+        // Final Weighted Score
+        const totalScore = Math.round(
+            (efficiencyScore * 0.40) +
+            (volumeScore * 0.25) +
+            (stabilityScore * 0.20) +
+            (fatigueScore * 0.15)
+        );
+
+        // Learning Guardrail
+        const isLearning = conversions < 5 || (row.dailyHistory?.length || 0) < 3;
+
+        let action = "";
+        let color = "";
+
+        if (isLearning) {
+            action = "Aguardar";
+            color = "blue";
+        } else if (totalScore >= 80) {
+            action = "Escalar";
+            color = "emerald";
+        } else if (totalScore >= 50) {
+            action = "Manter";
+            color = "blue";
+        } else if (totalScore >= 30) {
+            action = "Otimizar";
+            color = "amber";
+        } else {
+            action = "Trocar";
+            color = "red";
+        }
 
         return {
-            forecast,
-            confidence: Math.round(confidence * 100),
-            slope
+            score: totalScore,
+            pillars: {
+                efficiency: efficiencyScore,
+                volume: volumeScore,
+                stability: stabilityScore,
+                fatigue: fatigueScore
+            },
+            reasons: {
+                efficiency: efficiencyReason,
+                stability: stabilityReason,
+                stabilityLabel: stabilityLabel,
+                fatigue: fatigueReason,
+                volume: volumeReason
+            },
+            action,
+            color
         };
-    };
-
-    const getStatusBadge = (status: string, row?: any) => {
-        let content = "";
-        let icon: React.ReactNode = null;
-
-        const cplValue = row?.cpl;
-        const avgValue = stableBenchmarks.avgCPL || 0;
-        const diffPercent = cplValue && avgValue ? Math.round(((cplValue / avgValue) - 1) * 100) : 0;
-        const hasPrediction = row?.predicted_cpl && row?.predicted_cpl_confidence !== null;
-        const confidence = row?.predicted_cpl_confidence;
-
-        const slope = row?.predicted_slope || 0;
-        const trendIcon = slope > 0.05 ? <TrendingUp className="h-3 w-3 text-red-500" /> : slope < -0.05 ? <TrendingDown className="h-3 w-3 text-emerald-500" /> : <RefreshCw className="h-3 w-3 text-blue-400" />;
-
-        // Analytical Engine: Generate non-generic sentences
-        const generateAdvice = () => {
-            const isCritical = cplValue > avgValue * 1.8;
-            const isHigh = cplValue > avgValue * 1.3;
-            const isScale = cplValue < avgValue * 0.8 && confidence > 70;
-            const isVolatile = (confidence || 0) < 40;
-
-            let sentences = [];
-
-            // 1. Momentum Analysis
-            if (Math.abs(slope) > 0.01) {
-                const direction = slope > 0 ? "subida" : "queda";
-                sentences.push(`Trajetória: Momentum de ${direction} de ${brl(Math.abs(slope))}/dia.`);
-
-                if (slope > 0 && isHigh) {
-                    const daysToLimit = Math.max(1, Math.round((avgValue * 2.0 - cplValue) / slope));
-                    if (daysToLimit < 5) sentences.push(`Risco: Limite crítico de ${brl(avgValue * 2)} deve ser atingido em aprox. ${daysToLimit} dias.`);
-                }
-            } else {
-                sentences.push("Estabilidade: Custo operando em zona de baixa volatilidade estatística.");
-            }
-
-            // 2. Benchmarking
-            if (diffPercent > 40) {
-                sentences.push(`Anomalia: Custo ${diffPercent}% acima da média. Eficiência do criativo está severamente comprometida.`);
-            } else if (diffPercent < -20) {
-                sentences.push(`Eficiência: Criativo ${Math.abs(diffPercent)}% mais barato que a conta. Ótima saúde financeira.`);
-            }
-
-            // 3. Actionable Advice
-            if (isScale && slope <= 0) {
-                sentences.push("Ação: Recomendamos escala agressiva (+25% budget) devido à compressão do CPL.");
-            } else if (isCritical) {
-                sentences.push("Ação: Interromper imediatamente. Saturação irreversível detectada pelo modelo.");
-            } else if (slope > 0.1 && isHigh) {
-                sentences.push("Ação: Trocar criativo ou testar novo público. Perda de tração acelerada.");
-            } else {
-                sentences.push("Ação: Manter observação. Padrão de performance está dentro da margem de segurança.");
-            }
-
-            return sentences.join(" ");
-        };
-
-        const analyticalContent = generateAdvice();
-
-        switch (status) {
-            case "Estrela":
-                icon = <Sparkles className="h-3 w-3 mr-1" />;
-                break;
-            case "Curva de Fadiga":
-            case "CPL em Alta":
-            case "Fadigado":
-                icon = <TrendingUp className="h-3 w-3 mr-1" />;
-                break;
-            case "Em Otimização":
-                icon = <TrendingDown className="h-3 w-3 mr-1" />;
-                break;
-            case "Em Recuperação":
-            case "Testando":
-                icon = <RefreshCw className="h-3 w-3 mr-1" />;
-                break;
-            case "Crítico":
-                icon = <AlertTriangle className="h-3 w-3 mr-1" />;
-                break;
-            case "Estável":
-                icon = <Filter className="h-3 w-3 mr-1" />;
-                break;
-            default:
-                icon = <RefreshCw className="h-3 w-3 mr-1" />;
-        }
-
-        const badge = (() => {
-            switch (status) {
-                case "Estrela":
-                case "Em Otimização":
-                    return <Badge className="bg-emerald-500/20 text-emerald-800 hover:bg-emerald-500/30 dark:text-emerald-300 border-0 flex items-center gap-1.5 px-2.5 py-1 ring-2 ring-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.3)] font-bold">
-                        <Sparkles className="h-3.5 w-3.5" /> Escalar
-                    </Badge>;
-                case "Em Recuperação":
-                case "Testando":
-                case "Estável":
-                    return <Badge className="bg-blue-600/20 text-blue-800 hover:bg-blue-600/30 dark:text-blue-300 border-0 flex items-center gap-1.5 px-2.5 py-1 ring-1 ring-blue-500/30 font-semibold">
-                        <Eye className="h-3.5 w-3.5" /> Observar
-                    </Badge>;
-                case "Crítico":
-                case "CPL em Alta":
-                case "Curva de Fadiga":
-                    return <Badge className="bg-amber-500/20 text-amber-800 hover:bg-amber-500/30 dark:text-amber-300 border-0 flex items-center gap-1.5 px-2.5 py-1 ring-1 ring-amber-500/40 font-semibold">
-                        <AlertTriangle className="h-3.5 w-3.5" /> Alerta
-                    </Badge>;
-                case "Fadigado":
-                    return <Badge className="bg-red-500/15 text-red-700 hover:bg-red-500/25 dark:text-red-400 border-0 flex items-center gap-1.5 px-2">
-                        <TrendingUp className="h-3 w-3" /> Pausar
-                    </Badge>;
-                default:
-                    return <Badge variant="outline" className="text-xs text-muted-foreground flex items-center gap-1"><RefreshCw className="h-3 w-3 animate-spin-slow" /> Aprendendo</Badge>;
-            }
-        })();
-
-        return (
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <div className="cursor-help w-fit mx-auto">{badge}</div>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="p-3 max-w-[260px] space-y-2">
-                    <div className="space-y-0.5">
-                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Diagnóstico Detalhado</p>
-                        <div className="font-bold text-sm flex items-center justify-between text-foreground">
-                            <div className="flex items-center gap-1.5">
-                                {icon}<span>{status}</span>
-                            </div>
-                            {trendIcon}
-                        </div>
-                    </div>
-                    <div className="w-full h-px bg-border/50" />
-                    <p className="text-xs leading-relaxed text-muted-foreground/90">{analyticalContent}</p>
-                </TooltipContent>
-            </Tooltip>
-        );
     };
 
     const toggleSort = (column: string) => {
@@ -695,13 +643,9 @@ export default function CreativesPage() {
 
         return Object.values(grouped).map(r => {
             const dailyHistory = dailyByAd[r.ad_id] || [];
-            const forecastResult = calculateCPLForecast(dailyHistory);
-
             return {
                 ...r,
-                dailyHistory,
-                predicted_cpl: forecastResult?.forecast || null,
-                predicted_cpl_confidence: forecastResult?.confidence || null
+                dailyHistory
             };
         });
     }, [data, filterBranding, hideBranding]);
@@ -765,19 +709,19 @@ export default function CreativesPage() {
             .map((r) => {
                 const cplValue = r.conversoes > 0 ? r.investimento / r.conversoes : null;
                 const history = r.dailyHistory || [];
-                const forecastResult = calculateCPLForecast(history);
-                const predictedCpl = forecastResult?.forecast || null;
-                const confidence = forecastResult?.confidence || null;
-                const slope = forecastResult?.slope || null;
 
-                return {
+                const baseRow = {
                     ...r,
                     ctr: r.impressoes > 0 ? (r.cliques / r.impressoes) * 100 : 0,
-                    cpl: cplValue,
-                    computedStatus: getCreativeStatus(cplValue, stableBenchmarks.avgCPL || 0, history, predictedCpl, confidence, slope),
-                    predicted_cpl: predictedCpl,
-                    predicted_cpl_confidence: confidence,
-                    predicted_slope: slope
+                    cpl: cplValue
+                };
+
+                const healthData = calculateHealthScore(baseRow, stableBenchmarks.avgCPL || 0);
+
+                return {
+                    ...baseRow,
+                    computedStatus: getCreativeStatus(baseRow, stableBenchmarks.avgCPL || 0),
+                    healthScore: healthData
                 };
             })
             .filter((r) => {
@@ -791,9 +735,9 @@ export default function CreativesPage() {
                 return true;
             })
             .sort((a, b) => {
-                const getValue = (row: CreativeRow & { ctr: number; cpl: number | null; computedStatus: string; predicted_cpl: number | null; predicted_cpl_confidence: number | null }) => {
+                const getValue = (row: any): string | number => {
                     switch (sortBy) {
-                        case "status": return row.computedStatus;
+                        case "status": return row.computedStatus || "";
                         case "ad_name": return row.ad_name || row.ad_id || "";
                         case "campaign_name": return row.campaign_name || "";
                         case "unidade": return row.unidade || "";
@@ -814,39 +758,35 @@ export default function CreativesPage() {
 
                 if (sortBy === "status") {
                     const statusWeights: Record<string, number> = {
-                        // Priority 1: PAUSAR (Red)
-                        "Fadigado": 1,
-                        "Piorando": 1,
-                        // Priority 2: ALERTA (Amber)
-                        "Crítico": 2,
-                        "CPL em Alta": 2,
-                        "Curva de Fadiga": 2,
-                        // Priority 3: ESCALAR (Green)
-                        "Estrela": 3,
-                        "Em Otimização": 3,
-                        // Priority 4: OBSERVAR (Blue)
-                        "Estável": 4,
-                        "Em Recuperação": 4,
-                        "Testando": 4,
-                        "Em Aprendizado": 5
+                        "Scaling (Top Perform)": 1,
+                        "Stable Contributor": 2,
+                        "Em Teste": 3,
+                        "Em Aprendizado": 4,
+                        "Estável (Saturando)": 5,
+                        "Redundante (Sem Entrega)": 6,
+                        "Fadigado (Trocar)": 7
                     };
-                    const aWeight = statusWeights[aVal] || 99;
-                    const bWeight = statusWeights[bVal] || 99;
+                    const aWeight = statusWeights[aVal.toString()] || 99;
+                    const bWeight = statusWeights[bVal.toString()] || 99;
                     return sortDir === "asc" ? aWeight - bWeight : bWeight - aWeight;
                 }
 
                 if (sortBy === "effective_status") {
-                    const statusWeight = (s: string) => s === "ACTIVE" ? 1 : s === "PAUSED" ? 2 : 3;
+                    const statusWeight = (s: string | number) => s === "ACTIVE" ? 1 : s === "PAUSED" ? 2 : 3;
                     const aWeight = statusWeight(aVal);
                     const bWeight = statusWeight(bVal);
                     if (aWeight !== bWeight) return sortDir === "asc" ? aWeight - bWeight : bWeight - aWeight;
                     return 0;
                 }
 
-                if (typeof aVal === "string") {
+                if (typeof aVal === "string" && typeof bVal === "string") {
                     return sortDir === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
                 }
-                return sortDir === "asc" ? aVal - bVal : bVal - aVal;
+
+                // Ensure numeric comparison
+                const nA = Number(aVal);
+                const nB = Number(bVal);
+                return sortDir === "asc" ? nA - nB : nB - nA;
             });
     }, [allAggregated, sortBy, sortDir, minConversions, minInvestment, onlyActive, stableBenchmarks.avgCPL, filterBranding, hideBranding]);
 
@@ -1258,28 +1198,49 @@ export default function CreativesPage() {
                                         <span className="flex items-center justify-end text-[13px]">Conv. {getSortIcon("conversoes")}</span>
                                     </TableHead>
 
+                                    <TableHead className="text-right w-[80px] p-2">
+                                        <div className="flex flex-col items-end">
+                                            <span className="text-[12px]">Reach/Freq</span>
+                                            <span className="text-[9px] text-muted-foreground">Alcance/Saturação</span>
+                                        </div>
+                                    </TableHead>
+
+                                    <TableHead className="text-right w-[70px] p-2">
+                                        <div className="flex flex-col items-end">
+                                            <span className="text-[12px]">Hook %</span>
+                                            <span className="text-[9px] text-muted-foreground">Retenção</span>
+                                        </div>
+                                    </TableHead>
+
                                     <TableHead className="text-right w-[90px] cursor-pointer p-2" onClick={() => toggleSort("investimento")}>
                                         <span className="flex items-center justify-end text-[13px]">Invest. {getSortIcon("investimento")}</span>
                                     </TableHead>
 
-                                    <TableHead className="text-center w-[200px] cursor-pointer p-2" onClick={() => toggleSort("status")}>
-                                        <div className="flex items-center justify-center gap-1 text-[13px]">
-                                            Saúde & Tendência {getSortIcon("status")}
-                                            <TooltipProvider>
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild>
-                                                        <Info className="h-3 w-3 cursor-help text-muted-foreground/50" />
-                                                    </TooltipTrigger>
-                                                    <TooltipContent className="max-w-[200px] p-2 text-[11px]">
-                                                        <p> Fluxo Temporal de Decisão:</p>
-                                                        <ul className="list-disc pl-3 mt-1 space-y-0.5">
-                                                            <li><strong>Passado:</strong> Gráfico (Tendência)</li>
-                                                            <li><strong>Presente:</strong> Badge (Diagnóstico Atual)</li>
-                                                            <li><strong>Futuro:</strong> Previsão (Projeção CPL)</li>
-                                                        </ul>
-                                                    </TooltipContent>
-                                                </Tooltip>
-                                            </TooltipProvider>
+                                    <TableHead className="w-[120px] p-2 text-center text-[13px]">Histórico CPL</TableHead>
+
+                                    <TableHead className="text-center w-[120px] cursor-pointer p-2" onClick={() => toggleSort("status")}>
+                                        <div className="flex flex-col items-center justify-center gap-0.5 text-[12px] font-bold group">
+                                            <span className="text-foreground/70 uppercase tracking-tighter">Saúde Senior</span>
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-[10px] font-medium text-muted-foreground/60">Andrômeda 2026</span>
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <Info className="h-2.5 w-2.5 cursor-help text-muted-foreground/40 group-hover:text-purple-400 transition-colors" />
+                                                        </TooltipTrigger>
+                                                        <TooltipContent className="max-w-[240px] p-3 text-[11px] leading-relaxed">
+                                                            <p className="font-bold mb-1">Algoritmo de Decisão Senior:</p>
+                                                            <p>Score 0-100 ponderado por:</p>
+                                                            <ul className="list-disc pl-4 mt-1 space-y-1">
+                                                                <li><strong>Eficiência (35%):</strong> CPL vs Meta da Conta</li>
+                                                                <li><strong>Momentum (30%):</strong> Slope da tendência (CPL subindo/caindo)</li>
+                                                                <li><strong>Confiança (20%):</strong> Correlação R² ajustada por MAE</li>
+                                                                <li><strong>Volume (15%):</strong> Amostragem de conversões</li>
+                                                            </ul>
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            </div>
                                         </div>
                                     </TableHead>
 
@@ -1298,8 +1259,9 @@ export default function CreativesPage() {
                                             <TableCell className="p-2"><Skeleton className="h-4 w-8" /></TableCell>
                                             <TableCell className="p-2"><Skeleton className="h-4 w-12" /></TableCell>
                                             <TableCell className="p-2"><Skeleton className="h-4 w-8" /></TableCell>
-                                            <TableCell className="p-2"><Skeleton className="h-4 w-16" /></TableCell>
-                                            <TableCell className="p-2"><Skeleton className="h-8 w-40" /></TableCell>
+                                            <TableCell className="p-2 text-right"><Skeleton className="h-4 w-16" /></TableCell>
+                                            <TableCell className="p-2"><Skeleton className="h-8 w-24 mx-auto" /></TableCell>
+                                            <TableCell className="p-2 text-center"><Skeleton className="h-10 w-10 mx-auto rounded-full" /></TableCell>
                                             <TableCell className="p-2 text-center"><Skeleton className="h-4 w-7 mx-auto" /></TableCell>
                                             <TableCell className="p-2 text-center"><Skeleton className="h-6 w-6 mx-auto" /></TableCell>
                                         </TableRow>
@@ -1462,86 +1424,167 @@ export default function CreativesPage() {
                                                 <div className="font-medium font-mono text-[12px]">{row.conversoes}</div>
                                             </TableCell>
 
+                                            {/* Reach/Frequency Column */}
+                                            <TableCell className="p-2 text-right">
+                                                <div className="flex flex-col items-end">
+                                                    <span className="font-mono text-[11px] font-medium">{row.reach?.toLocaleString() || "-"}</span>
+                                                    <Badge variant="outline" className="px-1 py-0 h-3 text-[9px] border-slate-200 text-slate-500">
+                                                        {row.frequency?.toFixed(2) || "1.00"}x
+                                                    </Badge>
+                                                </div>
+                                            </TableCell>
+
+                                            {/* Hook Rate Column */}
+                                            <TableCell className="p-2 text-right">
+                                                <div className={cn(
+                                                    "font-mono text-[12px] font-bold",
+                                                    (row.hook_rate || 0) > 30 ? "text-emerald-600" :
+                                                        (row.hook_rate || 0) > 15 ? "text-blue-600" : "text-muted-foreground"
+                                                )}>
+                                                    {row.hook_rate ? `${row.hook_rate}%` : "-"}
+                                                </div>
+                                            </TableCell>
+
                                             {/* 10. Investimento */}
                                             <TableCell className="p-2 text-right text-muted-foreground font-mono text-[12px]">
                                                 {brl(row.investimento)}
                                             </TableCell>
 
-                                            {/* 10. Saúde & Tendência */}
+                                            <TableCell className="p-2 w-[120px]">
+                                                <CplSparkline
+                                                    data={row.dailyHistory || []}
+                                                    avgCpl={stableBenchmarks.avgCPL}
+                                                    width={100}
+                                                    height={32}
+                                                />
+                                            </TableCell>
+
+                                            {/* 11. Senior Health Widget */}
                                             <TableCell className="p-2 text-center">
-                                                <div className="flex flex-col items-center gap-1 w-full max-w-[180px] mx-auto">
-                                                    {/* PASSADO */}
-                                                    <div className="w-full">
-                                                        <CplSparkline
-                                                            data={row.dailyHistory || []}
-                                                            width={150}
-                                                            height={24}
-                                                            avgCpl={stableBenchmarks.avgCPL}
-                                                            predictedCpl={row.predicted_cpl}
-                                                            currentCpl={row.cpl}
-                                                            predictionConfidence={row.predicted_cpl_confidence}
-                                                        />
-                                                    </div>
-                                                    {/* PRESENTE and FUTURO Row */}
-                                                    <div className="flex items-center gap-2 scale-90">
-                                                        {/* PRESENTE: Badge */}
-                                                        {getStatusBadge(row.computedStatus, row)}
+                                                <HoverCard openDelay={200} closeDelay={100}>
+                                                    <HoverCardTrigger asChild>
+                                                        <div className="flex flex-col items-center gap-1.5 cursor-help group">
+                                                            <div className="relative flex items-center justify-center">
+                                                                {/* Score Ring */}
+                                                                <svg className="w-10 h-10 transform -rotate-90">
+                                                                    <circle
+                                                                        cx="20" cy="20" r="16"
+                                                                        stroke="currentColor"
+                                                                        strokeWidth="3.5"
+                                                                        fill="transparent"
+                                                                        className="text-muted/20"
+                                                                    />
+                                                                    <circle
+                                                                        cx="20" cy="20" r="16"
+                                                                        stroke="currentColor"
+                                                                        strokeWidth="3.5"
+                                                                        strokeDasharray={100}
+                                                                        strokeDashoffset={100 - (row.healthScore?.score || 0)}
+                                                                        strokeLinecap="round"
+                                                                        fill="transparent"
+                                                                        className={cn(
+                                                                            "transition-all duration-1000",
+                                                                            row.healthScore?.color === 'emerald' ? "text-emerald-500" :
+                                                                                row.healthScore?.color === 'emerald-light' ? "text-emerald-400" :
+                                                                                    row.healthScore?.color === 'amber' ? "text-amber-500" :
+                                                                                        row.healthScore?.color === 'red' ? "text-red-500" : "text-blue-500"
+                                                                        )}
+                                                                    />
+                                                                </svg>
+                                                                <span className="absolute text-[10px] font-bold">{row.healthScore?.score}</span>
+                                                            </div>
+                                                            <Badge className={cn(
+                                                                "text-[9px] px-1.5 py-0 min-w-[70px] justify-center uppercase font-black tracking-tighter shadow-sm",
+                                                                row.healthScore?.color === 'emerald' ? "bg-emerald-600 hover:bg-emerald-700 text-white" :
+                                                                    row.healthScore?.color === 'emerald-light' ? "bg-emerald-500/80 hover:bg-emerald-600 text-white" :
+                                                                        row.healthScore?.color === 'amber' ? "bg-amber-500 hover:bg-amber-600 text-white" :
+                                                                            row.healthScore?.color === 'red' ? "bg-red-600 hover:bg-red-700 text-white" : "bg-blue-600 text-white"
+                                                            )}>
+                                                                {row.healthScore?.action}
+                                                            </Badge>
+                                                        </div>
+                                                    </HoverCardTrigger>
+                                                    <HoverCardContent side="left" className="w-[240px] p-3 space-y-3 shadow-2xl border-border/50 bg-popover text-popover-foreground z-50">
+                                                        <TooltipProvider>
+                                                            <div className="space-y-1">
+                                                                <div className="flex items-center justify-between">
+                                                                    <Tooltip>
+                                                                        <TooltipTrigger asChild>
+                                                                            <p className="text-[10px] uppercase font-bold text-muted-foreground cursor-help underline decoration-dotted decoration-muted-foreground/30 underline-offset-2">Pilar de Saúde</p>
+                                                                        </TooltipTrigger>
+                                                                        <TooltipContent side="top" className="text-[10px] max-w-[200px]">
+                                                                            Pontuação final ponderada de 0-100 refletindo a saúde matemática geral do criativo.
+                                                                        </TooltipContent>
+                                                                    </Tooltip>
+                                                                    <p className="text-[10px] font-mono font-bold text-foreground">{row.healthScore?.score}/100</p>
+                                                                </div>
+                                                                <div className="h-1 bg-muted rounded-full overflow-hidden">
+                                                                    <div className={cn("h-full transition-all duration-1000",
+                                                                        row.healthScore?.color === 'emerald' ? "bg-emerald-500" :
+                                                                            row.healthScore?.color === 'emerald-light' ? "bg-emerald-400" :
+                                                                                row.healthScore?.color === 'amber' ? "bg-amber-500" : "bg-red-500"
+                                                                    )} style={{ width: `${row.healthScore?.score}%` }} />
+                                                                </div>
+                                                            </div>
 
-                                                        {/* FUTURO: Projection */}
-                                                        <Tooltip>
-                                                            <TooltipTrigger asChild>
-                                                                <div className="flex flex-col items-center gap-0.5 bg-muted/30 px-1.5 py-1 rounded-md border border-border/50 cursor-help min-w-[70px]">
-                                                                    <div className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground leading-none">
-                                                                        <span>Prev:</span>
-                                                                        <span className={cn(
-                                                                            row.predicted_cpl && row.cpl && row.predicted_cpl > row.cpl * 1.1 ? "text-amber-600 font-bold" :
-                                                                                row.predicted_cpl && row.cpl && row.predicted_cpl < row.cpl * 0.9 ? "text-emerald-600 font-bold" :
-                                                                                    "text-foreground"
-                                                                        )}>
-                                                                            {row.predicted_cpl ? brl(row.predicted_cpl) : "-"}
-                                                                        </span>
-                                                                    </div>
-                                                                    {row.predicted_cpl_confidence !== null && (
-                                                                        <div className="flex items-center gap-1 w-full mt-0.5">
-                                                                            <div className="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden">
-                                                                                <div
-                                                                                    className={cn(
-                                                                                        "h-full transition-all duration-500",
-                                                                                        row.predicted_cpl_confidence > 75 ? "bg-emerald-500" :
-                                                                                            row.predicted_cpl_confidence > 50 ? "bg-amber-500" :
-                                                                                                "bg-slate-400"
-                                                                                    )}
-                                                                                    style={{ width: `${row.predicted_cpl_confidence}%` }}
-                                                                                />
+                                                            <div className="space-y-2">
+                                                                {[
+                                                                    {
+                                                                        label: `Eficiência (${brl(row.cpl)})`,
+                                                                        val: row.healthScore?.pillars?.efficiency,
+                                                                        color: 'bg-emerald-500',
+                                                                        desc: (row.healthScore as any)?.reasons?.efficiency || 'CPL vs Média da conta'
+                                                                    },
+                                                                    {
+                                                                        label: (row.healthScore as any)?.reasons?.stabilityLabel || 'Atenção (—)',
+                                                                        val: row.healthScore?.pillars?.stability,
+                                                                        color: 'bg-blue-500',
+                                                                        desc: (row.healthScore as any)?.reasons?.stability || 'Índice de atenção do criativo'
+                                                                    },
+                                                                    {
+                                                                        label: row.frequency != null ? `Frequência (${row.frequency.toFixed(2)}x)` : 'Frequência (—)',
+                                                                        val: row.healthScore?.pillars?.fatigue,
+                                                                        color: 'bg-purple-500',
+                                                                        desc: (row.healthScore as any)?.reasons?.fatigue || 'Saturação de público'
+                                                                    },
+                                                                    {
+                                                                        label: `Volume (${row.conversoes || 0} conv.)`,
+                                                                        val: row.healthScore?.pillars?.volume,
+                                                                        color: 'bg-amber-500',
+                                                                        desc: (row.healthScore as any)?.reasons?.volume || 'Conversões para confiança estatística'
+                                                                    }
+                                                                ].map((p, i) => (
+                                                                    <Tooltip key={i}>
+                                                                        <TooltipTrigger asChild>
+                                                                            <div className="space-y-1 cursor-help group/pill">
+                                                                                <div className="flex justify-between text-[9px] uppercase font-medium">
+                                                                                    <span className="group-hover/pill:text-foreground transition-colors">{p.label}</span>
+                                                                                    <span>{p.val}%</span>
+                                                                                </div>
+                                                                                <div className="h-1 bg-muted/50 rounded-full overflow-hidden">
+                                                                                    <div className={cn("h-full", p.color)} style={{ width: `${p.val}%` }} />
+                                                                                </div>
                                                                             </div>
-                                                                            <span className="text-[8px] font-bold text-muted-foreground leading-none">
-                                                                                {row.predicted_cpl_confidence}%
-                                                                            </span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </TooltipTrigger>
-                                                            <TooltipContent side="bottom" className="max-w-[220px] p-2 space-y-1">
-                                                                <p className="font-semibold text-[10px] uppercase text-muted-foreground">Projeção (D+1)</p>
-                                                                <p className="text-xs italic">Estimativa do CPL para amanhã baseada na regressão linear dos últimos 14 dias.</p>
+                                                                        </TooltipTrigger>
+                                                                        <TooltipContent side="right" className="text-[10px] max-w-[220px]">
+                                                                            {p.desc}
+                                                                        </TooltipContent>
+                                                                    </Tooltip>
+                                                                ))}
+                                                            </div>
 
-                                                                <div className="pt-1.5 space-y-1 border-t mt-1">
-                                                                    <p className="text-[11px] font-semibold text-foreground flex items-center gap-1">
-                                                                        Confiança: {row.predicted_cpl_confidence}%
-                                                                    </p>
-                                                                    <p className="text-[10px] text-muted-foreground leading-tight">
-                                                                        Indica o nível de previsibilidade dos dados. Valores maiores significam um padrão histórico mais estável e confiável.
-                                                                    </p>
-                                                                </div>
-
-                                                                <div className="text-[10px] pt-1.5 space-y-0.5 border-t mt-1">
-                                                                    <div className="flex items-center gap-1 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Queda esperada &gt; 10%</div>
-                                                                    <div className="flex items-center gap-1 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Alta esperada &gt; 10%</div>
-                                                                </div>
-                                                            </TooltipContent>
-                                                        </Tooltip>
-                                                    </div>
-                                                </div>
+                                                            <div className="pt-2 border-t border-border/50">
+                                                                <p className="text-[10px] leading-tight text-muted-foreground italic font-medium">
+                                                                    <span className="text-foreground font-bold italic-none">Nota do Especialista: </span>
+                                                                    {row.healthScore?.action === 'Escalar Agreste' ? "Oportunidade rara: alta correlação de queda e custo ultra-eficiente. Siga com +20%." :
+                                                                        row.healthScore?.action === 'Pausar' ? "Hemorragia de investimento: CPL fora da meta com tendência de alta severa." :
+                                                                            row.healthScore?.action === 'Aprendizado' ? "Aguardando 7 dias de dados para estabilizar a telemetria Andrômeda." :
+                                                                                "Performance estável: manter vigilância e otimizar funil se o CPL subir."}
+                                                                </p>
+                                                            </div>
+                                                        </TooltipProvider>
+                                                    </HoverCardContent>
+                                                </HoverCard>
                                             </TableCell>
 
                                             {/* 10. Status */}
@@ -1620,8 +1663,7 @@ export default function CreativesPage() {
                     cpl: insightsModal.creative.cpl,
                     ctr: insightsModal.creative.ctr || 0,
                     investimento: insightsModal.creative.investimento || 0,
-                    avgCPL: kpis.avgCPL,
-                    predictedCpl: insightsModal.creative.predicted_cpl || null
+                    avgCPL: kpis.avgCPL
                 } : null}
             />
         </div>

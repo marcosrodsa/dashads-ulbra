@@ -63,6 +63,10 @@ SELECT
     a.image_url,
     a.preview_shareable_link,  -- Link do preview
     a.effective_status,        -- Status (ACTIVE/PAUSED)
+    a.hook_rate,              -- % Retenção (real do Meta)
+    a.hold_rate,              -- % Manutenção (real do Meta)
+    a.reach,                  -- Alcance único (real do Meta)
+    a.frequency,              -- Frequência média (real do Meta)
 
     (a.ad_id IS NOT NULL) as has_assets,
     (lq.id IS NOT NULL OR lc.id IS NOT NULL) as has_insights
@@ -102,6 +106,8 @@ GROUP BY
     a.preview_shareable_link,
     a.effective_status,
     a.ad_id,
+    a.reach,
+    a.frequency,
     lq.id,
     lc.id
 

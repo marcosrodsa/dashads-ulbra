@@ -21,6 +21,7 @@ const RegistriesPage = lazy(() => import("./pages/Registries"));
 const SystemStatusPage = lazy(() => import("./pages/SystemStatus"));
 const TrackingTagsPage = lazy(() => import("./pages/cadastros/TrackingTagsPage"));
 const UsersManagementPage = lazy(() => import("./pages/cadastros/UsersManagementPage"));
+const AndromedaPage = lazy(() => import("./pages/Andromeda"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 
@@ -49,6 +50,7 @@ const App = () => (
                   <Route path="/budget" element={<BudgetPage />} />
                   <Route path="/performance" element={<PerformancePage />} />
                   <Route path="/creatives" element={<CreativesPage />} />
+                  <Route path="/andromeda" element={<AndromedaPage />} />
                   <Route path="/status" element={<SystemStatusPage />} />
 
                   <Route
