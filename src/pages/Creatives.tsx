@@ -400,27 +400,37 @@ export default function CreativesPage() {
         const ctrAll = row.ctr || 0;
 
         if (isImage) {
-            // IMAGEM: CTR (Todos) - Linear Scale
-            // 1.5% = 100 score | 0.8% = 53 score | 0% = 0 score
-            stabilityScore = Math.min((ctrAll / 1.5) * 100, 100);
-            stabilityLabel = `Atenção 👁 (CTR ${pct(ctrAll)})`;
+            // IMAGEM: Mixed Pillar (Hook 60% / Hold 40%)
+            // Hook = CTR All / Hold = Link Click Ratio (Calculados na View)
+            const hRate = row.hook_rate || 0;
+            const hlRate = row.hold_rate || 0;
 
-            if (ctrAll >= 1.5) stabilityReason = `CTR ${pct(ctrAll)} — elite (Acima de 1.5%). Nota Máxima.`;
-            else if (ctrAll >= 1.0) stabilityReason = `CTR ${pct(ctrAll)} — muito bom (Meta 1.5%).`;
-            else if (ctrAll >= 0.8) stabilityReason = `CTR ${pct(ctrAll)} — aceitável (Meta 1.5%).`;
-            else stabilityReason = `CTR ${pct(ctrAll)} — baixo. Criativo não para o scroll.`;
+            const hookScore = Math.min((hRate / 1.5) * 100, 100);
+            const holdScore = Math.min((hlRate / 50) * 100, 100); // 50% de cliques All virando Link
+
+            stabilityScore = (hookScore * 0.6) + (holdScore * 0.4);
+            stabilityLabel = `Atenção/Ret. 🖼️`;
+
+            stabilityReason = `Hook ${hRate.toFixed(2)}% e Hold ${hlRate.toFixed(1)}%. `;
+            if (hRate < 0.8) stabilityReason += "Imagem não para o scroll.";
+            else if (hlRate < 30) stabilityReason += "Link pouco atrativo para clique.";
 
         } else if (hasHookRate) {
-            // VÍDEO: Hook Rate - Linear Scale
-            // 35% = 100 score | 20% = 57 score
-            stabilityScore = Math.min((hookRate! / 35) * 100, 100);
-            stabilityLabel = `Retenção 🎬 (${hookRate!.toFixed(1)}%)`;
+            // VÍDEO: Mixed Pillar (Hook 60% / Hold 40%)
+            // Hook = 3s/Imp / Hold = ThruPlay/3s (Calculados na View)
+            const hRate = row.hook_rate || 0;
+            const hlRate = row.hold_rate || 0;
 
-            if (hookRate! >= 35) stabilityReason = `Hook ${hookRate!.toFixed(1)}% — elite (Meta 35%). Nota Máxima.`;
-            else if (hookRate! >= 25) stabilityReason = `Hook ${hookRate!.toFixed(1)}% — muito bom.`;
-            else if (hookRate! >= 20) stabilityReason = `Hook ${hookRate!.toFixed(1)}% — aceitável.`;
-            else stabilityReason = `Hook ${hookRate!.toFixed(1)}% — baixo. Melhore os primeiros 3s.`;
+            const hookScore = Math.min((hRate / 35) * 100, 100);
+            const holdScore = Math.min((hlRate / 30) * 100, 100); // 30% ThruPlay rate meta sênior
 
+            stabilityScore = (hookScore * 0.6) + (holdScore * 0.4);
+            stabilityLabel = `Atenção/Ret. 🎬`;
+
+            stabilityReason = `Hook ${hRate.toFixed(1)}% e Hold ${hlRate.toFixed(1)}%. `;
+            if (hRate < 20) stabilityReason += "Melhore os primeiros 3s.";
+            else if (hlRate < 15) stabilityReason += "Melhore o meio/fim do vídeo.";
+            else stabilityReason += "Bom desempenho de qualidade.";
         } else {
             stabilityLabel = 'Atenção (—)';
             stabilityReason = 'Sem dados de métrica primária (Hook/CTR).';
@@ -461,6 +471,14 @@ export default function CreativesPage() {
             (fatigueScore * 0.15)
         );
 
+        // Round pillars for display
+        const roundedPillars = {
+            efficiency: Math.round(efficiencyScore),
+            volume: Math.round(volumeScore),
+            stability: Math.round(stabilityScore),
+            fatigue: Math.round(fatigueScore)
+        };
+
         // Learning Guardrail
         const isLearning = conversions < 5 || (row.dailyHistory?.length || 0) < 3;
 
@@ -487,10 +505,10 @@ export default function CreativesPage() {
         return {
             score: totalScore,
             pillars: {
-                efficiency: efficiencyScore,
-                volume: volumeScore,
-                stability: stabilityScore,
-                fatigue: fatigueScore
+                efficiency: Math.round(efficiencyScore),
+                volume: Math.round(volumeScore),
+                stability: Math.round(stabilityScore),
+                fatigue: Math.round(fatigueScore)
             },
             reasons: {
                 efficiency: efficiencyReason,
@@ -749,6 +767,8 @@ export default function CreativesPage() {
                         case "conversoes": return row.conversoes || 0;
                         case "cpl": return row.cpl || 9999999;
                         case "investimento": return row.investimento || 0;
+                        case "hook_rate": return row.hook_rate || 0;
+                        case "hold_rate": return row.hold_rate || 0;
                         case "effective_status": return row.effective_status || "";
                         default: return row.conversoes || 0;
                     }
@@ -1205,10 +1225,38 @@ export default function CreativesPage() {
                                         </div>
                                     </TableHead>
 
-                                    <TableHead className="text-right w-[70px] p-2">
-                                        <div className="flex flex-col items-end">
-                                            <span className="text-[12px]">Hook %</span>
-                                            <span className="text-[9px] text-muted-foreground">Retenção</span>
+                                    <TableHead className="text-right w-[80px] cursor-pointer p-2" onClick={() => toggleSort("hook_rate")}>
+                                        <div className="flex flex-col items-end group">
+                                            <span className="flex items-center text-[12px]">Hook % {getSortIcon("hook_rate")}</span>
+                                            <TooltipProvider>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <span className="text-[9px] text-muted-foreground border-b border-dotted cursor-help">Gancho</span>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="top" className="max-w-[200px] text-[11px]">
+                                                        <p><strong>Vídeo:</strong> % que viu 3s (3s/Imp).</p>
+                                                        <p><strong>Imagem:</strong> CTR Todos (Impacto).</p>
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </TooltipProvider>
+                                        </div>
+                                    </TableHead>
+
+                                    <TableHead className="text-right w-[80px] cursor-pointer p-2" onClick={() => toggleSort("hold_rate")}>
+                                        <div className="flex flex-col items-end group">
+                                            <span className="flex items-center text-[12px]">Hold % {getSortIcon("hold_rate")}</span>
+                                            <TooltipProvider>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <span className="text-[9px] text-muted-foreground border-b border-dotted cursor-help">Retenção</span>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="top" className="max-w-[200px] text-[11px]">
+                                                        <p><strong>Vídeo:</strong> % ThruPlay (ThruPlay/3s).</p>
+                                                        <p className="text-[10px] text-muted-foreground mb-1">ThruPlay: Vídeos assistidos por 15s ou até o fim.</p>
+                                                        <p><strong>Imagem:</strong> Qualidade (Link/Todos).</p>
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </TooltipProvider>
                                         </div>
                                     </TableHead>
 
@@ -1437,11 +1485,22 @@ export default function CreativesPage() {
                                             {/* Hook Rate Column */}
                                             <TableCell className="p-2 text-right">
                                                 <div className={cn(
-                                                    "font-mono text-[12px] font-bold",
+                                                    "font-mono text-[11px] font-bold",
                                                     (row.hook_rate || 0) > 30 ? "text-emerald-600" :
                                                         (row.hook_rate || 0) > 15 ? "text-blue-600" : "text-muted-foreground"
                                                 )}>
-                                                    {row.hook_rate ? `${row.hook_rate}%` : "-"}
+                                                    {(row.hook_rate !== null && row.hook_rate !== undefined) ? `${row.hook_rate}%` : "-"}
+                                                </div>
+                                            </TableCell>
+
+                                            {/* Hold Rate Column */}
+                                            <TableCell className="p-2 text-right">
+                                                <div className={cn(
+                                                    "font-mono text-[11px] font-bold",
+                                                    (row.hold_rate || 0) > 30 ? "text-emerald-600 center" :
+                                                        (row.hold_rate || 0) > 15 ? "text-blue-600" : "text-muted-foreground"
+                                                )}>
+                                                    {(row.hold_rate !== null && row.hold_rate !== undefined) ? `${row.hold_rate}%` : "-"}
                                                 </div>
                                             </TableCell>
 

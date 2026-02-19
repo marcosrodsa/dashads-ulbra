@@ -140,10 +140,24 @@ Deno.serve(async (req) => {
             clicks: acc.clicks + (row.cliques || 0),
             conversions: acc.conversions + (row.conversoes || 0),
             spend: acc.spend + (row.investimento || 0),
-        }), { impressions: 0, clicks: 0, conversions: 0, spend: 0 });
+            // Weighted averages for Rates
+            weighted_hook: acc.weighted_hook + ((row.hook_rate || 0) * (row.impressoes || 0)),
+            weighted_hold: acc.weighted_hold + ((row.hold_rate || 0) * (row.impressoes || 0)),
+        }), { impressions: 0, clicks: 0, conversions: 0, spend: 0, weighted_hook: 0, weighted_hold: 0 });
 
         const ctr = totals.impressions > 0 ? Number(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
         let cpa = totals.conversions > 0 ? Number((totals.spend / totals.conversions).toFixed(2)) : null;
+
+        // Andromeda Metrics
+        const avgHook = totals.impressions > 0 ? (totals.weighted_hook / totals.impressions).toFixed(2) : "0.00";
+        const avgHold = totals.impressions > 0 ? (totals.weighted_hold / totals.impressions).toFixed(2) : "0.00";
+
+        // Context Data (Latest Row)
+        const latestRow = filteredData[0] || {};
+        const currentFreq = latestRow.frequency || 1.0;
+        const creativeType = latestRow.creative_type || "Imagem";
+        const adName = latestRow.ad_name || "Desconhecido";
+        const campaignName = latestRow.campaign_name || "";
 
         // OVERRIDE Current CPA with UI value (for absolute parity even in rounding)
         if (metrics?.cpl !== undefined && metrics.cpl !== null) {
@@ -211,30 +225,56 @@ Deno.serve(async (req) => {
             forecast
         };
 
-        // 5. Image & Prompt
+        // 5. Image & Prompt (ANDROMEDA STRATEGY 2.0)
         let imageBase64: string | null = null;
         if (asset.image_url) imageBase64 = await fetchImageAsBase64(asset.image_url);
 
-        const prompt = `Você é a Gaia, Diretora de Criação Sênior da Ulbra.
-Analise este criativo com base nos dados de performance REAIS.
-KPIs (${startDate} a ${endDate}): ${totals.impressions} imps, ${totals.conversions} convs, CPA R$ ${cpa ? cpa.toFixed(2) : 'N/A'}.
-Previsão: CPA Projetado R$ ${forecast.predicted_cpl ? forecast.predicted_cpl.toFixed(2) : 'N/A'}, Direção: ${forecast.trend_direction}.
+        const isVideo = creativeType.toLowerCase().includes("video") || creativeType.toLowerCase().includes("vídeo");
+        const hookBenchmark = isVideo ? "25% (Vídeo)" : "1.5% (Imagem)";
+        const holdBenchmark = isVideo ? "15% (ThruPlay/3s)" : "30% (Link/All)";
 
-Instruções CRÍTICAS:
-- USE OS VALORES DE CPA E CPA PROJETADO ACIMA PARA QUALQUER MENÇÃO NUMÉRICA NO TEXTO. 
-- NÃO recalcule nem invente números diferentes dos fornecidos nos KPIs de entrada (${cpa ? cpa.toFixed(2) : 'N/A'} e ${forecast.predicted_cpl ? forecast.predicted_cpl.toFixed(2) : 'N/A'}).
-- Se imagem indisponível, diga: "Diagnóstico visual indisponível".
-- Explique o PORQUÊ do resultado correlacionando visual/copy com os KPIs EXATOS fornecidos.
-- Sugira 3 melhorias e indique risco de fadiga.
+        const prompt = `ATUE COMO: Gaia, Inteligência Artificial de Performance e Diretora de Criação da Ulbra (Andromeda System).
+
+CONTEXTO DO CRIATIVO:
+- Nome: ${adName}
+- Campanha: ${campaignName}
+- Formato: ${creativeType} (Analise conforme o formato)
+- Período: ${startDate} a ${endDate}
+
+PERFORMANCE REAL:
+- Investimento: R$ ${totals.spend.toFixed(2)}
+- Impressões: ${totals.impressions}
+- Conversões: ${totals.conversions} (CPA R$ ${cpa ? cpa.toFixed(2) : 'N/A'})
+- Previsão Trend: ${forecast.trend_direction} (CPA Futuro: R$ ${forecast.predicted_cpl ? forecast.predicted_cpl.toFixed(2) : 'N/A'})
+
+SAÚDE DO CRIATIVO (Protocolo Andromeda):
+1. HOOK RATE (Gancho/Parada): ${avgHook}%
+   (Meta: > ${hookBenchmark})
+2. HOLD RATE (Retenção/Interesse): ${avgHold}%
+   (Meta: > ${holdBenchmark})
+   *Nota Técnica: Vídeo usa ThruPlay (15s). Imagem usa proporção de clique no link.*
+3. CTR LINK (Tráfego): ${ctr}%
+4. FREQUÊNCIA ATUAL: ${currentFreq}x
+
+DIRETRIZES ESTRATÉGICAS:
+1. "A PERGUNTA DE OURO": Das pessoas que pararam (Hook), quantas prendemos por 15s ou levaram pro site (Hold)?
+   - Se Hook alto e Hold baixo: "Clickbait" ou quebra de expectativa. Visual bom, conteúdo fraco.
+   - Se Hook baixo e Hold alto: "Conteúdo Sênior". Capa ruim, mas quem entra, fica. (Melhorar Thumb).
+2. APRENDIZADO vs RESULTADO:
+   - Se Impressões < 2000 ou Conversões < 3: Declare status "EM APRENDIZADO". Recomende "AGUARDAR" e não pausar.
+3. FADIGA:
+   - Se Freq > 2.5x E Hook estiver baixo/caindo: Declare "FADIGA VISUAL".
+4. NOMENCLATURA:
+   - Se vir tags como [C1], entenda como Topo de Funil (foco em Hook). Se [C3], Fundo (foco em CPA).
 
 Retorne EXCLUSIVAMENTE um JSON:
 {
-  "visual_description": "...",
-  "why_performs": "...",
-  "improvement_suggestions": ["..."],
+  "visual_description": "Descreva o que vê (cores, elementos, copy)...",
+  "why_performs": "Explique o sucesso/fracasso correlacionando Hook (Atenção) vs Hold (Retenção)...",
+  "improvement_suggestions": ["Sugestão 1 (Visual/Capa)", "Sugestão 2 (Conteúdo/Copy)", "Sugestão 3 (Estratégica)"],
   "fatigue_risk": "low"|"medium"|"high",
   "recommended_action": "scale"|"pause"|"iterate"|"test",
-  "confidence_score": 0.0
+  "confidence_score": 0.0 a 1.0
 }`;
 
         // 6. Gemini Fallback Execution

@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
         // 1. Fetch Ad & Creative Info (Adding account_id, image_hash and object_story_spec)
         console.log(`Enriching creative for adId: ${adId}`);
         const adResponse = await fetch(
-            `https://graph.facebook.com/v21.0/${adId}?fields=account_id,preview_shareable_link,effective_status,adlabels,recommendations,creative{id,name,title,body,image_url,thumbnail_url,video_id,effective_object_story_id,image_hash,object_story_spec,asset_feed_spec}&access_token=${META_API_KEY}`
+            `https://graph.facebook.com/v25.0/${adId}?fields=account_id,preview_shareable_link,effective_status,adlabels,recommendations,creative{id,name,title,body,image_url,thumbnail_url,video_id,effective_object_story_id,image_hash,object_story_spec,asset_feed_spec}&access_token=${META_API_KEY}`
         );
         const adData = await adResponse.json();
 
@@ -112,7 +112,7 @@ Deno.serve(async (req) => {
             console.log(`Fetching high-res asset via Image Hash: ${foundHash}`);
             try {
                 const adImageResponse = await fetch(
-                    `https://graph.facebook.com/v21.0/act_${accountId}/adimages?hashes=["${foundHash}"]&fields=permalink_url,url,original_height,original_width&access_token=${META_API_KEY}`
+                    `https://graph.facebook.com/v25.0/act_${accountId}/adimages?hashes=["${foundHash}"]&fields=permalink_url,url,original_height,original_width&access_token=${META_API_KEY}`
                 );
                 const adImageData = await adImageResponse.json();
                 const imageAsset = adImageData.data?.[0];
@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
             console.log(`Fallback: Fetching story assets for storyId: ${storyId}`);
             try {
                 const storyResponse = await fetch(
-                    `https://graph.facebook.com/v21.0/${storyId}?fields=full_picture,picture,attachments{media}&access_token=${META_API_KEY}`
+                    `https://graph.facebook.com/v25.0/${storyId}?fields=full_picture,picture,attachments{media}&access_token=${META_API_KEY}`
                 );
                 const storyData = await storyResponse.json();
 
@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
             console.log("Ultimate Fallback: Extracting from AdPreview...");
             try {
                 const previewResponse = await fetch(
-                    `https://graph.facebook.com/v21.0/${creative.id}/previews?ad_format=DESKTOP_FEED_STANDARD&access_token=${META_API_KEY}`
+                    `https://graph.facebook.com/v25.0/${creative.id}/previews?ad_format=DESKTOP_FEED_STANDARD&access_token=${META_API_KEY}`
                 );
                 const previewData = await previewResponse.json();
                 const html = previewData.data?.[0]?.body;
@@ -179,7 +179,7 @@ Deno.serve(async (req) => {
             console.log(`Fetching highest quality thumbnail for video: ${creative.video_id}`);
             try {
                 const videoAssetResponse = await fetch(
-                    `https://graph.facebook.com/v21.0/${creative.video_id}?fields=thumbnails{uri,is_preferred,height,width}&access_token=${META_API_KEY}`
+                    `https://graph.facebook.com/v25.0/${creative.video_id}?fields=thumbnails{uri,is_preferred,height,width}&access_token=${META_API_KEY}`
                 );
                 const videoAssetData = await videoAssetResponse.json();
                 const bestThumbnail = videoAssetData.thumbnails?.data?.sort((a: any, b: any) => (b.width || 0) - (a.width || 0))[0];
@@ -205,7 +205,7 @@ Deno.serve(async (req) => {
 
             // 1. Fetch Basic Insights (All Types)
             const basicResponse = await fetch(
-                `https://graph.facebook.com/v21.0/${adId}/insights?fields=impressions,reach,frequency&access_token=${META_API_KEY}`
+                `https://graph.facebook.com/v25.0/${adId}/insights?fields=impressions,reach,frequency&access_token=${META_API_KEY}`
             );
             const basicJson = await basicResponse.json();
             const basicInsights = basicJson.data?.[0];
@@ -220,8 +220,9 @@ Deno.serve(async (req) => {
                 // 2. Fetch Video Specifics (Only if Video)
                 if (isVideo) {
                     try {
+                        // In v21.0+ video_3_sec_watched_actions is deprecated. Extract from 'actions' (video_view = 3s).
                         const videoResponse = await fetch(
-                            `https://graph.facebook.com/v21.0/${adId}/insights?fields=video_3_sec_watched_actions,video_p100_watched_actions&access_token=${META_API_KEY}`
+                            `https://graph.facebook.com/v25.0/${adId}/insights?fields=actions,video_p100_watched_actions&access_token=${META_API_KEY}`
                         );
                         const videoJson = await videoResponse.json();
                         const videoInsights = videoJson.data?.[0];
@@ -229,7 +230,8 @@ Deno.serve(async (req) => {
                         console.log("DEBUG: Video Insights ->", JSON.stringify(videoInsights));
 
                         if (videoInsights) {
-                            const v3s = videoInsights.video_3_sec_watched_actions?.find((a: any) => a.action_type === "video_view")?.value || 0;
+                            // Extract 3s views from actions array (action_type: video_view)
+                            const v3s = videoInsights.actions?.find((a: any) => a.action_type === "video_view")?.value || 0;
                             const v100 = videoInsights.video_p100_watched_actions?.find((a: any) => a.action_type === "video_view")?.value || 0;
 
                             if (impressions > 0) hookRate = Number(((v3s / impressions) * 100).toFixed(2));
@@ -274,7 +276,7 @@ Deno.serve(async (req) => {
             console.log(`Fallback: Fetching story message for storyId: ${storyId}`);
             try {
                 const storyMsgResponse = await fetch(
-                    `https://graph.facebook.com/v21.0/${storyId}?fields=message&access_token=${META_API_KEY}`
+                    `https://graph.facebook.com/v25.0/${storyId}?fields=message&access_token=${META_API_KEY}`
                 );
                 const storyMsgData = await storyMsgResponse.json();
                 if (storyMsgData.message) {
