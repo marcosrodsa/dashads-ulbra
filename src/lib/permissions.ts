@@ -9,7 +9,6 @@ export const PERMISSION_MATRIX: Record<string, UserRole[]> = {
     "/budget": ["super_admin", "admin", "viewer"],
     "/performance": ["super_admin", "admin", "viewer"],
     "/creatives": ["super_admin", "admin", "viewer"],
-    "/andromeda": ["super_admin", "admin", "viewer"],
 
     // Operations (Admin and Super Admin)
     "/classificador": ["super_admin", "admin"],

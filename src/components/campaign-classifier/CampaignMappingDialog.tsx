@@ -190,21 +190,30 @@ export function CampaignMappingDialog({
             <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
                     <DialogTitle>
-                        {isBulkMode ? `Classificar ${bulkCampaigns.length} Campanhas` : "Classificar Campanha"}
+                        {isBulkMode ? `Classificar ${bulkCampaigns.length} Campanha${bulkCampaigns.length > 1 ? 's' : ''}` : "Classificar Campanha"}
                     </DialogTitle>
-                    <DialogDescription className="space-y-1">
-                        {isBulkMode ? (
-                            <span>Selecione os campos que deseja atualizar. Mantenha em "Inalterado" para preservar valores atuais.</span>
-                        ) : (
-                            <>
-                                <span className="block font-medium text-foreground">
-                                    {campaign?.campaign_name || "Sem nome"}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                    ID: {campaign?.campaign_id} | Plataforma: {campaign?.platform}
-                                </span>
-                            </>
-                        )}
+                    <DialogDescription asChild>
+                        <div className="space-y-1 mt-2">
+                            {isBulkMode ? (
+                                <>
+                                    {bulkCampaigns.length === 1 && (
+                                        <span className="block font-medium text-foreground mb-2">
+                                            {bulkCampaigns[0].campaign_name || "Sem nome"}
+                                        </span>
+                                    )}
+                                    <span>Selecione os campos que deseja atualizar. Mantenha em "Inalterado" para preservar valores atuais.</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="block font-medium text-foreground">
+                                        {campaign?.campaign_name || "Sem nome"}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground block">
+                                        ID: {campaign?.campaign_id} | Plataforma: {campaign?.platform}
+                                    </span>
+                                </>
+                            )}
+                        </div>
                     </DialogDescription>
                 </DialogHeader>
 

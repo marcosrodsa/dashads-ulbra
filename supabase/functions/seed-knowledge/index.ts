@@ -46,6 +46,31 @@ const KNOWLEDGE_CORPUS = [
         content: "Regra de Classificação de Campanhas: 1. Se tem 'EAD' ou 'Ulbra Pop', é Unidade EAD. 2. Se tem 'Medicina', é Curso Medicina (prioridade sobre Branding). 3. Se tem 'Visitas' ou 'Institucional', é Branding. 4. O resto é classificado pela cidade (ex: 'Canoas' -> Ulbra Canoas).",
         metadata: { source: "Performance.tsx", logic: "campaign_classifier" }
     },
+    {
+        category: "KPI Definition",
+        content: "Hook Rate (O Gancho) mede se o anúncio chamou a atenção e parou o dedo da pessoa no feed. Vídeo: a pessoa assistiu aos primeiros 3s. Imagem: a pessoa interagiu com a foto (expandiu/curtiu). Peso: 60%. Para Vídeos (Meta 25%): Ruim/Invisível (< 15%), Médio (15% a 25%), Bom/Escalável (> 25%). Para Imagens (Meta 1.0%): Ruim (< 0.5%), Médio (0.5% a 1.0%), Bom (> 1.0%). Pense no Hook como o vitrinista chamando o cliente na rua.",
+        metadata: { source: "Creatives Dashboard", kpi: "hook_rate", type: "formula" }
+    },
+    {
+        category: "KPI Definition",
+        content: "Hold Rate (A Retenção) mede se o conteúdo foi bom o suficiente para segurar o interesse da pessoa depois que ela parou. Vídeo: das que pararam nos 3s, quantas viram até 15s (ThruPlay). Imagem: das que interagiram, quantas clicaram no link para o site. Peso: 40%. Para Vídeos (Meta 30%): Ruim - Gancho Falso (< 20%), Médio - Retenção Saudável (20% a 30%), Bom - Ouro de Retenção (> 30%). Para Imagens (Meta 85%): Ruim (< 60%), Médio (60% a 85%), Bom - Intenção Ouro (> 85%). Pense no Hold como o vendedor convencendo o cliente a entrar na loja.",
+        metadata: { source: "Creatives Dashboard", kpi: "hold_rate", type: "formula" }
+    },
+    {
+        category: "KPI Definition",
+        content: "Reach (Alcance) é o número de pessoas ÚNICAS que viram o anúncio. Frequency (Frequência ou Saturação) é a média de vezes que a MESMA pessoa viu o anúncio (Impressões / Alcance). Analogia: Alcance é quantas casas você visitou para vender; Frequência é quantas vezes você bateu na mesma porta. Frequência ideal depende do orçamento, mas se passa de 3.0 para o mesmo criativo e o CTR/Conversão cai, indica fadiga do criativo (as pessoas cansaram de ver).",
+        metadata: { source: "Creatives Dashboard", kpi: "reach_freq", type: "formula" }
+    },
+    {
+        category: "Platform Rule",
+        content: "Tracking e Atribuição: O Meta Ads usa janela de clique de 7 dias e visualização de 1 dia. O CPL real de negócio pode divergir do CPL plataforma. Fase de Aprendizado requer ~50 conversões em 7 dias; durante isso, o CPL flutua. Escala segura: aumentar no máximo 20% do budget por dia.",
+        metadata: { source: "Media Buyer Squad", topic: "tracking_and_scaling" }
+    },
+    {
+        category: "Business Rule",
+        content: "Contexto Ulbra: Captação de Vestibular tem picos em final (Dez-Jan) e meio de ano (Jun-Jul). Fora de pico, o CPL sobe naturalmente. Curso de Medicina tem funil longo e CPL premium; Cursos EAD requerem volume alto e CPL muito baixo.",
+        metadata: { source: "Media Buyer Squad", topic: "ulbra_context" }
+    },
 
     // 3. ESTRUTURA TÉCNICA
     {

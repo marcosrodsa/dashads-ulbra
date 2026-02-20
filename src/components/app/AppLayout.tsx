@@ -41,10 +41,6 @@ export function AppLayout() {
               </div>
 
               <div className="flex items-center gap-3">
-                <Suspense fallback={<Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}>
-                  <GaiaChatDrawer />
-                </Suspense>
-
                 <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-border">
                   <User className="size-4 text-muted-foreground" />
                   <span className="text-sm font-medium text-foreground max-w-[120px] truncate">
@@ -67,10 +63,17 @@ export function AppLayout() {
               </div>
             </header>
 
-            <main className="flex-1 min-w-0 bg-background p-4 md:p-6 lg:p-8">
+            <main className="flex-1 min-w-0 bg-background p-4 md:p-6 lg:p-8 relative">
               <Outlet />
             </main>
           </SidebarInset>
+        </div>
+
+        {/* Global Floating Actions */}
+        <div className="fixed bottom-6 right-6 z-50">
+          <Suspense fallback={<Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}>
+            <GaiaChatDrawer />
+          </Suspense>
         </div>
       </SidebarProvider>
     </FiltersProvider>

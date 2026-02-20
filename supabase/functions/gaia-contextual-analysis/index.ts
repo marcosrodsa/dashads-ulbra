@@ -241,8 +241,8 @@ Deno.serve(async (req) => {
         if (asset.image_url) imageBase64 = await fetchImageAsBase64(asset.image_url);
 
         const isVideo = creativeType.toLowerCase().includes("video") || creativeType.toLowerCase().includes("vídeo");
-        const hookBenchmark = isVideo ? "30% (Vídeo)" : "1.5% (Imagem)";
-        const holdBenchmark = isVideo ? "40% (ThruPlay/3s)" : "80% (Link/All)";
+        const hookBenchmark = isVideo ? "25% (Vídeo)" : "1.0% (Imagem)";
+        const holdBenchmark = isVideo ? "30% (ThruPlay/3s)" : "85% (Link/All)";
 
         const prompt = `ATUE COMO: Gaia, Inteligência Artificial de Performance e Diretora de Criação da Ulbra (Andromeda System).
 
@@ -268,13 +268,14 @@ SAÚDE DO CRIATIVO (Protocolo Andromeda):
 4. FREQUÊNCIA ATUAL: ${currentFreq}x
 
 TABELA DE REFERÊNCIA (Score Andromeda):
-- VÍDEO HOOK (Meta 30%): <15% (Ruim), 15-25% (Médio), >25% (Bom)
-- VÍDEO HOLD (Meta 40%): <20% (Ruim), 20-35% (Médio), >35% (Bom)
-- IMAGEM HOOK (Meta 1.5%): <0.5% (Ruim), 0.5-1.0% (Médio), >1.0% (Bom)
-- IMAGEM HOLD (Meta 80%): <40% (Ruim), 40-65% (Médio), >65% (Bom)
+- VÍDEO HOOK (Meta 25%): <15% (Ruim), 15-25% (Médio), >25% (Bom)
+- VÍDEO HOLD (Meta 30%): <20% (Ruim), 20-30% (Médio), >30% (Bom)
+- IMAGEM HOOK (Meta 1.0%): <0.5% (Ruim), 0.5-1.0% (Médio), >1.0% (Bom)
+- IMAGEM HOLD (Meta 85%): <60% (Ruim), 60-85% (Médio), >85% (Bom)
 
 DIRETRIZES ESTRATÉGICAS:
 1. "A PERGUNTA DE OURO": Das pessoas que pararam (Hook), quantas prendemos por 15s ou levaram pro site (Hold)?
+   - *Resumo Mental*: O Hook é o vitrinista chamando o cliente na rua; o Hold é o vendedor convencendo o cliente a entrar na loja.
    - Se Hook alto e Hold baixo: "Clickbait" ou quebra de expectativa. Visual bom, conteúdo fraco.
    - Se Hook baixo e Hold alto: "Conteúdo Sênior". Capa ruim, mas quem entra, fica. (Melhorar Thumb).
 2. APRENDIZADO vs RESULTADO:

@@ -67,7 +67,9 @@ BEGIN
         SUM(conversoes) as conversions,
         SUM(investimento) as spend,
         CASE WHEN SUM(conversoes) > 0 THEN SUM(investimento)/SUM(conversoes) ELSE 0 END as cpl,
-        CASE WHEN SUM(impressoes) > 0 THEN (SUM(cliques)::numeric/SUM(impressoes))*100 ELSE 0 END as ctr
+        CASE WHEN SUM(impressoes) > 0 THEN (SUM(cliques)::numeric/SUM(impressoes))*100 ELSE 0 END as ctr,
+        ROUND(AVG(hook_rate), 2) as hook_rate,
+        ROUND(AVG(hold_rate), 2) as hold_rate
       FROM vw_creative_analysis_complete
       WHERE %s
       GROUP BY ad_name

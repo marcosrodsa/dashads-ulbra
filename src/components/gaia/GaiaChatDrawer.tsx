@@ -36,11 +36,10 @@ export function GaiaChatDrawer() {
     // Sugestões de perguntas estratégicas
     const quickQuestions = [
         "Como está a performance dos últimos 7 dias?",
-        "Qual a previsão de tendências para a próxima semana?",
-        "Quais criativos estão performando acima da média?",
-        "Existe alguma anomalia de custo ou conversão hoje?",
-        "Como está o consumo do orçamento desta semana?",
-        "Qual o melhor dia e horário para conversões?",
+        "Quais são os melhores e piores criativos?",
+        "Qual a previsão de tendência de CPL para a próxima semana?",
+        "Quais campanhas estão fugindo do orçamento planejado?",
+        "Qual unidade tem o pior CPL esta semana?",
         "Onde devo investir mais para reduzir o CPL?"
     ];
 
@@ -170,12 +169,10 @@ export function GaiaChatDrawer() {
         <Sheet open={isOpen} onOpenChange={handleOpenChange}>
             <SheetTrigger asChild>
                 <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border-purple-200 hover:border-purple-400 dark:border-purple-800"
+                    className="gap-2 rounded-full h-10 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-md shadow-purple-500/20 border-0 transition-transform hover:scale-105"
                 >
-                    <Sparkles className="h-4 w-4 text-purple-500" />
-                    <span className="hidden sm:inline">Gaia</span>
+                    <Sparkles className="h-4 w-4" />
+                    <span className="font-medium text-sm">Gaia</span>
                 </Button>
             </SheetTrigger>
             <SheetContent className="w-full sm:w-[440px] flex flex-col p-0">
@@ -238,8 +235,8 @@ export function GaiaChatDrawer() {
                                 >
                                     <div
                                         className={`max-w-[85%] rounded-2xl px-4 py-2 ${msg.role === "user"
-                                                ? "bg-purple-500 text-white rounded-br-md prose-invert"
-                                                : "bg-muted rounded-bl-md dark:bg-muted/50 dark:prose-invert"
+                                            ? "bg-purple-500 text-white rounded-br-md prose-invert"
+                                            : "bg-muted rounded-bl-md dark:bg-muted/50 dark:prose-invert"
                                             } prose prose-sm max-w-none break-words prose-p:leading-relaxed prose-pre:bg-black/50 prose-pre:p-2 prose-pre:rounded-lg`}
                                     >
                                         <ReactMarkdown remarkPlugins={[remarkGfm]}>

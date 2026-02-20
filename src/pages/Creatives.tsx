@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
-import { Sparkles, TrendingUp, TrendingDown, Eye, MousePointer, DollarSign, Users, Image, Video, LayoutGrid, RefreshCw, CalendarIcon, Info, ArrowUpDown, ArrowUp, ArrowDown, Wand2, ExternalLink, ChevronLeft, ChevronRight, AlertTriangle, CalendarDays, Building2, GraduationCap, X } from "lucide-react";
+import { Sparkles, TrendingUp, TrendingDown, Eye, MousePointer, DollarSign, Users, Image, Video, LayoutGrid, RefreshCw, CalendarIcon, Info, ArrowUpDown, ArrowUp, ArrowDown, Wand2, ExternalLink, ChevronLeft, ChevronRight, AlertTriangle, CalendarDays, Building2, GraduationCap, X, Filter, ChevronUp, ChevronDown } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { CplEvolutionChart } from "@/components/performance/PerformanceCharts";
 import { CreativeCPLHeatmap } from "@/components/creatives/CreativeCPLHeatmap";
@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { CreativeInsightsModal } from "@/components/creatives/CreativeInsightsModal";
 import { CplSparkline } from "@/components/creatives/CplSparkline";
 import { useFilters } from "@/contexts/filters-context";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
 // Types
@@ -68,6 +69,10 @@ interface KPIs {
     avgCPL: number | null;
     avgCTR: number;
     totalSpend: number;
+    avgCPM: number;
+    avgFrequency: number;
+    hookRateDisplay: string;
+    holdRateDisplay: string;
 }
 
 // Helpers
@@ -238,7 +243,15 @@ export default function CreativesPage() {
     const [minInvestment, setMinInvestment] = React.useState<number>(0);
     const [viewMode, setViewMode] = React.useState<"list" | "grid">("list");
     const [onlyActive, setOnlyActive] = React.useState(true);
+    const [creativeType, setCreativeType] = React.useState<string>("all");
     const itemsPerPage = 100;
+
+    const isMobileUI = useIsMobile();
+    const [isFiltersOpen, setIsFiltersOpen] = React.useState(true);
+
+    React.useEffect(() => {
+        setIsFiltersOpen(!isMobileUI);
+    }, [isMobileUI]);
 
     const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
 
@@ -405,8 +418,8 @@ export default function CreativesPage() {
             const hRate = row.hook_rate || 0;
             const hlRate = row.hold_rate || 0;
 
-            const hookScore = Math.min((hRate / 1.5) * 100, 100);
-            const holdScore = Math.min((hlRate / 80) * 100, 100); // 80% de cliques All virando Link (Elite)
+            const hookScore = Math.min((hRate / 1.0) * 100, 100);
+            const holdScore = Math.min((hlRate / 85) * 100, 100); // 85% de cliques All virando Link (Elite)
 
             stabilityScore = (hookScore * 0.6) + (holdScore * 0.4);
             stabilityLabel = `Atenção/Ret. 🖼️`;
@@ -423,8 +436,8 @@ export default function CreativesPage() {
             const hRate = row.hook_rate || 0;
             const hlRate = row.hold_rate || 0;
 
-            const hookScore = Math.min((hRate / 30) * 100, 100);
-            const holdScore = Math.min((hlRate / 40) * 100, 100); // 40% ThruPlay rate meta sênior
+            const hookScore = Math.min((hRate / 25) * 100, 100);
+            const holdScore = Math.min((hlRate / 30) * 100, 100); // 30% ThruPlay rate meta sênior
 
             stabilityScore = (hookScore * 0.6) + (holdScore * 0.4);
             stabilityLabel = `Atenção/Ret. 🎬`;
@@ -607,6 +620,11 @@ export default function CreativesPage() {
         return [...new Set(data.map((r) => r.curso).filter(Boolean))];
     }, [data]);
 
+    const formatOptions = React.useMemo(() => {
+        if (!data) return [];
+        return [...new Set(data.map((r) => r.creative_type).filter(Boolean))];
+    }, [data]);
+
 
     // Aggregate by ad_id for table (sum metrics across dates)
     // 1. Group daily data by ad_id and apply high-level filters (Benchmark Data)
@@ -648,6 +666,7 @@ export default function CreativesPage() {
                     impressoes: 0,
                     cliques: 0,
                     conversoes: 0,
+                    reach: 0,
                     // Internal accumulators for weighted averages
                     _weighted_hook: 0,
                     _weighted_hold: 0,
@@ -658,6 +677,7 @@ export default function CreativesPage() {
             acc[row.ad_id].impressoes += row.impressoes || 0;
             acc[row.ad_id].cliques += row.cliques || 0;
             acc[row.ad_id].conversoes += row.conversoes || 0;
+            acc[row.ad_id].reach = (acc[row.ad_id].reach || 0) + (row.reach || 0);
 
             // WEIGHTED AVERAGE CALCULATION (Fix for Daily vs Period discrepancy)
             const dailyImp = row.impressoes || 0;
@@ -702,12 +722,15 @@ export default function CreativesPage() {
                 ? ((r as any)._weighted_hold / (r as any)._hold_denominator) * 100
                 : 0;
 
+            const finalFrequency = r.reach && r.reach > 0 ? (r.impressoes || 0) / r.reach : 1.0;
+
             return {
                 ...r,
                 dailyHistory,
                 // Override with calculated weighted averages
                 hook_rate: Number(finalHookRate.toFixed(2)),
-                hold_rate: Number(finalHoldRate.toFixed(2))
+                hold_rate: Number(finalHoldRate.toFixed(2)),
+                frequency: Number(finalFrequency.toFixed(2))
             };
         });
     }, [data, filterBranding, hideBranding]);
@@ -741,16 +764,72 @@ export default function CreativesPage() {
         // 1. DATA FOR KPIs
         // We now respect the hideBranding toggle for the dashboard cards to make it "work"
         // as the user expects. If hideBranding is true, we only sum non-branding ads.
-        const filteredData = data.filter(r => filterBranding(r));
+        const filteredData = data.filter(r => {
+            if (!filterBranding(r)) return false;
+            if (creativeType !== "all" && r.creative_type !== creativeType) return false;
+            return true;
+        });
 
         const totalSpend = filteredData.reduce((acc, r) => acc + (r.investimento || 0), 0);
         const totalConversions = filteredData.reduce((acc, r) => acc + (r.conversoes || 0), 0);
         const totalImpressions = filteredData.reduce((acc, r) => acc + (r.impressoes || 0), 0);
         const totalClicks = filteredData.reduce((acc, r) => acc + (r.cliques || 0), 0);
+        const totalReach = filteredData.reduce((acc, r) => acc + (r.reach || 0), 0);
+
+        const avgFrequency = totalReach && totalReach > 0 ? totalImpressions / totalReach : 1.0;
+        const avgCPM = totalImpressions > 0 ? (totalSpend / totalImpressions) * 1000 : 0;
+
+        let videoHookNum = 0, videoHookDen = 0;
+        let imgHookNum = 0, imgHookDen = 0;
+        let videoHoldNum = 0, videoHoldDen = 0;
+        let imgHoldNum = 0, imgHoldDen = 0;
+
+        filteredData.forEach(r => {
+            const imp = r.impressoes || 0;
+            const hook = r.hook_rate || 0;
+            const hold = r.hold_rate || 0;
+            const hookAction = (hook * imp) / 100;
+            const holdAction = (hold * hookAction) / 100;
+
+            const isVideo = r.creative_type?.toLowerCase().includes('vídeo') || r.creative_type?.toLowerCase().includes('video');
+
+            if (isVideo) {
+                videoHookNum += hookAction;
+                videoHookDen += imp;
+                videoHoldNum += holdAction;
+                videoHoldDen += hookAction;
+            } else {
+                imgHookNum += hookAction;
+                imgHookDen += imp;
+                imgHoldNum += holdAction;
+                imgHoldDen += hookAction;
+            }
+        });
+
+        const vHookRate = videoHookDen > 0 ? (videoHookNum / videoHookDen) * 100 : null;
+        const iHookRate = imgHookDen > 0 ? (imgHookNum / imgHookDen) * 100 : null;
+        const vHoldRate = videoHoldDen > 0 ? (videoHoldNum / videoHoldDen) * 100 : null;
+        const iHoldRate = imgHoldDen > 0 ? (imgHoldNum / imgHoldDen) * 100 : null;
+
+        let hookRateDisplay = "-";
+        let holdRateDisplay = "-";
+
+        if (creativeType === "all") {
+            hookRateDisplay = `🎥 ${vHookRate ? vHookRate.toFixed(2) + '%' : '-'} | 🖼️ ${iHookRate ? iHookRate.toFixed(2) + '%' : '-'}`;
+            holdRateDisplay = `🎥 ${vHoldRate ? vHoldRate.toFixed(2) + '%' : '-'} | 🖼️ ${iHoldRate ? iHoldRate.toFixed(2) + '%' : '-'}`;
+        } else if (creativeType.toLowerCase().includes('vídeo') || creativeType.toLowerCase().includes('video')) {
+            hookRateDisplay = vHookRate ? vHookRate.toFixed(2) + '%' : '-';
+            holdRateDisplay = vHoldRate ? vHoldRate.toFixed(2) + '%' : '-';
+        } else {
+            hookRateDisplay = iHookRate ? iHookRate.toFixed(2) + '%' : '-';
+            holdRateDisplay = iHoldRate ? iHoldRate.toFixed(2) + '%' : '-';
+        }
 
         // 2. DATA FOR UI/ANALYSIS (Table Count)
         const displaySet = allAggregated.filter(r => {
             if (onlyActive && r.effective_status !== 'ACTIVE') return false;
+            if (creativeType !== "all" && r.creative_type !== creativeType) return false;
+            if (!filterBranding(r)) return false;
             return true;
         });
 
@@ -759,9 +838,13 @@ export default function CreativesPage() {
             totalConversions,
             totalSpend,
             avgCPL: totalConversions > 0 ? totalSpend / totalConversions : null,
-            avgCTR: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
+            avgCTR: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0,
+            avgCPM,
+            avgFrequency,
+            hookRateDisplay,
+            holdRateDisplay
         };
-    }, [data, allAggregated, onlyActive, filterBranding]);
+    }, [data, allAggregated, onlyActive, filterBranding, creativeType]);
 
     // 3. Final Table Data (Applying Table-specific filters and sorting)
     const aggregatedData = React.useMemo(() => {
@@ -790,6 +873,7 @@ export default function CreativesPage() {
                 // BRANDING FILTER (Applied to aggregated ad)
                 if (!filterBranding(r)) return false;
 
+                if (creativeType !== "all" && r.creative_type !== creativeType) return false;
                 if (minConversions > 0 && r.conversoes < minConversions) return false;
                 if (minInvestment > 0 && (r.investimento || 0) < minInvestment) return false;
                 // TABLE-ONLY STATUS FILTER: Apply here so it doesn't affect KPIs
@@ -814,6 +898,7 @@ export default function CreativesPage() {
                         case "hook_rate": return row.hook_rate || 0;
                         case "hold_rate": return row.hold_rate || 0;
                         case "effective_status": return row.effective_status || "";
+                        case "reach": return row.reach || 0;
                         default: return row.conversoes || 0;
                     }
                 };
@@ -852,7 +937,7 @@ export default function CreativesPage() {
                 const nB = Number(bVal);
                 return sortDir === "asc" ? nA - nB : nB - nA;
             });
-    }, [allAggregated, sortBy, sortDir, minConversions, minInvestment, onlyActive, stableBenchmarks.avgCPL, filterBranding, hideBranding]);
+    }, [allAggregated, sortBy, sortDir, minConversions, minInvestment, onlyActive, stableBenchmarks.avgCPL, filterBranding, hideBranding, creativeType]);
 
     // Paginated data
     const totalPages = Math.ceil(aggregatedData.length / itemsPerPage);
@@ -874,6 +959,7 @@ export default function CreativesPage() {
 
         const filteredData = data.filter(row => {
             if (!filterBranding(row)) return false;
+            if (creativeType !== "all" && row.creative_type !== creativeType) return false;
             // SYNC CHART WITH DISPLAY FILTER
             if (onlyActive && row.effective_status !== 'ACTIVE') return false;
             return true;
@@ -896,7 +982,7 @@ export default function CreativesPage() {
                 leads: values.leads,
                 cpl: values.leads > 0 ? values.spend / values.leads : 0,
             }));
-    }, [data, filterBranding, onlyActive]);
+    }, [data, filterBranding, onlyActive, creativeType]);
 
     return (
         <div className="flex flex-col gap-6 p-6">
@@ -915,156 +1001,203 @@ export default function CreativesPage() {
                 </Button>
             </div>
 
+            {/* Mobile Filters Toggle */}
+            {!isFiltersOpen && (
+                <div className="sm:hidden mb-2">
+                    <Button
+                        variant="outline"
+                        className="w-full flex justify-between items-center shadow-sm"
+                        onClick={() => setIsFiltersOpen(true)}
+                    >
+                        <span className="flex items-center gap-2"><Filter className="h-4 w-4" /> Mostrar Filtros</span>
+                        <ChevronDown className="h-4 w-4" />
+                    </Button>
+                </div>
+            )}
+
             {/* Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6 bg-slate-50/50 p-3 rounded-lg border">
-                {/* Período */}
-                <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                        <CalendarDays className="h-3.5 w-3.5" />
-                        Período
-                    </label>
-                    <div className="flex flex-col gap-2 relative">
-                        <Select
-                            value={period}
-                            onValueChange={(v) => {
-                                if (v === "custom") {
-                                    setDateRange(undefined);
-                                } else {
-                                    const days = parseInt(v);
-                                    const end = subDays(todayStable, 1);
-                                    const start = subDays(end, days - 1);
-                                    const preciseEnd = new Date(end);
-                                    preciseEnd.setHours(23, 59, 59, 999);
-                                    setDateRange({ from: start, to: preciseEnd });
-                                }
-                            }}
-                        >
+            {isFiltersOpen && (
+                <div className="sticky top-2 z-40 flex flex-wrap gap-4 items-end mb-6 bg-slate-50/95 backdrop-blur-sm p-4 rounded-lg border shadow-sm">
+
+                    {/* Período */}
+                    <div className="space-y-1.5 w-[220px]">
+                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                            <CalendarDays className="h-3.5 w-3.5" />
+                            Período
+                        </label>
+                        <div className="flex flex-col gap-2 relative">
+                            <Select
+                                value={period}
+                                onValueChange={(v) => {
+                                    if (v === "custom") {
+                                        setDateRange(undefined);
+                                    } else {
+                                        const days = parseInt(v);
+                                        const end = subDays(todayStable, 1);
+                                        const start = subDays(end, days - 1);
+                                        const preciseEnd = new Date(end);
+                                        preciseEnd.setHours(23, 59, 59, 999);
+                                        setDateRange({ from: start, to: preciseEnd });
+                                    }
+                                }}
+                            >
+                                <SelectTrigger className="h-9 w-full bg-background/50">
+                                    <SelectValue placeholder="Selecione" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="1">Ontem <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(1)}</span></SelectItem>
+                                    <SelectItem value="7">Últimos 7 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(7)}</span></SelectItem>
+                                    <SelectItem value="15">Últimos 15 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(15)}</span></SelectItem>
+                                    <SelectItem value="30">Últimos 30 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(30)}</span></SelectItem>
+                                    <SelectItem value="90">Últimos 90 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(90)}</span></SelectItem>
+                                    <SelectItem value="custom">Personalizado</SelectItem>
+                                </SelectContent>
+                            </Select>
+
+                            {period === "custom" && (
+                                <div className="absolute top-[38px] left-0 z-50 animate-in fade-in zoom-in-95 duration-200">
+                                    <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="outline" className="w-[240px] justify-start text-left font-normal bg-background shadow-md border-primary/20 h-9">
+                                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                                {globalRange?.from ? (
+                                                    globalRange.to && !isSameDay(globalRange.from, globalRange.to) ? (
+                                                        <>{format(globalRange.from, "dd/MM/yy", { locale: ptBR })} - {format(globalRange.to, "dd/MM/yy", { locale: ptBR })}</>
+                                                    ) : (
+                                                        format(globalRange.from, "dd/MM/yyyy", { locale: ptBR })
+                                                    )
+                                                ) : (
+                                                    <span>Selecione o período</span>
+                                                )}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0" align="start">
+                                            <Calendar
+                                                mode="range"
+                                                selected={globalRange}
+                                                onSelect={(range) => {
+                                                    setDateRange(range);
+                                                    if (range?.from && range?.to) {
+                                                        setIsCalendarOpen(false);
+                                                    }
+                                                }}
+                                                numberOfMonths={2}
+                                                locale={ptBR}
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Unidade */}
+                    <div className="space-y-1.5 min-w-[160px] flex-1">
+                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                            <Building2 className="h-3.5 w-3.5" />
+                            Unidade
+                        </label>
+                        <Select value={unidade || "all"} onValueChange={(val) => setBusinessUnit(val === "all" ? null : val)}>
                             <SelectTrigger className="h-9 w-full bg-background/50">
-                                <SelectValue placeholder="Selecione" />
+                                <SelectValue placeholder="Todos" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="1">Ontem <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(1)}</span></SelectItem>
-                                <SelectItem value="7">Últimos 7 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(7)}</span></SelectItem>
-                                <SelectItem value="15">Últimos 15 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(15)}</span></SelectItem>
-                                <SelectItem value="30">Últimos 30 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(30)}</span></SelectItem>
-                                <SelectItem value="90">Últimos 90 dias <span className="text-muted-foreground text-xs ml-1">{getPresetRangeLabel(90)}</span></SelectItem>
-                                <SelectItem value="custom">Personalizado</SelectItem>
+                                <SelectItem value="all">Todas as Unidades</SelectItem>
+                                {unidades.map((u) => (
+                                    <SelectItem key={u} value={u}>{u}</SelectItem>
+                                ))}
                             </SelectContent>
                         </Select>
+                    </div>
 
-                        {period === "custom" && (
-                            <div className="absolute top-[38px] left-0 z-50 animate-in fade-in zoom-in-95 duration-200">
-                                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-                                    <PopoverTrigger asChild>
-                                        <Button variant="outline" className="w-[240px] justify-start text-left font-normal bg-background shadow-md border-primary/20 h-9">
-                                            <CalendarIcon className="mr-2 h-4 w-4" />
-                                            {globalRange?.from ? (
-                                                globalRange.to && !isSameDay(globalRange.from, globalRange.to) ? (
-                                                    <>{format(globalRange.from, "dd/MM/yy", { locale: ptBR })} - {format(globalRange.to, "dd/MM/yy", { locale: ptBR })}</>
-                                                ) : (
-                                                    format(globalRange.from, "dd/MM/yyyy", { locale: ptBR })
-                                                )
-                                            ) : (
-                                                <span>Selecione o período</span>
-                                            )}
-                                        </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0" align="start">
-                                        <Calendar
-                                            mode="range"
-                                            selected={globalRange}
-                                            onSelect={(range) => {
-                                                setDateRange(range);
-                                                if (range?.from && range?.to) {
-                                                    setIsCalendarOpen(false);
-                                                }
-                                            }}
-                                            numberOfMonths={2}
-                                            locale={ptBR}
-                                        />
-                                    </PopoverContent>
-                                </Popover>
+                    {/* Curso */}
+                    <div className="space-y-1.5 min-w-[160px] flex-1">
+                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                            <GraduationCap className="h-3.5 w-3.5" />
+                            Curso
+                        </label>
+                        <Select value={curso || "all"} onValueChange={(val) => setCourse(val === "all" ? null : val)}>
+                            <SelectTrigger className="h-9 w-full bg-background/50">
+                                <SelectValue placeholder="Todos" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Todos os Cursos</SelectItem>
+                                {cursos.map((c) => (
+                                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    {/* Formato */}
+                    <div className="space-y-1.5 min-w-[160px] flex-1">
+                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                            <Image className="h-3.5 w-3.5" />
+                            Formato
+                        </label>
+                        <Select value={creativeType} onValueChange={setCreativeType}>
+                            <SelectTrigger className="h-9 w-full bg-background/50">
+                                <SelectValue placeholder="Todos" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Todos os Formatos</SelectItem>
+                                {formatOptions.map((f) => (
+                                    <SelectItem key={f} value={f}>{f}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    {/* Toggles Group */}
+                    <div className="space-y-3 flex flex-col justify-end pb-1 w-full lg:w-auto mt-2 lg:mt-0 lg:ml-auto">
+                        <div className="flex items-center justify-between w-full lg:w-auto gap-x-6 gap-y-2">
+                            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                                {/* Branding Toggle */}
+                                <div className="flex items-center gap-2">
+                                    <Switch
+                                        id="hideBranding"
+                                        checked={hideBranding}
+                                        onCheckedChange={setHideBranding}
+                                    />
+                                    <Label
+                                        htmlFor="hideBranding"
+                                        className="text-sm font-medium cursor-pointer"
+                                    >
+                                        Ocultar Branding
+                                    </Label>
+                                </div>
+
+                                {/* Active Only Toggle */}
+                                <div className="flex items-center gap-2">
+                                    <Switch
+                                        id="onlyActive"
+                                        checked={onlyActive}
+                                        onCheckedChange={setOnlyActive}
+                                    />
+                                    <Label
+                                        htmlFor="onlyActive"
+                                        className="text-sm font-medium cursor-pointer"
+                                    >
+                                        Apenas Ativos
+                                    </Label>
+                                </div>
                             </div>
-                        )}
-                    </div>
-                </div>
 
-                {/* Unidade */}
-                <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                        <Building2 className="h-3.5 w-3.5" />
-                        Unidade
-                    </label>
-                    <Select value={unidade || "all"} onValueChange={(val) => setBusinessUnit(val === "all" ? null : val)}>
-                        <SelectTrigger className="h-9 w-full bg-background/50">
-                            <SelectValue placeholder="Todos" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">Todas as Unidades</SelectItem>
-                            {unidades.map((u) => (
-                                <SelectItem key={u} value={u}>{u}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-
-                {/* Curso */}
-                <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                        <GraduationCap className="h-3.5 w-3.5" />
-                        Curso
-                    </label>
-                    <Select value={curso || "all"} onValueChange={(val) => setCourse(val === "all" ? null : val)}>
-                        <SelectTrigger className="h-9 w-full bg-background/50">
-                            <SelectValue placeholder="Todos" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">Todos os Cursos</SelectItem>
-                            {cursos.map((c) => (
-                                <SelectItem key={c} value={c}>{c}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-
-                {/* Toggles Group */}
-                <div className="space-y-3 flex flex-col justify-end pb-1 lg:col-span-2">
-                    <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                        {/* Branding Toggle */}
-                        <div className="flex items-center gap-2">
-                            <Switch
-                                id="hideBranding"
-                                checked={hideBranding}
-                                onCheckedChange={setHideBranding}
-                            />
-                            <Label
-                                htmlFor="hideBranding"
-                                className="text-sm font-medium cursor-pointer"
+                            {/* Mobile Collapse Button */}
+                            <button
+                                className="sm:hidden flex items-center justify-center text-primary/70 hover:bg-muted p-1.5 rounded-full transition-colors -mr-2"
+                                onClick={() => setIsFiltersOpen(false)}
+                                title="Recolher Filtros"
                             >
-                                Ocultar Branding
-                            </Label>
-                        </div>
-
-                        {/* Active Only Toggle */}
-                        <div className="flex items-center gap-2">
-                            <Switch
-                                id="onlyActive"
-                                checked={onlyActive}
-                                onCheckedChange={setOnlyActive}
-                            />
-                            <Label
-                                htmlFor="onlyActive"
-                                className="text-sm font-medium cursor-pointer"
-                            >
-                                Apenas Ativos
-                            </Label>
+                                <ChevronUp className="h-5 w-5" />
+                            </button>
                         </div>
                     </div>
                 </div>
-            </div>
+            )}
 
             {/* KPI Cards */}
-            <div className="grid gap-4 md:grid-cols-5">
+            <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <div className="flex items-center gap-1.5">
@@ -1174,6 +1307,122 @@ export default function CreativesPage() {
                         </div>
                     </CardContent>
                 </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <div className="flex items-center gap-1.5">
+                            <CardTitle className="text-sm font-medium">Frequência</CardTitle>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-[220px]">
+                                    <p className="text-xs">Média de vezes que cada pessoa foi impactada (Impressões Totais / Alcance Agregado).</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </div>
+                        <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {isLoading ? <Skeleton className="h-8 w-16" /> : (kpis.avgFrequency > 0 ? kpis.avgFrequency.toFixed(2) : '-')}
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <div className="flex items-center gap-1.5">
+                            <CardTitle className="text-sm font-medium">Hook Rate</CardTitle>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-[260px] p-3">
+                                    <div className="space-y-1.5">
+                                        <p className="text-xs font-semibold mb-1">Taxa de parada de scroll</p>
+                                        <p className="text-[11px] text-muted-foreground leading-snug">
+                                            Mede se o seu anúncio chamou a atenção e conseguiu "parar o dedo" da pessoa enquanto ela rolava o feed.
+                                        </p>
+                                        <ul className="text-[10px] text-muted-foreground list-disc pl-3 space-y-0.5 mt-1">
+                                            <li><span className="font-semibold">Vídeo:</span> Assistiu aos primeiros 3s</li>
+                                            <li><span className="font-semibold">Imagem:</span> Clicou para expandir ou "ver mais"</li>
+                                        </ul>
+                                        <div className="mt-2 space-y-1 bg-muted/50 p-2 rounded text-[10px]">
+                                            <p className="flex justify-between"><span className="text-emerald-500 font-medium">Ótimo:</span> <span>Vídeo &gt; 25% | Imag &gt; 1.0%</span></p>
+                                            <p className="flex justify-between"><span className="text-blue-500 font-medium">Médio:</span> <span>Vídeo 15-25% | Imag 0.5-1.0%</span></p>
+                                            <p className="flex justify-between"><span className="text-red-500 font-medium">Ruim:</span> <span>Vídeo &lt; 15% | Imag &lt; 0.5%</span></p>
+                                        </div>
+                                    </div>
+                                </TooltipContent>
+                            </Tooltip>
+                        </div>
+                        <Eye className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-base sm:text-lg md:text-xl font-bold tracking-tight">
+                            {isLoading ? <Skeleton className="h-8 w-24" /> : kpis.hookRateDisplay}
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <div className="flex items-center gap-1.5">
+                            <CardTitle className="text-sm font-medium">Hold Rate</CardTitle>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-[260px] p-3">
+                                    <div className="space-y-1.5">
+                                        <p className="text-xs font-semibold mb-1">Taxa de retenção após o hook</p>
+                                        <p className="text-[11px] text-muted-foreground leading-snug">
+                                            Mede se o conteúdo foi bom o suficiente para segurar o interesse depois que a pessoa parou.
+                                        </p>
+                                        <ul className="text-[10px] text-muted-foreground list-disc pl-3 space-y-0.5 mt-1">
+                                            <li><span className="font-semibold">Vídeo:</span> Continuou assistindo até 15s</li>
+                                            <li><span className="font-semibold">Imagem:</span> Se interessou e clicou no link</li>
+                                        </ul>
+                                        <div className="mt-2 space-y-1 bg-muted/50 p-2 rounded text-[10px]">
+                                            <p className="flex justify-between"><span className="text-emerald-500 font-medium">Ótimo:</span> <span>Vídeo &gt; 30% | Imag &gt; 85%</span></p>
+                                            <p className="flex justify-between"><span className="text-blue-500 font-medium">Médio:</span> <span>Vídeo 20-30% | Imag 60-85%</span></p>
+                                            <p className="flex justify-between"><span className="text-red-500 font-medium">Ruim:</span> <span>Vídeo &lt; 20% | Imag &lt; 60%</span></p>
+                                        </div>
+                                    </div>
+                                </TooltipContent>
+                            </Tooltip>
+                        </div>
+                        <Eye className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-base sm:text-lg md:text-xl font-bold tracking-tight">
+                            {isLoading ? <Skeleton className="h-8 w-24" /> : kpis.holdRateDisplay}
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <div className="flex items-center gap-1.5">
+                            <CardTitle className="text-sm font-medium">CPM Médio</CardTitle>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-[220px]">
+                                    <p className="text-xs">Custo por Mil Impressões. Um CPM alto pode indicar rejeição no leilão ou público muito restrito.</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </div>
+                        <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {isLoading ? <Skeleton className="h-8 w-24" /> : brl(kpis.avgCPM)}
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
             {/* Performance Charts */}
@@ -1262,10 +1511,20 @@ export default function CreativesPage() {
                                         <span className="flex items-center justify-end text-[13px]">Conv. {getSortIcon("conversoes")}</span>
                                     </TableHead>
 
-                                    <TableHead className="text-right w-[80px] p-2">
-                                        <div className="flex flex-col items-end">
-                                            <span className="text-[12px]">Reach/Freq</span>
-                                            <span className="text-[9px] text-muted-foreground">Alcance/Saturação</span>
+                                    <TableHead className="text-right w-[80px] cursor-pointer p-2" onClick={() => toggleSort("reach")}>
+                                        <div className="flex flex-col items-end group">
+                                            <span className="flex items-center text-[12px]">Reach/Freq {getSortIcon("reach")}</span>
+                                            <TooltipProvider>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <span className="text-[9px] text-muted-foreground border-b border-dotted cursor-help">Alcance/Saturação</span>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="top" className="max-w-[200px] text-[11px] text-left">
+                                                        <p><strong>Reach (Alcance):</strong> Número de contas únc. que viram o anúncio.</p>
+                                                        <p className="mt-1"><strong>Freq (Frequência):</strong> Média de vezes que cada pessoa viu. Alta freq = Saturação.</p>
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </TooltipProvider>
                                         </div>
                                     </TableHead>
 
@@ -1533,14 +1792,16 @@ export default function CreativesPage() {
                                                         <TooltipTrigger asChild>
                                                             <div className={cn(
                                                                 "font-mono text-[11px] font-bold cursor-help underline decoration-dotted decoration-muted-foreground/30 underline-offset-2",
-                                                                (row.hook_rate || 0) > 30 ? "text-emerald-600" :
-                                                                    (row.hook_rate || 0) > 15 ? "text-blue-600" : "text-muted-foreground"
+                                                                (row.hook_rate === null || row.hook_rate === undefined) ? "text-muted-foreground" :
+                                                                    row.creative_type !== 'Vídeo'
+                                                                        ? ((row.hook_rate || 0) > 1.0 ? "text-emerald-500" : (row.hook_rate || 0) >= 0.5 ? "text-amber-600 dark:text-amber-500" : "text-red-500")
+                                                                        : ((row.hook_rate || 0) > 25 ? "text-emerald-500" : (row.hook_rate || 0) >= 15 ? "text-amber-600 dark:text-amber-500" : "text-red-500")
                                                             )}>
                                                                 {(row.hook_rate !== null && row.hook_rate !== undefined) ? `${row.hook_rate}%` : "-"}
                                                             </div>
                                                         </TooltipTrigger>
                                                         <TooltipContent side="right" className="text-[10px] p-2 space-y-1 bg-popover border-border shadow-xl">
-                                                            {row.creative_type?.toUpperCase().includes('IMAG') ? (
+                                                            {row.creative_type !== 'Vídeo' ? (
                                                                 <>
                                                                     <p className="font-bold border-b pb-1 mb-1">Hook Imagem (Meta 1.5%)</p>
                                                                     <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 opacity-90">
@@ -1571,20 +1832,22 @@ export default function CreativesPage() {
                                                         <TooltipTrigger asChild>
                                                             <div className={cn(
                                                                 "font-mono text-[11px] font-bold cursor-help underline decoration-dotted decoration-muted-foreground/30 underline-offset-2",
-                                                                (row.hold_rate || 0) > 30 ? "text-emerald-600 center" :
-                                                                    (row.hold_rate || 0) > 15 ? "text-blue-600" : "text-muted-foreground"
+                                                                (row.hold_rate === null || row.hold_rate === undefined) ? "text-muted-foreground" :
+                                                                    row.creative_type !== 'Vídeo'
+                                                                        ? ((row.hold_rate || 0) > 85 ? "text-emerald-500" : (row.hold_rate || 0) >= 60 ? "text-amber-600 dark:text-amber-500" : "text-red-500")
+                                                                        : ((row.hold_rate || 0) > 30 ? "text-emerald-500" : (row.hold_rate || 0) >= 20 ? "text-amber-600 dark:text-amber-500" : "text-red-500")
                                                             )}>
                                                                 {(row.hold_rate !== null && row.hold_rate !== undefined) ? `${row.hold_rate}%` : "-"}
                                                             </div>
                                                         </TooltipTrigger>
                                                         <TooltipContent side="right" className="text-[10px] p-2 space-y-1 bg-popover border-border shadow-xl">
-                                                            {row.creative_type?.toUpperCase().includes('IMAG') ? (
+                                                            {row.creative_type !== 'Vídeo' ? (
                                                                 <>
                                                                     <p className="font-bold border-b pb-1 mb-1">Hold Imagem (Meta 80%)</p>
                                                                     <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 opacity-90">
-                                                                        <span>&lt; 40%</span><span className="text-red-500 font-mono text-right">0-50 pts</span>
-                                                                        <span>40% - 65%</span><span className="text-amber-500 font-mono text-right">50-80 pts</span>
-                                                                        <span>&gt; 65%</span><span className="text-emerald-500 font-mono text-right">80-100 pts</span>
+                                                                        <span>&lt; 60%</span><span className="text-red-500 font-mono text-right">0-50 pts</span>
+                                                                        <span>60% - 85%</span><span className="text-amber-500 font-mono text-right">50-80 pts</span>
+                                                                        <span>&gt; 85%</span><span className="text-emerald-500 font-mono text-right">80-100 pts</span>
                                                                     </div>
                                                                 </>
                                                             ) : (
@@ -1592,8 +1855,8 @@ export default function CreativesPage() {
                                                                     <p className="font-bold border-b pb-1 mb-1">Hold Vídeo (Meta 40%)</p>
                                                                     <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 opacity-90">
                                                                         <span>&lt; 20%</span><span className="text-red-500 font-mono text-right">0-50 pts</span>
-                                                                        <span>20% - 35%</span><span className="text-amber-500 font-mono text-right">50-85 pts</span>
-                                                                        <span>&gt; 35%</span><span className="text-emerald-500 font-mono text-right">85-100 pts</span>
+                                                                        <span>20% - 30%</span><span className="text-amber-500 font-mono text-right">50-80 pts</span>
+                                                                        <span>&gt; 30%</span><span className="text-emerald-500 font-mono text-right">80-100 pts</span>
                                                                     </div>
                                                                 </>
                                                             )}
@@ -1823,6 +2086,6 @@ export default function CreativesPage() {
                     avgCPL: kpis.avgCPL
                 } : null}
             />
-        </div>
+        </div >
     );
 }

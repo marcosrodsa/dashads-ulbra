@@ -28,7 +28,6 @@ const navItems = [
   { title: "Controle de Budget", url: "/budget", icon: Gauge },
   { title: "Performance de Captação", url: "/performance", icon: BarChart3 },
   { title: "Inteligência de Criativos", url: "/creatives", icon: Sparkles },
-  { title: "Andrômeda View", url: "/andromeda", icon: Activity },
   { title: "Classificação de Campanhas", url: "/classificador", icon: Tag },
   { title: "Usuários", url: "/cadastros/usuarios", icon: Users },
   { title: "Outros Cadastros", url: "/cadastros", icon: Database },
@@ -39,8 +38,8 @@ const navItems = [
 
 export function AppSidebar() {
   const location = useLocation();
-  const { state } = useSidebar();
-  const collapsed = state === "collapsed";
+  const { state, isMobile } = useSidebar();
+  const collapsed = state === "collapsed" && !isMobile;
   const client = getSupabaseClient();
   const { role, signOut } = useAuth();
   const { toggleFilters } = useFilters();
