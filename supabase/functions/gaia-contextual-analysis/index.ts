@@ -135,22 +135,33 @@ Deno.serve(async (req) => {
         });
 
         // 4. Metrics Aggregation
-        const totals = filteredData.reduce((acc: any, row: any) => ({
-            impressions: acc.impressions + (row.impressoes || 0),
-            clicks: acc.clicks + (row.cliques || 0),
-            conversions: acc.conversions + (row.conversoes || 0),
-            spend: acc.spend + (row.investimento || 0),
-            // Weighted averages for Rates
-            weighted_hook: acc.weighted_hook + ((row.hook_rate || 0) * (row.impressoes || 0)),
-            weighted_hold: acc.weighted_hold + ((row.hold_rate || 0) * (row.impressoes || 0)),
-        }), { impressions: 0, clicks: 0, conversions: 0, spend: 0, weighted_hook: 0, weighted_hold: 0 });
+        const totals = filteredData.reduce((acc: any, row: any) => {
+            const imp = row.impressoes || 0;
+            const hookRate = row.hook_rate || 0;
+            const holdRate = row.hold_rate || 0;
+
+            // Calculate Raw Actions (approximate from rate)
+            const hookAction = (hookRate * imp) / 100; // 3s Views or Clicks All
+            const holdAction = (holdRate * hookAction) / 100; // ThruPlays or Link Clicks
+
+            return {
+                impressions: acc.impressions + imp,
+                clicks: acc.clicks + (row.cliques || 0),
+                conversions: acc.conversions + (row.conversoes || 0),
+                spend: acc.spend + (row.investimento || 0),
+                // Accumulate weighted sums
+                weighted_hook: acc.weighted_hook + hookAction,
+                weighted_hold: acc.weighted_hold + holdAction,
+                hold_denominator: acc.hold_denominator + hookAction
+            };
+        }, { impressions: 0, clicks: 0, conversions: 0, spend: 0, weighted_hook: 0, weighted_hold: 0, hold_denominator: 0 });
 
         const ctr = totals.impressions > 0 ? Number(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
         let cpa = totals.conversions > 0 ? Number((totals.spend / totals.conversions).toFixed(2)) : null;
 
-        // Andromeda Metrics
-        const avgHook = totals.impressions > 0 ? (totals.weighted_hook / totals.impressions).toFixed(2) : "0.00";
-        const avgHold = totals.impressions > 0 ? (totals.weighted_hold / totals.impressions).toFixed(2) : "0.00";
+        // Andromeda Metrics (True Weighted Average)
+        const avgHook = totals.impressions > 0 ? ((totals.weighted_hook / totals.impressions) * 100).toFixed(2) : "0.00";
+        const avgHold = totals.hold_denominator > 0 ? ((totals.weighted_hold / totals.hold_denominator) * 100).toFixed(2) : "0.00";
 
         // Context Data (Latest Row)
         const latestRow = filteredData[0] || {};
@@ -230,8 +241,8 @@ Deno.serve(async (req) => {
         if (asset.image_url) imageBase64 = await fetchImageAsBase64(asset.image_url);
 
         const isVideo = creativeType.toLowerCase().includes("video") || creativeType.toLowerCase().includes("vídeo");
-        const hookBenchmark = isVideo ? "25% (Vídeo)" : "1.5% (Imagem)";
-        const holdBenchmark = isVideo ? "15% (ThruPlay/3s)" : "30% (Link/All)";
+        const hookBenchmark = isVideo ? "30% (Vídeo)" : "1.5% (Imagem)";
+        const holdBenchmark = isVideo ? "40% (ThruPlay/3s)" : "80% (Link/All)";
 
         const prompt = `ATUE COMO: Gaia, Inteligência Artificial de Performance e Diretora de Criação da Ulbra (Andromeda System).
 
@@ -255,6 +266,12 @@ SAÚDE DO CRIATIVO (Protocolo Andromeda):
    *Nota Técnica: Vídeo usa ThruPlay (15s). Imagem usa proporção de clique no link.*
 3. CTR LINK (Tráfego): ${ctr}%
 4. FREQUÊNCIA ATUAL: ${currentFreq}x
+
+TABELA DE REFERÊNCIA (Score Andromeda):
+- VÍDEO HOOK (Meta 30%): <15% (Ruim), 15-25% (Médio), >25% (Bom)
+- VÍDEO HOLD (Meta 40%): <20% (Ruim), 20-35% (Médio), >35% (Bom)
+- IMAGEM HOOK (Meta 1.5%): <0.5% (Ruim), 0.5-1.0% (Médio), >1.0% (Bom)
+- IMAGEM HOLD (Meta 80%): <40% (Ruim), 40-65% (Médio), >65% (Bom)
 
 DIRETRIZES ESTRATÉGICAS:
 1. "A PERGUNTA DE OURO": Das pessoas que pararam (Hook), quantas prendemos por 15s ou levaram pro site (Hold)?

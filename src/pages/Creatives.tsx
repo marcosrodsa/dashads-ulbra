@@ -356,7 +356,7 @@ export default function CreativesPage() {
         const conversions = row.conversoes || 0;
         const frequency = row.frequency;
         const hookRate = row.hook_rate;
-        const isImage = row.creative_type?.toUpperCase() === 'IMAGE';
+        const isImage = row.creative_type?.toUpperCase().includes('IMAG');
         const hasFrequency = frequency !== null && frequency !== undefined;
         const hasHookRate = hookRate !== null && hookRate !== undefined;
 
@@ -406,14 +406,16 @@ export default function CreativesPage() {
             const hlRate = row.hold_rate || 0;
 
             const hookScore = Math.min((hRate / 1.5) * 100, 100);
-            const holdScore = Math.min((hlRate / 50) * 100, 100); // 50% de cliques All virando Link
+            const holdScore = Math.min((hlRate / 80) * 100, 100); // 80% de cliques All virando Link (Elite)
 
             stabilityScore = (hookScore * 0.6) + (holdScore * 0.4);
             stabilityLabel = `Atenção/Ret. 🖼️`;
 
-            stabilityReason = `Hook ${hRate.toFixed(2)}% e Hold ${hlRate.toFixed(1)}%. `;
-            if (hRate < 0.8) stabilityReason += "Imagem não para o scroll.";
-            else if (hlRate < 30) stabilityReason += "Link pouco atrativo para clique.";
+            stabilityReason = `Hook ${hRate.toFixed(2)}% | Hold ${hlRate.toFixed(1)}%. `;
+
+            if (hRate < 0.8) stabilityReason += "⚠ Imagem não para o scroll.";
+            else if (hlRate < 50) stabilityReason += "⚠ Link pouco atrativo.";
+            else stabilityReason += "✅ Imagem validada.";
 
         } else if (hasHookRate) {
             // VÍDEO: Mixed Pillar (Hook 60% / Hold 40%)
@@ -421,16 +423,17 @@ export default function CreativesPage() {
             const hRate = row.hook_rate || 0;
             const hlRate = row.hold_rate || 0;
 
-            const hookScore = Math.min((hRate / 35) * 100, 100);
-            const holdScore = Math.min((hlRate / 30) * 100, 100); // 30% ThruPlay rate meta sênior
+            const hookScore = Math.min((hRate / 30) * 100, 100);
+            const holdScore = Math.min((hlRate / 40) * 100, 100); // 40% ThruPlay rate meta sênior
 
             stabilityScore = (hookScore * 0.6) + (holdScore * 0.4);
             stabilityLabel = `Atenção/Ret. 🎬`;
 
-            stabilityReason = `Hook ${hRate.toFixed(1)}% e Hold ${hlRate.toFixed(1)}%. `;
-            if (hRate < 20) stabilityReason += "Melhore os primeiros 3s.";
-            else if (hlRate < 15) stabilityReason += "Melhore o meio/fim do vídeo.";
-            else stabilityReason += "Bom desempenho de qualidade.";
+            stabilityReason = `Hook ${hRate.toFixed(1)}% | Hold ${hlRate.toFixed(1)}%. `;
+
+            if (hRate < 15) stabilityReason += "⚠ Melhore os primeiros 3s.";
+            else if (hlRate < 20) stabilityReason += "⚠ Conteúdo não retém.";
+            else stabilityReason += "✅ Vídeo de alta qualidade.";
         } else {
             stabilityLabel = 'Atenção (—)';
             stabilityReason = 'Sem dados de métrica primária (Hook/CTR).';
@@ -639,21 +642,47 @@ export default function CreativesPage() {
 
         const grouped = filteredByBranding.reduce((acc, row) => {
             if (!acc[row.ad_id]) {
-                acc[row.ad_id] = { ...row, investimento: 0, impressoes: 0, cliques: 0, conversoes: 0 };
+                acc[row.ad_id] = {
+                    ...row,
+                    investimento: 0,
+                    impressoes: 0,
+                    cliques: 0,
+                    conversoes: 0,
+                    // Internal accumulators for weighted averages
+                    _weighted_hook: 0,
+                    _weighted_hold: 0,
+                    _hold_denominator: 0
+                } as CreativeRow & { _weighted_hook: number; _weighted_hold: number; _hold_denominator: number };
             }
             acc[row.ad_id].investimento += row.investimento || 0;
             acc[row.ad_id].impressoes += row.impressoes || 0;
             acc[row.ad_id].cliques += row.cliques || 0;
             acc[row.ad_id].conversoes += row.conversoes || 0;
 
-            // Sync metadata
+            // WEIGHTED AVERAGE CALCULATION (Fix for Daily vs Period discrepancy)
+            const dailyImp = row.impressoes || 0;
+            const dailyHookRate = row.hook_rate || 0;
+            const dailyHoldRate = row.hold_rate || 0;
+
+            // Hook Numerator (3s Views or Clicks All) = (Rate * Imp) / 100
+            const dailyHookAction = (dailyHookRate * dailyImp) / 100;
+
+            // Hold Numerator (ThruPlays or Link Clicks) = (Hold Rate * Denom) / 100
+            // For Video, Denom = Hook Action (3s Views). For Image, Denom = Hook Action (Clicks All)
+            const dailyHoldAction = (dailyHoldRate * dailyHookAction) / 100;
+
+            (acc[row.ad_id] as any)._weighted_hook += dailyHookAction;
+            (acc[row.ad_id] as any)._weighted_hold += dailyHoldAction;
+            (acc[row.ad_id] as any)._hold_denominator += dailyHookAction;
+
+            // Sync metadata (Keep latest status if available)
             acc[row.ad_id].effective_status = row.effective_status || acc[row.ad_id].effective_status;
             acc[row.ad_id].preview_shareable_link = row.preview_shareable_link || acc[row.ad_id].preview_shareable_link;
             acc[row.ad_id].image_url = row.image_url || acc[row.ad_id].image_url;
             acc[row.ad_id].creative_type = row.creative_type || acc[row.ad_id].creative_type;
 
             return acc;
-        }, {} as Record<string, CreativeRow>);
+        }, {} as Record<string, CreativeRow & { _weighted_hook: number; _weighted_hold: number; _hold_denominator: number }>);
 
         Object.keys(dailyByAd).forEach(adId => {
             dailyByAd[adId].sort((a, b) => a.date.localeCompare(b.date));
@@ -661,9 +690,24 @@ export default function CreativesPage() {
 
         return Object.values(grouped).map(r => {
             const dailyHistory = dailyByAd[r.ad_id] || [];
+
+            // Calculate final weighted rates
+            // Safety check: impressions > 0
+            const finalHookRate = (r.impressoes || 0) > 0
+                ? ((r as any)._weighted_hook / (r.impressoes || 1)) * 100
+                : 0;
+
+            // Safety check: hold denominator > 0
+            const finalHoldRate = ((r as any)._hold_denominator || 0) > 0
+                ? ((r as any)._weighted_hold / (r as any)._hold_denominator) * 100
+                : 0;
+
             return {
                 ...r,
-                dailyHistory
+                dailyHistory,
+                // Override with calculated weighted averages
+                hook_rate: Number(finalHookRate.toFixed(2)),
+                hold_rate: Number(finalHoldRate.toFixed(2))
             };
         });
     }, [data, filterBranding, hideBranding]);
@@ -1484,24 +1528,78 @@ export default function CreativesPage() {
 
                                             {/* Hook Rate Column */}
                                             <TableCell className="p-2 text-right">
-                                                <div className={cn(
-                                                    "font-mono text-[11px] font-bold",
-                                                    (row.hook_rate || 0) > 30 ? "text-emerald-600" :
-                                                        (row.hook_rate || 0) > 15 ? "text-blue-600" : "text-muted-foreground"
-                                                )}>
-                                                    {(row.hook_rate !== null && row.hook_rate !== undefined) ? `${row.hook_rate}%` : "-"}
-                                                </div>
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <div className={cn(
+                                                                "font-mono text-[11px] font-bold cursor-help underline decoration-dotted decoration-muted-foreground/30 underline-offset-2",
+                                                                (row.hook_rate || 0) > 30 ? "text-emerald-600" :
+                                                                    (row.hook_rate || 0) > 15 ? "text-blue-600" : "text-muted-foreground"
+                                                            )}>
+                                                                {(row.hook_rate !== null && row.hook_rate !== undefined) ? `${row.hook_rate}%` : "-"}
+                                                            </div>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent side="right" className="text-[10px] p-2 space-y-1 bg-popover border-border shadow-xl">
+                                                            {row.creative_type?.toUpperCase().includes('IMAG') ? (
+                                                                <>
+                                                                    <p className="font-bold border-b pb-1 mb-1">Hook Imagem (Meta 1.5%)</p>
+                                                                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 opacity-90">
+                                                                        <span>&lt; 0.5%</span><span className="text-red-500 font-mono text-right">0-30 pts</span>
+                                                                        <span>0.5% - 1.0%</span><span className="text-amber-500 font-mono text-right">30-60 pts</span>
+                                                                        <span>&gt; 1.0%</span><span className="text-emerald-500 font-mono text-right">60-100 pts</span>
+                                                                    </div>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <p className="font-bold border-b pb-1 mb-1">Hook Vídeo (Meta 30%)</p>
+                                                                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 opacity-90">
+                                                                        <span>&lt; 15%</span><span className="text-red-500 font-mono text-right">0-50 pts</span>
+                                                                        <span>15% - 25%</span><span className="text-amber-500 font-mono text-right">50-80 pts</span>
+                                                                        <span>&gt; 25%</span><span className="text-emerald-500 font-mono text-right">80-100 pts</span>
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
                                             </TableCell>
 
                                             {/* Hold Rate Column */}
                                             <TableCell className="p-2 text-right">
-                                                <div className={cn(
-                                                    "font-mono text-[11px] font-bold",
-                                                    (row.hold_rate || 0) > 30 ? "text-emerald-600 center" :
-                                                        (row.hold_rate || 0) > 15 ? "text-blue-600" : "text-muted-foreground"
-                                                )}>
-                                                    {(row.hold_rate !== null && row.hold_rate !== undefined) ? `${row.hold_rate}%` : "-"}
-                                                </div>
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <div className={cn(
+                                                                "font-mono text-[11px] font-bold cursor-help underline decoration-dotted decoration-muted-foreground/30 underline-offset-2",
+                                                                (row.hold_rate || 0) > 30 ? "text-emerald-600 center" :
+                                                                    (row.hold_rate || 0) > 15 ? "text-blue-600" : "text-muted-foreground"
+                                                            )}>
+                                                                {(row.hold_rate !== null && row.hold_rate !== undefined) ? `${row.hold_rate}%` : "-"}
+                                                            </div>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent side="right" className="text-[10px] p-2 space-y-1 bg-popover border-border shadow-xl">
+                                                            {row.creative_type?.toUpperCase().includes('IMAG') ? (
+                                                                <>
+                                                                    <p className="font-bold border-b pb-1 mb-1">Hold Imagem (Meta 80%)</p>
+                                                                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 opacity-90">
+                                                                        <span>&lt; 40%</span><span className="text-red-500 font-mono text-right">0-50 pts</span>
+                                                                        <span>40% - 65%</span><span className="text-amber-500 font-mono text-right">50-80 pts</span>
+                                                                        <span>&gt; 65%</span><span className="text-emerald-500 font-mono text-right">80-100 pts</span>
+                                                                    </div>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <p className="font-bold border-b pb-1 mb-1">Hold Vídeo (Meta 40%)</p>
+                                                                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 opacity-90">
+                                                                        <span>&lt; 20%</span><span className="text-red-500 font-mono text-right">0-50 pts</span>
+                                                                        <span>20% - 35%</span><span className="text-amber-500 font-mono text-right">50-85 pts</span>
+                                                                        <span>&gt; 35%</span><span className="text-emerald-500 font-mono text-right">85-100 pts</span>
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
                                             </TableCell>
 
                                             {/* 10. Investimento */}
